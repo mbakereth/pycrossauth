@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 import unittest
 from datetime import datetime, timedelta
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage
@@ -148,4 +149,3 @@ class in_memory_key_storage_test(unittest.IsolatedAsyncioTestCase):
 
         keys = await key_storage.get_all_for_user("bob")
         self.assertEqual(len(keys), 1)
-

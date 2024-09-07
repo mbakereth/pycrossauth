@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from typing import Any, Dict, Optional, TypedDict, NotRequired
 import json
 from datetime import datetime

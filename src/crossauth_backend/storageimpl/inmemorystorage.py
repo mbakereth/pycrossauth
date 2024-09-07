@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from crossauth_backend.storage import KeyStorage, KeyDataEntry
 from crossauth_backend.common.interfaces import Key, PartialKey
 from crossauth_backend.common.error import CrossauthError, ErrorCode

@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.utils import set_parameter, ParamType, MapGetter
 from crossauth_backend.common.logger import CrossauthLogger, j

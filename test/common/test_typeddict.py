@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 import unittest
 from src.crossauth_backend import MapGetter
 from typing import TypedDict, Required
@@ -27,6 +28,3 @@ class TypedDictTest(unittest.TestCase):
         self.assertIs(MapGetter[str].get(my_dict1, "b", "x"), "x")
         self.assertIs(MapGetter[str].get(my_dict2, "b", "x"), "b")
         self.assertIs(MapGetter[str].get_or_none(my_dict2, "b"), "b")
-
-
-

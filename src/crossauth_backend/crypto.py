@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 import os
 import base64
 import json
@@ -268,4 +269,3 @@ class Crypto:
         cipher = AES.new(key, AES.MODE_CBC, iv=iv) # type: ignore
         decrypted = unpad(cipher.decrypt(encrypted_text), AES.block_size)
         return decrypted.decode()
-

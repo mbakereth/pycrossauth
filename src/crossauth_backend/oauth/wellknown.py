@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from jwcrypto.jwk import JWK
 from typing import Literal, TypedDict, NotRequired, Required
 
@@ -105,4 +106,3 @@ class AuthorizeQueryType(TypedDict, total=False):
     code_challenge : str
     code_challenge_method : str
     user : User
-

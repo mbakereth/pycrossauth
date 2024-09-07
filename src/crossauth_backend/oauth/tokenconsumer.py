@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from crossauth_backend.oauth.wellknown import OpenIdConfiguration
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.common.error import CrossauthError, ErrorCode
@@ -287,4 +288,3 @@ class OAuthTokenConsumer:
     async def _compact_verify(self, token: str, key: Any) -> bytes:
         # Implement the verification logic here
         return b""
-

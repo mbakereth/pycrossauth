@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from .common.error import ErrorCode, CrossauthError
 from .common.logger import CrossauthLogger, j
 from .common.jwt import JWT

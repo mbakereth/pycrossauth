@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from crossauth_backend.common.error import ErrorCode, CrossauthError
 from abc import ABC, abstractmethod
 from typing import TypedDict, List, Union, Optional, Any, Mapping, NotRequired, Dict
@@ -613,4 +614,3 @@ class OAuthAuthorizationStorage(ABC):
             authorizations (List[Optional[str]]): new set of authorized scopes, which may be empty
         """
         pass
-
