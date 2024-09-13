@@ -26,6 +26,7 @@ from .storage import UserStorageGetOptions, UserStorageOptions, UserStorage, \
     OAuthAuthorizationStorageOptions, OAuthAuthorizationStorage
 
 from .storageimpl.inmemorystorage import InMemoryKeyStorage
+from .storageimpl.dbconnection import DbPool, DbConnection, DbParameter
 
 __all__ = (
     "ErrorCode", "CrossauthError",
@@ -43,5 +44,6 @@ __all__ = (
     "KeyStorage", 
     "OAuthClientStorageOptions", "OAuthClientStorage", 
     "OAuthAuthorizationStorageOptions", "OAuthAuthorizationStorage",
-    "InMemoryKeyStorage"
+    "InMemoryKeyStorage",
+    "DbPool", "DbConnection", "DbParameter",
 )

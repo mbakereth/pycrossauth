@@ -4,4 +4,4 @@ jwcrypto
 pyjwt
 aiohttp
 pycryptodome
-
+psycopg
