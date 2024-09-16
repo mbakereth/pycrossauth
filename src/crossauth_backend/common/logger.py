@@ -143,7 +143,7 @@ def j(arg: Mapping[str, Any] | str) -> Dict[str, Any] | str:
     argcopy : Mapping[str,Any] = {}
     if (type(arg) == str):
         argcopy = {"msg": arg}
-    elif (type(arg) == Mapping):
+    elif (isinstance(arg, Mapping)):
         argcopy = {**arg}
     if isinstance(arg, dict) and "cerr" in arg and isinstance(arg["cerr"], CrossauthError):
         argcopy["error_code"] = arg["cerr"].code
@@ -157,7 +157,10 @@ def j(arg: Mapping[str, Any] | str) -> Dict[str, Any] | str:
         argcopy["error_code_name"] = arg["err"].code_name
         argcopy["http_status"] = arg["err"].http_status
         if "msg" not in argcopy:
-            argcopy["msg"] = argcopy["cerr"]["message"]
+            if ("cerr" in argcopy):
+                argcopy["msg"] = argcopy["cerr"]["message"]
+            elif ("err" in argcopy):
+                argcopy["msg"] = argcopy["err"]["message"]
         argcopy["stack"] = str(traceback.format_exception(arg["err"]))
 
     elif isinstance(arg, dict) and "err" in arg and isinstance(arg["err"], Exception):
@@ -172,5 +175,5 @@ def j(arg: Mapping[str, Any] | str) -> Dict[str, Any] | str:
     return json.dumps(argcopy)
 
 
-_crossauth_logger = CrossauthLogger(CrossauthLogger.NoLogging)
+_crossauth_logger = CrossauthLogger(None)
 _crossauth_logger_accepts_json = True

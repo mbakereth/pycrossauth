@@ -1,6 +1,6 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, LiteralString, Mapping
 
 class DbPool(ABC):
     def __init__(self):
@@ -19,12 +19,16 @@ class DbParameter(ABC):
         pass
 
     @abstractmethod
-    def next_parameter(self) -> str:
+    def next_parameter(self, value : Any) -> str:
+        pass
+
+    @abstractmethod
+    def values(self) -> Mapping[str,Any]|List[Any]:
         pass
 
 class DbConnection(ABC):
     @abstractmethod
-    async def execute(self, query: str, values: List[Any]) -> List[Dict[str, Any]]:
+    async def execute(self, select : bool, query: LiteralString, params: DbParameter|None) -> List[Dict[str, Any]]:
         pass
 
     @abstractmethod
@@ -40,6 +44,6 @@ class DbConnection(ABC):
         pass
 
     @abstractmethod
-    def release(self) -> None:
+    async def release(self) -> None:
         pass
 

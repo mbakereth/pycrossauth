@@ -5,3 +5,4 @@ pyjwt
 aiohttp
 pycryptodome
 psycopg
+psycopg_pool

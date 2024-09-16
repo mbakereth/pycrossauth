@@ -6,8 +6,6 @@ from crossauth_backend.common.error import CrossauthError, ErrorCode
 import json
 class in_memory_key_storage_test(unittest.IsolatedAsyncioTestCase):
 
-
-
     async def test_createAndDeleteSession(self):
         key = "ABCDEF123"
         key_storage = InMemoryKeyStorage()
