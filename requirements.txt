@@ -6,3 +6,4 @@ aiohttp
 pycryptodome
 psycopg
 psycopg_pool
+sqlalchemy[asyncio]

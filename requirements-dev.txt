@@ -1,2 +1,1 @@
-psycopg[binary]
 dotenv-cli

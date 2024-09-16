@@ -12,41 +12,6 @@ from enum import Enum
 
 # Assuming these are imported from other modules
 
-class DbPool(ABC):
-    @abstractmethod
-    def connect(self):
-        pass
-
-    @abstractmethod
-    def parameters(self):
-        pass
-
-class DbConnection(ABC):
-    @abstractmethod
-    def execute(self, query: str, values: List[Any] = []) -> List[Dict[str, Any]]:
-        pass
-
-    @abstractmethod
-    def release(self):
-        pass
-
-    @abstractmethod
-    def start_transaction(self):
-        pass
-
-    @abstractmethod
-    def commit(self):
-        pass
-
-    @abstractmethod
-    def rollback(self):
-        pass
-
-class DbParameter(ABC):
-    @abstractmethod
-    def next_parameter(self) -> str:
-        pass
-
 class SqlPoolOptions:
     def __init__(self, date_fields: Optional[List[str]] = None):
         self.date_fields = date_fields

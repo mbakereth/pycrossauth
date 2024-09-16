@@ -27,7 +27,7 @@ from .storage import UserStorageGetOptions, UserStorageOptions, UserStorage, \
 
 from .storageimpl.inmemorystorage import InMemoryKeyStorage
 from .storageimpl.dbconnection import DbPool, DbConnection, DbParameter
-from .storageimpl.dbstorage import DbKeyStorage, DbKeyStorageOptions
+from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeyStorageOptions
 
 __all__ = (
     "ErrorCode", "CrossauthError",
@@ -47,5 +47,5 @@ __all__ = (
     "OAuthAuthorizationStorageOptions", "OAuthAuthorizationStorage",
     "InMemoryKeyStorage",
     "DbPool", "DbConnection", "DbParameter",
-    "DbKeyStorage", "DbKeyStorageOptions",
+    "SqlAlchemyKeyStorage", "SqlAlchemyKeyStorageOptions",
 )
