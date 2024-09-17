@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 from crossauth_backend.storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncConnection
-from sqlalchemy import text, Row
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
 
 class SqlAlchemyKeyStorageTest(unittest.IsolatedAsyncioTestCase):
 
@@ -14,7 +14,7 @@ class SqlAlchemyKeyStorageTest(unittest.IsolatedAsyncioTestCase):
             os.environ["POSTGRES_URL"],
             echo=True
         )
-        async with engine.connect() as conn:
+        async with engine.begin() as conn:
             await conn.execute(text("DELETE from keys"))
         return engine
     
