@@ -7,9 +7,9 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, TypedDict, cast, Mapping
 from nulltype import Null, NullType
-import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 from sqlalchemy import text, Row
+from sqlalchemy.inspection import inspect
 
 class SqlAlchemyKeyStorageOptions(TypedDict, total=False):
     """
@@ -35,8 +35,9 @@ class SqlAlchemyKeyStorage(KeyStorage):
             return ret
         
     async def get_key_in_transaction(self, conn: AsyncConnection, keyValue: str) -> Key:
-        query = f"select * from {self.key_table} where value = :key";
-        values = {"key": keyValue};
+        query = f"select * from {self.key_table} where value = :key"
+        print(query)
+        values = {"key": keyValue}
         res = await conn.execute(text(query), values)
         row = res.fetchone()
         if (row is None):
@@ -45,8 +46,11 @@ class SqlAlchemyKeyStorage(KeyStorage):
 
         return self.make_key(row)
 
-    def make_key(self, row: Row) -> Key:
-        fields = dict(row.__dict__)
+    def to_dict(self, row : Row[Any], with_relationships:bool=True) -> dict[str,Any]:
+        return row._asdict() # type: ignore
+
+    def make_key(self, row: Row[Any]) -> Key:
+        fields = self.to_dict(row)
         value: str
         userid: Union[int, str, NullType] = Null
         created: datetime
@@ -88,7 +92,6 @@ class SqlAlchemyKeyStorage(KeyStorage):
                        expires: Optional[datetime] = None, 
                        data: Optional[str] = None,
                        extra_fields: Optional[Mapping[str, Any]] = None) -> None:
-        error: Optional[CrossauthError] = None
 
         fields = [self.userid_foreign_key_column, "value", "created", "expires", "data"]
         placeholders : list[str] = []
