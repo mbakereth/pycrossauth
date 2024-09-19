@@ -124,7 +124,7 @@ class Crypto:
 
     @staticmethod
     def random_value(length: int) -> str:
-        return base64.urlsafe_b64encode(secrets.token_bytes(length)).decode('utf-8')
+        return base64.urlsafe_b64encode(secrets.token_bytes(length)).decode('utf-8').replace("=", "")
 
     Base32 = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 

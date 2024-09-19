@@ -29,6 +29,7 @@ from .storageimpl.inmemorystorage import InMemoryKeyStorage
 from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeyStorageOptions
 
 from .cookieauth import DoubleSubmitCsrfToken, DoubleSubmitCsrfTokenOptions, SessionCookie, SessionCookieOptions
+from .session import SessionManager, SessionManagerOptions
 
 __all__ = (
     "ErrorCode", "CrossauthError",
@@ -49,5 +50,6 @@ __all__ = (
     "InMemoryKeyStorage",
     "SqlAlchemyKeyStorage", "SqlAlchemyKeyStorageOptions",
     "DoubleSubmitCsrfToken", "DoubleSubmitCsrfTokenOptions", 
-    "SessionCookie", "SessionCookieOptions"
+    "SessionCookie", "SessionCookieOptions",
+    "SessionManager", "SessionManagerOptions",
 )

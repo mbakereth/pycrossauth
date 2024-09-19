@@ -7,7 +7,7 @@ from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.storage import UserStorage, UserStorageGetOptions
 from typing import Dict, Any, TypedDict, Literal, NotRequired, Optional, Callable, NamedTuple
 from datetime import datetime, timedelta
-from nulltype import NullType
+from nulltype import NullType, Null
 CSRF_LENGTH = 16
 SESSIONID_LENGTH = 16
 
@@ -51,7 +51,7 @@ class DoubleSubmitCsrfToken:
         return Crypto.random_value(CSRF_LENGTH)
 
     def make_csrf_cookie(self, token: str) -> Cookie:
-        cookie_value = Crypto.sign({'v': token}, self.secret, "")
+        cookie_value = Crypto.sign_secure_token(token, self.secret)
         options : CookieOptions = {
             "path": self.path,
             "secure": self.secure,
@@ -65,7 +65,7 @@ class DoubleSubmitCsrfToken:
         return self.mask_csrf_token(token)
 
     def unsign_cookie(self, cookie_value: str) -> str:
-        return Crypto.unsign(cookie_value, self.secret)['v']
+        return Crypto.unsign_secure_token(cookie_value, self.secret)
 
     def make_csrf_cookie_string(self, cookie_value: str) -> str:
         cookie = f"{self.cookie_name}={cookie_value}; SameSite={self.sameSite}"
@@ -95,7 +95,7 @@ class DoubleSubmitCsrfToken:
     def validate_double_submit_csrf_token(self, cookie_value: str, form_or_header_value: str) -> None:
         form_or_header_token = self.unmask_csrf_token(form_or_header_value)
         try:
-            cookie_token = Crypto.unsign(cookie_value, self.secret)['v']
+            cookie_token = Crypto.unsign_secure_token(cookie_value, self.secret)
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             raise CrossauthError(ErrorCode.InvalidCsrf, "Invalid CSRF cookie")
@@ -105,9 +105,9 @@ class DoubleSubmitCsrfToken:
                                           "csrfCookieHash": Crypto.hash(cookie_value)}))
             raise CrossauthError(ErrorCode.InvalidCsrf)
 
-    def validate_csrf_cookie(self, cookie_value: str) -> None:
+    def validate_csrf_cookie(self, cookie_value: str) -> str:
         try:
-            return Crypto.unsign(cookie_value, self.secret)['v']
+            return Crypto.unsign_secure_token(cookie_value, self.secret)
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             raise CrossauthError(ErrorCode.InvalidCsrf, "Invalid CSRF cookie")
@@ -203,7 +203,7 @@ class SessionCookie:
     def hash_session_id(session_id: str) -> str:
         return KeyPrefix.session + Crypto.hash(session_id)
 
-    async def create_session_key(self, userid: str | int | None, extra_fields: Optional[Dict[str, Any]] = None) -> CookieReturn:
+    async def create_session_key(self, userid: str | int | None, extra_fields: Optional[Dict[str, Any]] = None) -> Key:
         if extra_fields is None:
             extra_fields = {}
         max_tries = 10
@@ -232,17 +232,23 @@ class SessionCookie:
                     CrossauthLogger.logger().debug({"err": e})
                     raise e
 
-        return CookieReturn(userid, session_id, date_created, expires)
+        key : Key = {
+            "value": session_id,
+            "created": date_created,
+            "expires": expires or Null,
+        }
+        if (userid is not None): key["userid"] = userid
+        return key
 
-    def make_cookie(self, session_key: Dict[str, Any], persist: Optional[bool] = None) -> Dict[str, Any]:
-        signed_value = Crypto.sign({'v': session_key['value']}, self._secret, "")
-        options = {}
+    def make_cookie(self, session_key: Key, persist: Optional[bool] = None) -> Cookie:
+        signed_value = Crypto.sign_secure_token( session_key['value'], self._secret)
+        options : CookieOptions = {}
         if persist is None:
             persist = self.persist
         if self.domain:
             options['domain'] = self.domain
-        if session_key.get('expires') and persist:
-            options['expires'] = session_key['expires']
+        if 'expires' in session_key and type(session_key['expires']) != NullType and persist:
+            options['expires'] = session_key['expires'] # type: ignore
         if self.path:
             options['path'] = self.path
         options['sameSite'] = self.sameSite
@@ -280,9 +286,9 @@ class SessionCookie:
         await self.key_storage.update_key(session_key)
 
     def unsign_cookie(self, cookie_value: str) -> str:
-        return Crypto.unsign(cookie_value, self._secret)['v']
+        return Crypto.unsign_secure_token(cookie_value, self._secret)
 
-    async def get_user_for_session_id(self, session_id: str, options: UserStorageGetOptions = {}) -> Dict[str, Any]:
+    async def get_user_for_session_id(self, session_id: str, options: UserStorageGetOptions = {}):
         key = await self.get_session_key(session_id)
         if not self.user_storage:
             return {'key': key, 'user': None}

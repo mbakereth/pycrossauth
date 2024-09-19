@@ -115,6 +115,21 @@ class UserInputFields(TypedDict):
     """
     admin : NotRequired[bool]
 
+    """
+    Factor for primary authentication.
+
+    Should match the name of an authenticator
+    """
+    factor1 : str
+
+    """
+    Factor for second factor authentication.
+
+    Should match the name of an authenticator
+    """
+    factor2 : NotRequired[str]
+
+
 class PartialUserInputFields(TypedDict, total=False):
     """
     Same as UserInputFields but all fields are not required
@@ -124,6 +139,8 @@ class PartialUserInputFields(TypedDict, total=False):
     state : str
     email : NotRequired[str]
     admin : NotRequired[bool]
+    factor1 : NotRequired[str]
+    factor2 : NotRequired[str]
 
 class PartialUser(PartialUserInputFields, total=False):
     """
