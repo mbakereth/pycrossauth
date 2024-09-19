@@ -16,15 +16,18 @@ class SqlAlchemyKeyStorageOptions(TypedDict, total=False):
 
     See :func: DbKeyStorage__init__ for detauls
     """
-    key_table : str
-    userid_foreign_key_column : str
+
+    __key_table : str
+    __userid_foreign_key_column : str
 
 class SqlAlchemyKeyStorage(KeyStorage):
+
+
     def __init__(self, engine : AsyncEngine, options: SqlAlchemyKeyStorageOptions = {}):
-        self.key_table = "keys"
+        self.__key_table = "keys"
         self.engine = engine
-        self.userid_foreign_key_column = "userid"
-        set_parameter("key_table", ParamType.Number, self, options, "KEY_TABLE")
+        self.__userid_foreign_key_column = "userid"
+        set_parameter("key_table", ParamType.Number, self, options, "KEY_STORAGE_TABLE")
         set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
 
     async def get_key(self, key: str) -> Key:
@@ -34,8 +37,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
             return ret
         
     async def get_key_in_transaction(self, conn: AsyncConnection, keyValue: str) -> Key:
-        query = f"select * from {self.key_table} where value = :key"
-        print(query)
+        query = f"select * from {self.__key_table} where value = :key"
         values = {"key": keyValue}
         res = await conn.execute(text(query), values)
         row = res.fetchone()
@@ -55,10 +57,10 @@ class SqlAlchemyKeyStorage(KeyStorage):
         created: datetime
         expires: datetime|NullType = Null
 
-        if self.userid_foreign_key_column in fields:
-            userid = fields[self.userid_foreign_key_column]
-            if self.userid_foreign_key_column != "userid":
-                del fields[self.userid_foreign_key_column]
+        if self.__userid_foreign_key_column in fields:
+            userid = fields[self.__userid_foreign_key_column]
+            if self.__userid_foreign_key_column != "userid":
+                del fields[self.__userid_foreign_key_column]
 
         if "value" in fields:
             value = fields["value"]
@@ -92,7 +94,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
                        data: Optional[str] = None,
                        extra_fields: Optional[Mapping[str, Any]] = None) -> None:
 
-        fields = [self.userid_foreign_key_column, "value", "created", "expires", "data"]
+        fields = [self.__userid_foreign_key_column, "value", "created", "expires", "data"]
         placeholders : list[str] = []
         values : dict[str,Any] = {}
         placeholders.append(":userid")
@@ -112,14 +114,14 @@ class SqlAlchemyKeyStorage(KeyStorage):
                 values[field] = extra_fields[field]
         fieldsString = ", ".join(fields)
         placeholdersString = ", ".join(placeholders)
-        query = f"insert into {self.key_table} ({fieldsString}) values ({placeholdersString})"
+        query = f"insert into {self.__key_table} ({fieldsString}) values ({placeholdersString})"
         CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values)
 
     async def delete_key(self, value: str) -> None:
 
-        query = f"delete from {self.key_table} where value = :value"
+        query = f"delete from {self.__key_table} where value = :value"
         values = {"value": value}
         CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
@@ -131,10 +133,10 @@ class SqlAlchemyKeyStorage(KeyStorage):
         exceptClause = ""
         values : dict[str, Any] = {}
         if userid:
-            query = f"delete from {self.key_table} where {self.userid_foreign_key_column} = :userid and value like :value"
+            query = f"delete from {self.__key_table} where {self.__userid_foreign_key_column} = :userid and value like :value"
             values = {"userid": userid, "value": prefix + "%"}
         else:
-            query = f"delete from {self.key_table} where {self.userid_foreign_key_column} is null and value like :value"
+            query = f"delete from {self.__key_table} where {self.__userid_foreign_key_column} is null and value like :value"
             values = {"value": prefix + "%"}
 
         if except_key:
@@ -152,7 +154,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
         andClause: List[str] = []
         values : dict[str,Any] = {}
         for entry in key:
-            column = entry if entry == "userid" else self.userid_foreign_key_column
+            column = entry if entry == "userid" else self.__userid_foreign_key_column
             value : Any = key[entry]
             if value is None:
                 andClause.append(f"{column} is null")
@@ -161,7 +163,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
                 values[entry] = key[entry]
 
         andString = " and ".join(andClause)
-        query = f"delete from {self.key_table} where {andString}"
+        query = f"delete from {self.__key_table} where {andString}"
         CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
@@ -173,9 +175,9 @@ class SqlAlchemyKeyStorage(KeyStorage):
         if userid:
             values["userid"] = userid
             values["value"] = prefix + "%"
-            query = f"delete from {self.key_table} where {self.userid_foreign_key_column} = :userid and value like :value"
+            query = f"delete from {self.__key_table} where {self.__userid_foreign_key_column} = :userid and value like :value"
         else:
-            query = f"delete from {self.key_table} where {self.userid_foreign_key_column} is null and value like :value"
+            query = f"delete from {self.__key_table} where {self.__userid_foreign_key_column} is null and value like :value"
             values["value"] = prefix + "%"
 
         CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
@@ -188,10 +190,10 @@ class SqlAlchemyKeyStorage(KeyStorage):
         query: str
         values : dict[str,Any] = {}
         if userid:
-            query = f"select * from {self.key_table} where {self.userid_foreign_key_column} = :userid"
+            query = f"select * from {self.__key_table} where {self.__userid_foreign_key_column} = :userid"
             values["userid"] = userid
         else:
-            query = f"select * from {self.key_table} where {self.userid_foreign_key_column} is null"
+            query = f"select * from {self.__key_table} where {self.__userid_foreign_key_column} is null"
 
         CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
@@ -202,9 +204,9 @@ class SqlAlchemyKeyStorage(KeyStorage):
 
         for row in rows:
             key: Key = self.make_key(row)
-            if self.userid_foreign_key_column != "userid":
-                key["userid"] = key[self.userid_foreign_key_column]
-                del key[self.userid_foreign_key_column]
+            if self.__userid_foreign_key_column != "userid":
+                key["userid"] = key[self.__userid_foreign_key_column]
+                del key[self.__userid_foreign_key_column]
             returnKeys.append(key)
 
         return returnKeys
@@ -224,14 +226,14 @@ class SqlAlchemyKeyStorage(KeyStorage):
         values : dict[str,Any] = {}
         for field in keyData:
             dbField = field
-            if keyData[field] is not None and field == "userid" and self.userid_foreign_key_column != "userid":
-                dbField = self.userid_foreign_key_column
+            if keyData[field] is not None and field == "userid" and self.__userid_foreign_key_column != "userid":
+                dbField = self.__userid_foreign_key_column
             values[dbField] = keyData[dbField]
             setFields.append(f"{field} = :{dbField}")
 
         if len(setFields) > 0:
             setString = ", ".join(setFields)
-            query = f"update {self.key_table} set {setString} where value = :value"
+            query = f"update {self.__key_table} set {setString} where value = :value"
             values["value"] = key["value"]
             CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
             await conn.execute(text(query), values) 

@@ -1,6 +1,6 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple, Union, TypedDict, Any, Mapping
+from typing import Dict, List, Optional, TypedDict, Any
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.interfaces import Key, User, UserSecretsInputFields, UserInputFields
 
@@ -8,6 +8,7 @@ class AuthenticationParameters(UserSecretsInputFields, total=False):
     """ Parameters needed for this this class to authenticator a user (besides username)
         An example is `password`
     """
+
     otp: str
 
 class AuthenticationOptions(TypedDict, total=False):
@@ -15,10 +16,10 @@ class AuthenticationOptions(TypedDict, total=False):
     Options to pass to the constructor.
     """
 
+    friendly_name: str
     """ If passed, this is what will be displayed to the user when selecting
         an authentication method.
     """
-    friendly_name: str
 
 class AuthenticatorCapabilities(TypedDict, total=True):
     can_create_user: bool
@@ -31,14 +32,16 @@ class Authenticator(ABC):
 
     Subclass this if you want something other than PBKDF2 password hashing.
     """
+
     friendly_name: str
     factor_name: str = ""
 
     def __init__(self, options: AuthenticationOptions = {}):
         """
         Constructor.
-        :param AuthenticationOptions options:  see :class: AuthenticationOptions
+        :param AuthenticationOptions options:  see :class:`AuthenticationOptions`
         """
+
         if "friendly_name" not in options:
             raise CrossauthError(ErrorCode.Configuration, "Authenticator must have a friendly name")
         self.friendly_name = options["friendly_name"]
@@ -110,6 +113,10 @@ class Authenticator(ABC):
         )
 
 class PasswordAuthenticator(Authenticator):
+    """
+    base class for authenticators that validate passwords
+    """
+
     def secret_names(self) -> List[str]:
         return ["password"]
 

@@ -8,6 +8,11 @@ import json
 from nulltype import Null, NullType
 
 class ParamType(Enum):
+    """
+    Type of parameter that can be parsed from an option value or 
+    environment variable
+    """
+
     String = auto()
     Number = auto()
     Boolean = auto()
@@ -78,26 +83,24 @@ def set_parameter(param: str,
     variable exists, it is set from that. Otherwise, the instance variable
     is not updated.
     
-    Args:
-        :param str param: The name of the parameter in the options variable and the
-               name of the variable in the instance.
-        :param ParamType param_type: The type of variable. If the value is `JsonArray` or `Json`,
-                    both the option and the environment variable value should be a
-                    string, which will be parsed.
-        :param Any instance: Options present in the `options` or environment variables
-                  will be set on a corresponding instance variable in this
-                  class or object.
-        :param Dict[str, Any] options: Object containing options as key/value pairs.
-        :param str env_name: Name of environment variable.
-        :param bool required: If true, an exception will be thrown if the variable is 
-                  not present in `options` or the environment variable.
-        :param bool public: If false, `_` will be prepended to the field nam,e
-                  in the target.  Default False.
-        :param bool protected: If true, `__` will be prepended to the field nam,e
-                  in the target.  Default False.  Don't use this and `public` together.
+    :param str param: The name of the parameter in the options variable and the
+            name of the variable in the instance.
+    :param ParamType param_type: The type of variable. If the value is `JsonArray` or `Json`,
+                both the option and the environment variable value should be a
+                string, which will be parsed.
+    :param Any instance: Options present in the `options` or environment variables
+                will be set on a corresponding instance variable in this
+                class or object.
+    :param Dict[str, Any] options: Object containing options as key/value pairs.
+    :param str env_name: Name of environment variable.
+    :param bool required: If true, an exception will be thrown if the variable is 
+                not present in `options` or the environment variable.
+    :param bool public: If false, `_` will be prepended to the field nam,e
+                in the target.  Default False.
+    :param bool protected: If true, `__` will be prepended to the field nam,e
+                in the target.  Default False.  Don't use this and `public` together.
     
-    Raises:
-        CrossauthError: With ErrorCode.Configuration if `required`
+    :raises: :class:`CrossauthError`: with :class:`ErrorCode` Configuration if `required`
                         is set but the option was not present, or if there was a parsing
                         error.
     """
@@ -107,9 +110,9 @@ def set_parameter(param: str,
         raise CrossauthError(ErrorCode.Configuration, f"{param} is required")
     
     if has_option(param, options):
-        set_from_option(instance, param, options, public=public)
+        set_from_option(instance, param, options, public=public, protected=protected)
     elif env_name and name_in_env_file in os.environ and name_in_env_file is not None:
-        set_from_env(instance, param, param_type, name_in_env_file, public=public)
+        set_from_env(instance, param, param_type, name_in_env_file, public=public, protected=protected)
 
 T = TypeVar('T')
 

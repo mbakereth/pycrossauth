@@ -20,44 +20,44 @@ class OAuthFlows:
     Crossauth allows you to define which flows are valid for a given client.
     """
 
-    """ All flows are allowed """
     All = "all"
+    """ All flows are allowed """
 
-    """ OAuth authorization code flow (without PKCE) """
     AuthorizationCode = "authorizationCode"
+    """ OAuth authorization code flow (without PKCE) """
 
-    """ OAuth authorization code flow with PKCE """
     AuthorizationCodeWithPKCE = "authorizationCodeWithPKCE"
+    """ OAuth authorization code flow with PKCE """
 
-    """ Auth client credentials flow """
     ClientCredentials = "clientCredentials"
+    """ Auth client credentials flow """
 
+    refresh_token = "refresh_token"
     """ OAuth refresh token flow """
-    RefreshToken = "refreshToken"
 
+    device_code = "device_code"
     """ OAuth device code flow """
-    DeviceCode = "deviceCode"
 
-    """ OAuth password flow """
     Password = "password"
+    """ OAuth password flow """
 
-    """ The Auth0 password MFA extension to the password flow """
     PasswordMfa = "passwordMfa"
+    """ The Auth0 password MFA extension to the password flow """
 
-    """ The OpenID Connect authorization code flow, with or without PKCE """
     OidcAuthorizationCode = "oidcAuthorizationCode"
+    """ The OpenID Connect authorization code flow, with or without PKCE """
 
-    """ A user friendly name for the given flow ID """
     flow_name = {
         AuthorizationCode: "Authorization Code",
         AuthorizationCodeWithPKCE: "Authorization Code with PKCE",
         ClientCredentials: "Client Credentials",
-        RefreshToken: "Refresh Token",
-        DeviceCode: "Device Code",
+        refresh_token: "Refresh Token",
+        device_code: "Device Code",
         Password: "Password",
         PasswordMfa: "Password MFA",
         OidcAuthorizationCode: "OIDC Authorization Code",
     }
+    """ A user friendly name for the given flow ID """
 
     @staticmethod
     def flow_names(flows: List[str]) -> Dict[str, str]:
@@ -68,6 +68,7 @@ class OAuthFlows:
         :param List[str] flows: the flows to return the names of
         :return: a dictionary of strs
         """
+
         return {flow: OAuthFlows.flow_name[flow] for flow in flows if flow in OAuthFlows.flow_name}
 
     @staticmethod
@@ -77,6 +78,7 @@ class OAuthFlows:
         :param str flow: the flow to check
         :return: true or false.
         """
+
         return flow in OAuthFlows.all_flows()
 
     @staticmethod
@@ -86,16 +88,19 @@ class OAuthFlows:
         :param List[str] flows: the flows to check
         :return: true or false.
         """
+
         return all(OAuthFlows.is_valid_flow(flow) for flow in flows)
 
     @staticmethod
     def all_flows() -> List[str]:
+        """ Returns a lsit of all possible OAuth flows """
+
         return [
             OAuthFlows.AuthorizationCode,
             OAuthFlows.AuthorizationCodeWithPKCE,
             OAuthFlows.ClientCredentials,
-            OAuthFlows.RefreshToken,
-            OAuthFlows.DeviceCode,
+            OAuthFlows.refresh_token,
+            OAuthFlows.device_code,
             OAuthFlows.Password,
             OAuthFlows.PasswordMfa,
             OAuthFlows.OidcAuthorizationCode,
@@ -109,6 +114,7 @@ class OAuthFlows:
         :param str oauthFlow: the flow to get the grant type for.
         :return: a list of grant type strs or None
         """
+
         match oauthFlow:
             case  OAuthFlows.AuthorizationCode: 
                 return ["authorization_code"]
@@ -118,13 +124,13 @@ class OAuthFlows:
                 return ["authorization_code"]
             case OAuthFlows.ClientCredentials: 
                 return ["client_credentials"]
-            case OAuthFlows.RefreshToken: 
+            case OAuthFlows.refresh_token: 
                 return ["refresh_token"]
             case OAuthFlows.Password: 
                 return ["password"]
             case OAuthFlows.PasswordMfa: 
                 return ["http://auth0.com/oauth/grant-type/mfa-otp", "http://auth0.com/oauth/grant-type/mfa-oob"]
-            case OAuthFlows.DeviceCode: 
+            case OAuthFlows.device_code: 
                 return ["urn:ietf:params:oauth:grant-type:device_code"]
             case _:
                 raise CrossauthError(ErrorCode.BadRequest, "Invalid OAuth flow " + oauthFlow)
@@ -200,43 +206,43 @@ class OAuthDeviceResponse(TypedDict, total=False):
 class OAuthClientOptions(OAuthTokenConsumerOptions, total=False):
     """ Options for :class: OAuthClientBase """
 
+    state_length : int
     """ Length of random state variable for passing to `authorize` endpoint
         (before bsae64-url-encoding)
     """
-    state_length : int
 
+    verifier_length : int
     """ Length of random code verifier to generate 
         (before bsae64-url-encoding) 
     """
-    verifier_length : int
 
+    client_id : str
     """
         Client ID for this client
     """
-    client_id : str
 
+    client_secret : str
     """
         Client secret for this client (can be undefined for no secret)
     """
-    client_secret : str
 
+    redirect_uri : str
     """
         Redirect URI to send in `authorize` requests
     """
-    redirect_uri : str
 
+    code_challenge_method : Literal["plain",  "S256"]
     """
         Type of code challenge for PKCE
     """
-    code_challenge_method : Literal["plain",  "S256"]
 
+    device_authorization_url : str
     """
         URL to call for the device_authorization endpoint, relative to
         the `auth_server_base_url`.
         
         Default `device_authorization`
     """
-    device_authorization_url : str
 
 class OAuthClient:
     """
@@ -245,7 +251,7 @@ class OAuthClient:
     Flows supported are Authorization Code Flow with and without PKCE,
     Client Credentials, Refresh Token, Password and Password MFA.  The
     latter is defined at
-    {@link https://auth0.com/docs/secure/multi-factor-authentication/multi-factor-authentication-factors}.
+    [auth0.com](https://auth0.com/docs/secure/multi-factor-authentication/multi-factor-authentication-factors).
 
     It also supports the OpenID Connect Authorization Code Flow, with and 
     without PKCE.
@@ -261,6 +267,7 @@ class OAuthClient:
               does not match this, it is rejected.
         :param OAuthClientOptions options: see :class: OAuthClientOptions
         """
+
         self._session = aiohttp.ClientSession() 
         self._verifier_length = 32
         self._state_length = 32
@@ -305,6 +312,7 @@ class OAuthClient:
            :attr: crossauth_backend.ErrorCode.Connection if data from the URL 
                   could not be fetched or parsed.
         """
+
         if oidc_config:
             CrossauthLogger.logger().debug(j({"msg": "Reading OIDC config locally"}))
             self._oidc_config = oidc_config
@@ -345,6 +353,7 @@ class OAuthClient:
         @param length the length of the random array before base64-url-encoding.
         @returns the random value as a Base64-url-encoded srting
         """
+
         return Crypto.random_value(length);
 
     @abstractmethod
@@ -354,9 +363,17 @@ class OAuthClient:
         @param plaintext the text to encode
         @returns the SHA256 hash, Base64-url-encode
         """
+
         return Crypto.sha256(plaintext)
 
     async def start_authorization_code_flow(self, scope : str | None = None, pkce : bool = False):
+        """
+        Initiates the authorization code flow
+
+        :param str|None scope:, which can be None
+        :param bool pkce: if True, start the flow with PKCE (for public clients). Default False
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Starting authorization code flow"}))
         if self._oidc_config is None:
             await self.load_config()
@@ -398,6 +415,16 @@ class OAuthClient:
         return {"url": url}
 
     async def redirect_endpoint(self, code : str|None = None, state : str|None = None, error : str|None =None, error_description : str|None=None) -> OAuthTokenResponse:
+        """
+        For calling in a Redirect Uri endpoint
+
+        :param str|None code: the authorization code 
+        :param str|None the state, if one is used by the authorization server
+        :param str|None any error: error message returned by the authorization server.  It is passed through in the returned value
+        :param str|None any error_description: error description returned by the authorization server.  It is passed through in the returned value
+        :return: an OAuth token endpoint response
+        """
+
         if not self.oidc_config: 
             await self.load_config()
         if error is not None or not code:
@@ -433,7 +460,7 @@ class OAuthClient:
             params["client_secret"] = client_secret
         params["code_verifier"] = self._code_verifier
         try:
-            return cast(OAuthTokenResponse, await self.post(url, params, self._auth_server_headers)) 
+            return cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers)) 
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -442,6 +469,13 @@ class OAuthClient:
             }
 
     async def client_credentials_flow(self, scope : str|None = None) -> OAuthTokenResponse:
+        """
+        Start the client credentials flow
+
+        :param str|None scope:, which can be None
+        :return: an OAuth token endpoint response
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Starting client credentials flow"}))
         if not self.oidc_config:
             await self.load_config()
@@ -470,7 +504,7 @@ class OAuthClient:
         if scope:
             params["scope"] = scope
         try:
-            return cast(OAuthTokenResponse, await self.post(url, params, self._auth_server_headers)) 
+            return cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers)) 
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -479,6 +513,15 @@ class OAuthClient:
             }
 
     async def password_flow(self, username : str, password : str, scope : str|None = None)  -> OAuthTokenResponse:
+        """
+        Start the password flow
+
+        :param str username:, user's username
+        :param str password:, user's plaintext password
+        :param str|None scope:, which can be None
+        :return: an OAuth token endpoint response
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Starting password flow"}))
         if not self.oidc_config:
             await self.load_config()
@@ -509,7 +552,7 @@ class OAuthClient:
         if scope:
             params["scope"] = scope
         try:
-            return cast(OAuthTokenResponse, await self.post(url, params, self._auth_server_headers))
+            return cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers))
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -518,6 +561,14 @@ class OAuthClient:
             }
 
     async def mfa_authenticators(self, mfa_token: str) -> OAuthMfaAuthenticatorsResponse :
+        """
+        Fields that canb be returned by the `mfaAuthenticators` function call
+        See Auth0's documentation for the password MFA flow.
+
+        :param str mfa_token:, The MFA token returned when the flow was initiated
+        :return: See :class:`OAuthMfaAuthenticatorsResponse`
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Getting valid MFA authenticators"}))
         if self._oidc_config is None:
             await self.load_config()
@@ -534,7 +585,7 @@ class OAuthClient:
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
         url = f"{self.oidc_config['issuer']}/mfa/authenticators" if self.oidc_config['issuer'].endswith("/") else f"{self.oidc_config['issuer']}/mfa/authenticators"
-        resp = await self.get(url, {'authorization': f'Bearer {mfa_token}', **self._auth_server_headers})
+        resp = await self._get(url, {'authorization': f'Bearer {mfa_token}', **self._auth_server_headers})
         if not isinstance(resp, list):
             return {
                 "error": "server_error",
@@ -557,6 +608,19 @@ class OAuthClient:
         return {"authenticators": authenticators}
 
     async def mfa_otp_request(self, mfa_token: str, authenticator_id: str) -> OAuthMfaChallengeResponse:
+        """
+        This is part of the Auth0 Password MFA flow.  Once the client has
+        received a list of valid authenticators, if it wishes to initiate
+        OTP, call this function
+        
+        Does not throw exceptions.
+        
+        :param str mfa_token: the MFA token that was returned by the authorization
+            server in the response from the Password Flow.
+        :param str authenticator_id: the authenticator ID, as returned in the response
+        from the :func:`mfaAuthenticators` request.
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Making MFA OTB request"}))
         if not self.oidc_config:
             await self.load_config()
@@ -571,7 +635,7 @@ class OAuthClient:
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
         url = f"{self.oidc_config['issuer']}/mfa/challenge" if self.oidc_config['issuer'].endswith("/") else f"{self.oidc_config['issuer']}/mfa/challenge"
-        resp = await self.post(url, {
+        resp = await self._post(url, {
             "client_id": self._client_id,
             "client_secret": self._client_secret,
             "challenge_type": "otp",
@@ -587,6 +651,25 @@ class OAuthClient:
         return cast(OAuthMfaChallengeResponse, resp) 
 
     async def mfa_otp_complete(self, mfa_token: str, otp: str, scope: Optional[str] = None) -> OAuthTokenResponse:
+        """
+        Completes the Password MFA OTP flow.
+
+        :param str mfa_token: the MFA token that was returned by the authorization
+               server in the response from the Password Flow.
+        :param str otp: the OTP entered by the user
+        :return: an object with some of the following fields, depending on
+                 authorization server configuration and whether there were
+                 errors:
+          - `access_token` an OAuth access token
+          - `refresh_token` an OAuth access token
+          - `id_token` an OpenID Connect ID token
+          - `expires_in` number of seconds when the access token expires
+          - `scope` the scopes the user authorized
+          - `token_type` the OAuth token type
+          - `error` as per Auth0 Password MFA documentation
+          - `error_description` friendly error message
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Completing MFA OTP request"}))
         if self._oidc_config is None:
             await self.load_config()
@@ -601,7 +684,7 @@ class OAuthClient:
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
         otpUrl = self.oidc_config["token_endpoint"]
-        otpResp = await self.post(otpUrl, {
+        otpResp = await self._post(otpUrl, {
             "grant_type": "http://auth0.com/oauth/grant-type/mfa-otp",
             "client_id": self._client_id,
             "client_secret": self._client_secret,
@@ -622,6 +705,25 @@ class OAuthClient:
         })
 
     async def mfa_oob_request(self, mfa_token: str, authenticator_id: str) -> OAuthMfaAuthenticatorsResponse:
+        """
+        This is part of the Auth0 Password MFA flow.  Once the client has
+        received a list of valid authenticators, if it wishes to initiate
+        OOB (out of band) login, call this function
+        
+        Does not throw exceptions.
+        
+        :param str mfa_token: the MFA token that was returned by the authorization
+               server in the response from the Password Flow.
+        :param str authenticator_id: the authenticator ID, as returned in the response
+        from the :func:`mfa_authenticators` request.
+        :return: an object with one or more of the following defined:
+          - `challenge_type` as per the Auth0 MFA documentation
+          - `oob_code` as per the Auth0 MFA documentation
+          - `binding_method` as per the Auth0 MFA documentation
+          - `error` as per Auth0 Password MFA documentation
+          - `error_description` friendly error message
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Making MFA OOB request"}))
         if self._oidc_config is None:
             await self.load_config()
@@ -636,7 +738,7 @@ class OAuthClient:
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
         url = f"{self.oidc_config['issuer']}/mfa/challenge" if self.oidc_config['issuer'].endswith("/") else f"{self.oidc_config['issuer']}/mfa/challenge"
-        resp = await self.post(url, {
+        resp = await self._post(url, {
             "client_id": self._client_id,
             "client_secret": self._client_secret,
             "challenge_type": "oob",
@@ -658,6 +760,18 @@ class OAuthClient:
         }) 
 
     async def mfa_oob_complete(self, mfa_token: str, oobCode: str, bindingCode: str, scope: Optional[str] = None) -> OAuthTokenResponse:
+        """
+        Completes the Password MFA OTP flow.
+        
+        Does not throw exceptions.
+        
+        :param str mfa_token: the MFA token that was returned by the authorization
+               server in the response from the Password Flow.
+        :param oob_code: the code entered by the user
+        :return: an :class:`OAuthTokenResponse` object, which may contain
+                 an error instead of the response fields.
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Completing MFA OOB request"}))
         if self._oidc_config is None:
             await self.load_config()
@@ -672,7 +786,7 @@ class OAuthClient:
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
         url = self.oidc_config["token_endpoint"]
-        resp = await self.post(url, {
+        resp = await self._post(url, {
             "grant_type": "http://auth0.com/oauth/grant-type/mfa-oob",
             "client_id": self._client_id,
             "client_secret": self._client_secret,
@@ -696,7 +810,14 @@ class OAuthClient:
             "token_type": resp.get("token_type"),
         })
 
-    async def refresh_token_flow(self, refreshToken: str) -> OAuthTokenResponse:
+    async def refresh_token_flow(self, refresh_token: str) -> OAuthTokenResponse:
+        """
+        Starts the refresh token flow
+
+        :param str refresh_token: the refresh token to exchange
+        :return: a :class:`OAuthTokenResponse?  response
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Starting refresh token flow"}))
         if self._oidc_config is None:
             await self.load_config()
@@ -719,13 +840,13 @@ class OAuthClient:
 
         params = {
             "grant_type": "refresh_token",
-            "refresh_token": refreshToken,
+            "refresh_token": refresh_token,
             "client_id": self._client_id,
         }
         if client_secret:
             params["client_secret"] = client_secret
         try:
-            return cast(OAuthTokenResponse, await self.post(url, params, self._auth_server_headers))
+            return cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers))
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -734,6 +855,14 @@ class OAuthClient:
             }
 
     async def start_device_code_flow(self, url: str, scope: Optional[str] = None) -> OAuthDeviceAuthorizationResponse:
+
+        """
+        Starts the Device Code Flow on the primary device (the one wanting an access token)
+        :param str url: The URl for the device_authorization endpoint, as it is not defined in the OIDC configuration
+        :param str|None scope: optional scope to request authorization for
+        :return: See :class:`OAuthDeviceAuthorizationResponse`
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Starting device code flow"}))
         if self._oidc_config is None:
             await self.load_config()
@@ -753,7 +882,7 @@ class OAuthClient:
         if scope:
             params["scope"] = scope
         try:
-            return cast(OAuthDeviceAuthorizationResponse, await self.post(url, params, self._auth_server_headers))
+            return cast(OAuthDeviceAuthorizationResponse, await self._post(url, params, self._auth_server_headers))
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -761,7 +890,15 @@ class OAuthClient:
                 "error_description": "Error connecting to authorization server"
             }
 
-    async def poll_device_code_flow(self, deviceCode: str) -> OAuthDeviceResponse:
+    async def poll_device_code_flow(self, device_code: str) -> OAuthDeviceResponse:
+        """
+        Polls the device endpoint to check if the device code flow has been
+        authorized by the user.
+        
+        :param str device_code: the device code to poll
+        :return: See :class:`OAuthDeviceResponse`
+        """
+
         CrossauthLogger.logger().debug(j({"msg": "Starting device code flow"}))
         if self._oidc_config is None:
             await self.load_config()
@@ -782,10 +919,10 @@ class OAuthClient:
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             "client_id": self._client_id,
             "client_secret": self._client_secret,
-            "device_code": deviceCode,
+            "device_code": device_code,
         }
         try:
-            resp = await self.post(self.oidc_config["token_endpoint"], params, self._auth_server_headers)
+            resp = await self._post(self.oidc_config["token_endpoint"], params, self._auth_server_headers)
             return cast(OAuthDeviceResponse, resp)
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
@@ -794,7 +931,7 @@ class OAuthClient:
                 "error_description": "Error connecting to authorization server"
             }
 
-    async def post(self, url: str, params: Mapping[str, Any], headers: Dict[str, Any] = {}) -> Mapping[str, Any]:
+    async def _post(self, url: str, params: Mapping[str, Any], headers: Dict[str, Any] = {}) -> Mapping[str, Any]:
         CrossauthLogger.logger().debug(j({
             "msg": "Fetch POST",
             "url": url,
@@ -812,7 +949,7 @@ class OAuthClient:
         })
         return await resp.json()
 
-    async def get(self, url: str, headers: Mapping[str, Any] = {}) -> Mapping[str, Any] | List[Any]:
+    async def _get(self, url: str, headers: Mapping[str, Any] = {}) -> Mapping[str, Any] | List[Any]:
         CrossauthLogger.logger().debug(j({"msg": "Fetch GET", "url": url}))
         options = {}
         if self._auth_server_credentials:
@@ -838,6 +975,7 @@ class OAuthClient:
         :returns
             the parsed payload or None if the token is invalid.
         """
+
         try:
             return await self._token_consumer.token_authorized(token, "id")
         except Exception:
@@ -851,6 +989,7 @@ class OAuthClient:
         
         :returns the parsed JSON of the payload, or None if it is not valid.
         """
+
         try:
             return await self._token_consumer.token_authorized(id_token, "id")
         except Exception as e:
@@ -858,5 +997,9 @@ class OAuthClient:
             return None
 
     def get_token_payload(self, token: str) -> Dict[str, Any]:
+        """
+        Validates a token and, if valid, returns the payload
+        """
+        
         return jwt.decode(token, options={"verify_signature": False}) 
     

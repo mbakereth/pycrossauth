@@ -60,10 +60,6 @@ class Jwks(TypedDict):
     keys: list[JWK]
 
 
-"""
-   This is the detault configuration for 
-   :class: OAuthAuthorizationServer.
-"""
 DEFAULT_OIDCCONFIG : OpenIdConfiguration = {
     'issuer': "",
     'authorization_endpoint': "",
@@ -80,6 +76,10 @@ DEFAULT_OIDCCONFIG : OpenIdConfiguration = {
     'request_uri_parameter_supported' : True,
     'require_request_uri_registration' : False,
 }
+"""
+   This is the detault configuration for 
+   :class: OAuthAuthorizationServer.
+"""
 
 class TokenBodyType(TypedDict, total=False):
     grant_type : Required[str]

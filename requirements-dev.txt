@@ -1,1 +1,4 @@
 dotenv-cli
+sphinx
+sphinx_rtd_theme
+myst-parser

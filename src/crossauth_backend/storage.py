@@ -20,46 +20,46 @@ class UserStorageGetOptions(TypedDict, total=False):
     Passed to get methods :class: UserStorage.
     """
 
+    skipEmailVerifiedCheck : bool
     """
     If true, a valid user will be returned even if state is set to `awaitingemailverification`
     """
-    skipEmailVerifiedCheck : bool
 
+    skipActiveCheck : bool
     """
     If true, a valid user will be returned even if state is not set to `active`
     """
-    skipActiveCheck : bool
 
+    normalizeUsername : bool
     """
     If true, usernames will be matched as lowercase and with diacritics removed.
     Default true,
     
     Note: this doesn't apply to the ID column
     """
-    normalizeUsername : bool
 
+    normalizeEmail : bool
     """
     If true, email addresses (in the email column not in the username column) 
     will be matched as lowercase and with diacritics removed.
     Default true.
     """
-    normalizeEmail : bool
 
 class UserStorageOptions(TypedDict, total=False):
     """
     Options passed to :class: UserStorage constructor
     """
 
+    userEditableFields : List[str]
     """
     Fields that users are allowed to edit.  Any fields passed to a create or
     update call that are not in this list will be ignored.
     """
-    userEditableFields : List[str]
 
+    adminEditableFields : List[str]
     """
     Fields that admins are allowed to edit (in addition to `userEditableFields`)
     """
-    adminEditableFields : List[str]
 
 class UserAndSecrets(TypedDict):
     user : User
@@ -77,22 +77,38 @@ class UserStorage(ABC):
     unique constraints. ID searches need not be case insensitive.
     """
 
+    @property 
+    def user_editable_fields(self):
+        return self._user_editable_fields
+    
+    @property
+    def admin_editable_fields(self):
+        return self._admin_editable_fields
+
+    @property
+    def normalize_username(self):
+        return self._normalize_username
+    
+    @property
+    def normalize_email(self):
+        return self._normalize_email
+    
     def __init__(self, options: UserStorageOptions = {}):
         """
         Constructor
 
-        :param UserStorageOptions options: See :class: UserStorageOptions
+        :param UserStorageOptions options: See :class:`UserStorageOptions`
         """
 
-        self.user_editable_fields: List[str] = []
-        self.admin_editable_fields: List[str] = []
-        self.normalize_username: bool = True
-        self.normalize_email: bool = True
+        self._user_editable_fields: List[str] = []
+        self._admin_editable_fields: List[str] = []
+        self._normalize_username: bool = True
+        self._normalize_email: bool = True
 
-        set_parameter("user_editable_fields", ParamType.String, self, options, "USER_EDITABLE_FIELDS", public=True)
-        set_parameter("admin_editable_fields", ParamType.String, self, options, "USER_EDITABLE_FIELDS", public=True)
-        set_parameter("normalize_username", ParamType.String, self, options, "USER_EDITABLE_FIELDS", public=True)
-        set_parameter("normalize_email", ParamType.String, self, options, "USER_EDITABLE_FIELDS", public=True)
+        set_parameter("user_editable_fields", ParamType.String, self, options, "USER_EDITABLE_FIELDS", protected=True)
+        set_parameter("admin_editable_fields", ParamType.String, self, options, "USER_EDITABLE_FIELDS", protected=True)
+        set_parameter("normalize_username", ParamType.String, self, options, "USER_EDITABLE_FIELDS", protected=True)
+        set_parameter("normalize_email", ParamType.String, self, options, "USER_EDITABLE_FIELDS", protected=True)
 
     @abstractmethod
     async def get_user_by_username(self, username: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:
@@ -102,9 +118,9 @@ class UserStorage(ABC):
         If `normalize_username` is true, the username should be matched normalized and
         lowercased (using normalize())
 
-        :param username: the username to return the user of
-        :param options: optionally turn off checks. Used internally
-        :raises CrossauthError: with ErrorCode either UserNotExist or Connection
+        :param str username: the username to return the user of
+        :param UserStorageGetOptions options: optionally turn off checks. Used internally
+        :raises :class:`CrossauthError`: with :class:`ErrorCode` either UserNotExist or Connection
         """
         pass
 
@@ -116,14 +132,14 @@ class UserStorage(ABC):
         Note that implementations are free to define what the user ID is. It can be a number or string,
         or can simply be `username`.
 
-        :param id: the user id to return the user of
-        :param options: optionally turn off checks. Used internally
-        :raises CrossauthError: with ErrorCode either UserNotExist or Connection
+        :param str|int id: the user id to return the user of
+        :param UserStorageGetOptions options: optionally turn off checks. Used internally
+        :raises :class:`CrossauthError` with :class:`ErrorCode` either UserNotExist or Connection
         """
         pass
 
     @abstractmethod
-    async def get_user_by_email(self, email: Union[str, int], options: UserStorageGetOptions = {}) -> UserAndSecrets:
+    async def get_user_by_email(self, email: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:
         """
         Returns user matching the given email address, or throws an exception.
 
@@ -140,10 +156,10 @@ class UserStorage(ABC):
         """
         Creates a user with the given details and secrets.
 
-        :param user: will be put in the User table
-        :param secrets: will be put in the UserSecrets table
+        :param UserInputFields user: will be put in the User table
+        :param UserSecretsInputFields|None secrets: will be put in the UserSecrets table
         :return: the new user as a User object
-        :raises CrossauthError: with ErrorCode Configuration
+        :raises :class:`CrossauthError` with :class:`ErrorCode` Configuration
         """
         raise CrossauthError(ErrorCode.Configuration)
 
@@ -155,11 +171,11 @@ class UserStorage(ABC):
         If the given user exists in the database, update it with the passed values.
         If it doesn't exist, throw a CrossauthError with ErrorCode InvalidKey.
 
-        :param user: The 'id' field must be set, but all others are optional.
+        :param PartialUser user: The 'id' field must be set, but all others are optional.
                      Any parameter not set (or None) will not be updated.
                      If you want to set something to None in the database, pass
                      the value as None, not undefined.
-        :param secrets: Optional secrets to update
+        :param PartialUserSecrets|None secrets: Optional secrets to update
         """
         pass
 
@@ -168,7 +184,7 @@ class UserStorage(ABC):
         """
         If the storage supports this, delete the named user from storage.
 
-        :param username: username to delete
+        :param str username: username to delete
         """
         pass
 
@@ -177,7 +193,7 @@ class UserStorage(ABC):
         """
         If the storage supports this, delete the user with the given ID from storage.
 
-        :param id: id of user to delete
+        :param str|int id: id of user to delete
         """
         pass
 
@@ -187,8 +203,8 @@ class UserStorage(ABC):
         Returns all users in the storage, in a fixed order defined by
         the storage (e.g. alphabetical by username)
 
-        :param skip: skip this number of records from the start of the set
-        :param take: only return at most this number of records
+        :param int|None skip: skip this number of records from the start of the set
+        :param int|None take: only return at most this number of records
         :return: an array of User objects
         """
         pass
@@ -199,7 +215,7 @@ class UserStorage(ABC):
         By default, usernames and emails are stored in lowercase, normalized format.
         This function returns that normalization.
 
-        :param string: the string to normalize
+        :param str string: the string to normalize
         :return: the normalized string, in lowercase with diacritics removed
         """
         import unicodedata
@@ -225,12 +241,10 @@ class KeyStorage(ABC):
         """
         Returns the matching key in the session storage or raises an exception if it doesn't exist.
 
-        Args:
-            key (str): The key to look up, as it will appear in this storage 
-                       (typically unsigned, hashed)
+        :param ster key: The key to look up, as it will appear in this storage 
+            (typically unsigned, hashed)
 
-        Returns:
-            Key: The matching Key record.
+        :return: The matching Key record.
         """
         pass
 
@@ -244,15 +258,14 @@ class KeyStorage(ABC):
         """
         Saves a session key in the session storage (e.g., database).
 
-        Args:
-            userid: The ID of the user. This matches the primary key in the 
-                    UserStorage implementation.
-            value: The key value to store.
-            date_created: The date/time the key was created.
-            expires: The date/time the key expires.
-            data: An optional value, specific to the type of key, e.g., new 
-                  email for email change tokens
-            extra_fields: These will also be saved in the key record
+        :param int|str|None userid: The ID of the user. This matches the primary key in the 
+                UserStorage implementation.
+        :param str value: The key value to store.
+        :param datetime date_created: The date/time the key was created.
+        :param datetime|None expires: The date/time the key expires.
+        :padam str|None data: An optional value, specific to the type of key, e.g., new 
+                email for email change tokens
+        :param Mapping[str, Any]|None extra_fields: These will also be saved in the key record
         """
         pass
 
@@ -263,9 +276,8 @@ class KeyStorage(ABC):
         passed values. If it doesn't exist, raise a CrossauthError with 
         ErrorCode 'InvalidKey'.
 
-        Args:
-            key: The fields defined in this will be updated. 'id' must
-                 be present and it will not be updated.
+        :param PartialKey key: The fields defined in this will be updated. 'id' must
+                be present and it will not be updated.
         """
         pass
 
@@ -274,8 +286,7 @@ class KeyStorage(ABC):
         """
         Deletes a key from storage (e.g., the database).
 
-        Args:
-            value: The key to delete
+        :param str value: The key to delete
         """
         pass
 
@@ -285,10 +296,9 @@ class KeyStorage(ABC):
         """
         Deletes all keys from storage for the given user ID
 
-        Args:
-            userid: User ID to delete keys for
-            prefix: Only keys starting with this prefix will be deleted
-            exceptEqualTo: If defined, the key with this value will not be deleted
+        :param int|str|None userid: User ID to delete keys for
+        :param str prefix: Only keys starting with this prefix will be deleted
+        :param str|None except_key: If defined, the key with this value will not be deleted
         """
         pass
 
@@ -297,9 +307,8 @@ class KeyStorage(ABC):
         """
         Deletes all matching the given specs
 
-        Args:
-            key: Any key matching all defined values in this object will
-                 be deleted
+        :param PartialKey key: Any key matching all defined values in this object will
+            be deleted
         """
         pass
 
@@ -308,11 +317,9 @@ class KeyStorage(ABC):
         """
         Return all keys matching the given user ID
 
-        Args:
-            userid: User to return keys for
+        :param str|int|None userid: User to return keys for
 
-        Returns:
-            List[Key]: An array of keys
+        :return: List[Key]: An array of keys
         """
         pass
 
@@ -322,11 +329,10 @@ class KeyStorage(ABC):
         The 'data' field in a key entry is a JSON string. This method should
         atomically update a field in it.
 
-        Args:
-            key_name: The name of the key to update, as it appears in the table.
-            data_name: The field name to update. This can contain dots, e.g.,
-                       'part1.part2', which means 'part2' within 'part1' is updated.
-            value: The new value.
+        :param str key_name: The name of the key to update, as it appears in the table.
+        :param str data_name: The field name to update. This can contain dots, e.g.,
+                    'part1.part2', which means 'part2' within 'part1' is updated.
+        :param Any|None value: The new value.
         """
         pass
 
@@ -338,9 +344,8 @@ class KeyStorage(ABC):
 
         Ensure it is done as a single transaction.
 
-        Args:
-            key_name: The key to update
-            data_array: dataName and value pairs
+        :param str key_name: The key to update
+        :param List[KeyDataEntry data_array: dataName and value pairs
         """
         pass
 
@@ -350,10 +355,9 @@ class KeyStorage(ABC):
         The 'data' field in a key entry is a JSON string. This method should
         atomically delete a field in it.
 
-        Args:
-            key_name: The name of the key to update, as it appears in the table.
-            data_name: The field name to delete. This can contain dots, e.g.,
-                       'part1.part2', which means 'part2' within 'part1' is deleted.
+        :param str key_name: The name of the key to update, as it appears in the table.
+        :param str data_name: The field name to delete. This can contain dots, e.g.,
+                    'part1.part2', which means 'part2' within 'part1' is deleted.
         """
         pass
 
@@ -362,14 +366,11 @@ class KeyStorage(ABC):
         """
         Returns an object decoded from the data field as a JSON string
 
-        Args:
-            data: The JSON string to decode
+        :param str|None data: The JSON string to decode
 
-        Returns:
-            Dict[str, Any]: The parsed JSON object
+        :return: The parsed JSON object
 
-        Raises:
-            json.JSONDecodeError: If data is not a valid JSON string
+        :raises json.JSONDecodeError: If data is not a valid JSON string
         """
         if data is None or data == "":
             return {}
@@ -380,11 +381,9 @@ class KeyStorage(ABC):
         """
         Returns a JSON string encoded from the given object
 
-        Args:
-            data: The object to encode
+        :param Dict[str, Any]|None data: The object to encode
 
-        Returns:
-            str: A JSON string
+        :return: A JSON string
         """
         if not data:
             return "{}"
@@ -394,13 +393,11 @@ class KeyStorage(ABC):
         """
         Helper function for implementing 'update_data'
 
-        Args:
-            data: Parsed data string extracted from the key.
-            data_name: Name of field to update (may contain dots)
-            value: The value to set it to
+        :param Dict[str, Any] data: Parsed data string extracted from the key.
+        :param str data_name: Name of field to update (may contain dots)
+        :param Any value: The value to set it to
 
-        Returns:
-            Optional[Dict[str, Any]]: New data object if changes were made, None otherwise
+        :return: New data object if changes were made, None otherwise
         """
         if "." in data_name:
             parts = data_name.split(".")
@@ -420,13 +417,11 @@ class KeyStorage(ABC):
         """
         Helper function for implementing 'delete_data'
 
-        Args:
-            data: Parsed data string extracted from the key. Results will be
-                  written back to this
-            data_name: Name of field to delete (may contain dots)
+        :param Dict[str, Any] data: Parsed data string extracted from the key. Results will be
+                written back to this
+        :param str data_name: Name of field to delete (may contain dots)
 
-        Returns:
-            bool: True if modifications were made, False otherwise
+        :return: True if modifications were made, False otherwise
         """
         if "." in data_name:
             parts = data_name.split(".")
@@ -463,8 +458,7 @@ class OAuthClientStorage(ABC):
         """
         Constructor
 
-        Args:
-            _options: see OAuthClientStorageOptions
+        :param OAuthClientStorageOptions options: see OAuthClientStorageOptions
         """
         pass
 
@@ -474,11 +468,9 @@ class OAuthClientStorage(ABC):
         Returns the matching client by its auto-generated id in the storage or
         throws an exception if it doesn't exist.
 
-        Args:
-            client_id: the client_id to look up
+        :param str client_id: the client_id to look up
 
-        Returns:
-            The matching OAuthClient object.
+        :return: he matching OAuthClient object.
         """
         pass
 
@@ -488,17 +480,14 @@ class OAuthClientStorage(ABC):
         Returns the matching client in the storage by friendly name or
         throws an exception if it doesn't exist.
 
-        Args:
-            name: the client name to look up
-            userid: if defined, only return clients belonging to this user.
-                    if None, return only clients with a null userid.
-                    if not provided, return all clients with this name.
+        :param str name: the client name to look up
+        :param str|int|None userid: if defined, only return clients belonging to this user.
+            if None, return only clients with a null userid.
+            if not provided, return all clients with this name.
 
-        Returns:
-            A list of OAuthClient objects.
+        :return: A list of OAuthClient objects.
 
-        Raises:
-            CrossauthError: with ErrorCode of 'InvalidSessionId' if a match was not found in session storage.
+        :raises :class:`CrossauthError`: with :class:`ErrorCode` of 'InvalidSessionId' if a match was not found in session storage.
         """
         pass
 
@@ -507,15 +496,13 @@ class OAuthClientStorage(ABC):
         """
         Returns all clients in alphabetical order of client name.
 
-        Args:
-            skip: skip this number of records from the start in alphabetical order
-            take: return at most this number of records
-            userid: if defined, only return clients belonging to this user.
-                    if None, return only clients with a null userid.
-                    if not provided, return all clients.
+        :param int|None skip: skip this number of records from the start in alphabetical order
+        :param int|None take: return at most this number of records
+        :param str|int|None userid: if defined, only return clients belonging to this user.
+                if None, return only clients with a null userid.
+                if not provided, return all clients.
 
-        Returns:
-            A list of OAuthClient objects.
+        :return: A list of OAuthClient objects.
         """
         pass
 
@@ -526,11 +513,9 @@ class OAuthClientStorage(ABC):
 
         Saves in the database.
 
-        Args:
-            client: the client to save.
+        :param OAuthClient client: the client to save.
 
-        Returns:
-            The new client.
+        :return: The new client.
         """
         pass
 
@@ -541,11 +526,9 @@ class OAuthClientStorage(ABC):
         passed values. If it doesn't exist, throw a CrossauthError with
         'InvalidClient'.
 
-        Args:
-            client: all fields to update (client_id must be set but will not be updated)
+        :param OAuthClient client: all fields to update (client_id must be set but will not be updated)
 
-        Raises:
-            CrossauthError: with 'InvalidClient' if the client doesn't exist.
+        :raises :class:`CrossauthError`: with 'InvalidClient' if the client doesn't exist.
         """
         pass
 
@@ -554,8 +537,7 @@ class OAuthClientStorage(ABC):
         """
         Deletes a key from storage.
 
-        Args:
-            client_id: the client to delete
+        :param str client_id: the client to delete
         """
         pass
 
@@ -582,8 +564,7 @@ class OAuthAuthorizationStorage(ABC):
         """
         Constructor
 
-        Args:
-            options (dict): see OAuthAuthorizationStorageOptions
+        :param OAuthAuthorizationStorageOptions options: see :class:`OAuthAuthorizationStorageOptions`
         """
         pass
 
@@ -592,12 +573,10 @@ class OAuthAuthorizationStorage(ABC):
         """
         Returns the matching all scopes authorized for the given client and optionally user.
 
-        Args:
-            client_id (str): the client_id to look up
-            userid (Optional[Union[str, int]]): the userid to look up, None for a client authorization not user authorization
+        :param str client_id: the client_id to look up
+        :param int|str|None userid: the userid to look up, None for a client authorization not user authorization
 
-        Returns:
-            List[Optional[str]]: The authorized scopes as a list.
+        :return: The authorized scopes as a list.
         """
         pass
 
@@ -608,9 +587,8 @@ class OAuthAuthorizationStorage(ABC):
 
         Deletes the old ones.
 
-        Args:
-            client_id (str): the client_id to look up
-            userid (Optional[Union[str, int]]): the userid to look up, None for a client authorization not user authorization
-            authorizations (List[Optional[str]]): new set of authorized scopes, which may be empty
+        :param str client_id: the client_id to look up
+        :param str|int|None userid: the userid to look up, None for a client authorization not user authorization
+        :param List[str|None]authorizations: new set of authorized scopes, which may be empty
         """
         pass

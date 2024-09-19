@@ -11,16 +11,21 @@ class CrossauthLoggerInterface:
     You can implement your own logger.  Crossauth only needs these functions
     and variables to be present.
     """
+
     def error(self, output: Any) -> None:
+        """ Report a message at error level """
         pass
 
     def warn(self, output: Any) -> None:
+        """ Report a message at warning level """
         pass
 
     def info(self, output: Any) -> None:
+        """ Report a message at info level """
         pass
 
     def debug(self, output: Any) -> None:
+        """ Report a message at debug level """
         pass
 
     NoLogging = 0
@@ -38,13 +43,13 @@ class CrossauthLogger(CrossauthLoggerInterface):
     Logs to console. 
     
     The logging API is designed so that you can replace this with other common loggers, eg Pino.
-    To change it, use the global {@link setLogger} function.  This has a parameter to tell 
+    To change it, use the global :func:`CrossauthLogger.set_logger` function.  This has a parameter to tell 
     Crossauth whether your logger accepts JSON input or not.
     
-    When writing logs, we use the helper function {@link j} to send JSON to the logger if it is
+    When writing logs, we use the helper function :func:`j` to send JSON to the logger if it is
     supprted, and a stringified JSON otherwise.
     
-    <b>Crossauth logs<b>
+    **Crossauth logs**
     
     All Crossauth log messages are JSON (or stringified JSON, depending on whether the logger supports
     JSON input - this one does).  The following fields may be present depending on context
@@ -52,7 +57,7 @@ class CrossauthLogger(CrossauthLoggerInterface):
     
     - `msg` : main contents of the log
     - `err` : an error object.  If a subclass of Error, it wil contain at least `message` and
-                a stack trace in `stack`.  If the error is of type{@link @crossauth/common!CrossauthError} 
+                a stack trace in `stack`.  If the error is of type :class:`CrossauthError` 
                 it also will also contain `code` and `http_status`.
     - `hashedSessionCookie` : for security reasons, session cookies are not included in logs.
                                 However, so that errors can be correlated with each other, a hash
@@ -88,10 +93,16 @@ class CrossauthLogger(CrossauthLoggerInterface):
 
     @staticmethod
     def logger() -> CrossauthLoggerInterface:
+        """ Returns the static logger instance"""
         global _crossauth_logger, _crossauth_logger_accepts_json
         return _crossauth_logger
 
     def __init__(self, level: int|None = None):
+        """
+        Constructor
+
+        :param int|None level the level to report to
+        """
         if level is not None:
             self.level = level
         elif "CROSSAUTH_LOG_LEVEL" in os.environ:
@@ -105,6 +116,7 @@ class CrossauthLogger(CrossauthLoggerInterface):
         CrossauthLogger.rossauth_logger_accepts_json = True
 
     def set_level(self, level: int) -> None:
+        """ Set the level to report down to """
         self.level = level
 
     def _log(self, level: int, output: Any) -> None:
@@ -115,19 +127,24 @@ class CrossauthLogger(CrossauthLoggerInterface):
                 print(json.dumps({"level": CrossauthLogger.levelName[level], "time": self._current_time_iso(), **output}))
 
     def error(self, output: Any) -> None:
+        """ Log an error """
         self._log(CrossauthLogger.Error, output)
 
     def warn(self, output: Any) -> None:
+        """ Log a warning """
         self._log(CrossauthLogger.Warn, output)
 
     def info(self, output: Any) -> None:
+        """ Log an info message """
         self._log(CrossauthLogger.Info, output)
 
     def debug(self, output: Any) -> None:
+        """ Log a debug message """
         self._log(CrossauthLogger.Debug, output)
 
     @staticmethod
     def set_logger(logger: CrossauthLoggerInterface, accepts_json: bool) -> None:
+        """ Set the static logger instance """
         global _crossauth_logger, _crossauth_logger_accepts_json
         _crossauth_logger = logger
         _crossauth_logger_accepts_json = accepts_json
@@ -139,6 +156,8 @@ class CrossauthLogger(CrossauthLoggerInterface):
 
 
 def j(arg: Mapping[str, Any] | str) -> Dict[str, Any] | str:
+    """ Helper function that returns JSON if the error log supports it,
+        otherwise a string """
     global _crossauth_logger_accepts_json
     argcopy : Mapping[str,Any] = {}
     if (type(arg) == str):

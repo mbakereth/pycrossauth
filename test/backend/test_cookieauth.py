@@ -16,8 +16,8 @@ class SessionKeyTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(type(key["expires"]) != NullType)
         self.assertIsNotNone(ret["expires"])
         self.assertIsNone(ret["userid"] if "userid" in ret else None)
-        self.assertTrue(key["expires"] == ret.expires) # type: ignore
-        self.assertTrue(key["expires"] > ret.created) # type: ignore
+        self.assertTrue(key["expires"] == ret["expires"]) # type: ignore
+        self.assertTrue(key["expires"] > ret["created"]) # type: ignore
 
 class CsrfCookieTest(unittest.IsolatedAsyncioTestCase):
 

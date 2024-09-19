@@ -5,181 +5,181 @@ from typing import Any
 
 class ErrorCode(Enum):
     """
-        Indicates the type of error reported by :class: CrossauthError
+        Indicates the type of error reported by :class:`CrossauthError`
     """
 
-    """ Thrown when a given username does not exist, eg during login """
     UserNotExist = auto()
+    """ Thrown when a given username does not exist, eg during login """
 
-    """ Thrown when a password does not match, eg during login or signup """
     PasswordInvalid = auto()
+    """ Thrown when a password does not match, eg during login or signup """
 
+    EmailNotExist = auto()
     """ Thrown when a a password reset is requested and the email does not 
     exist """
-    EmailNotExist = auto()
 
+    UsernameOrPasswordInvalid = auto()
     """ For endpoints provided by servers in this package, this is returned 
     instead of UserNotExist or PasswordNotMatch, for security reasons """
-    UsernameOrPasswordInvalid = auto()
 
-    """ This is returned if an OAuth2 client id is invalid """
     InvalidClientId = auto()
+    """ This is returned if an OAuth2 client id is invalid """
 
+    ClientExists = auto()
     """ This is returned if attempting to make a client which already exists 
     (client_id or name/userid) """
-    ClientExists = auto()
 
-    """ This is returned if an OAuth2 client secret is invalid """
     InvalidClientSecret = auto()
+    """ This is returned if an OAuth2 client secret is invalid """
 
+    InvalidClientIdOrSecret = auto()
     """ Server endpoints in this package will return this instead of 
     InvalidClientId or InvalidClientSecret for security purposes """
-    InvalidClientIdOrSecret = auto()
 
+    InvalidRedirectUri = auto()
     """ This is returned a request is made with a redirect Uri that is not 
     registered """
-    InvalidRedirectUri = auto()
 
+    InvalidOAuthFlow = auto()
     """ This is returned a request is made with a an oauth flow name that is 
     not recognized """
-    InvalidOAuthFlow = auto()
 
-    """ Thrown on login attempt with a user account marked inactive """
     UserNotActive = auto()
+    """ Thrown on login attempt with a user account marked inactive """
 
+    EmailNotVerified = auto()
     """ Thrown on login attempt with a user account marked not having had the 
     email address validated """
-    EmailNotVerified = auto()
 
+    TwoFactorIncomplete = auto()
     """ Thrown on login attempt with a user account marked not having 
     completed 2FA setup """
-    TwoFactorIncomplete = auto()
 
+    Unauthorized = auto()
     """ Thrown when a resource expecting user authorization was access and 
     authorization not provided or wrong """
-    Unauthorized = auto()
 
+    UnauthorizedClient = auto()
     """ Thrown for the OAuth unauthorized_client error (when the client is 
     unauthorized as opposed to the user) """
-    UnauthorizedClient = auto()
 
-    """ Thrown for the OAuth invalid_scope error  """
     InvalidScope = auto()
+    """ Thrown for the OAuth invalid_scope error  """
 
-    """ Thrown for the OAuth insufficient_scope error  """
     InsufficientScope = auto()
+    """ Thrown for the OAuth insufficient_scope error  """
 
+    InsufficientPriviledges = auto()
     """ Returned if user is valid but doesn't have permission to access 
     resource """
-    InsufficientPriviledges = auto()
 
-    """ Returned with an HTTP 403 response """
     Forbidden = auto()
+    """ Returned with an HTTP 403 response """
 
+    InvalidKey = auto()
     """ 
     Thrown when a session or API key was provided that is not in the key 
     table.
     For CSRF and sesison key, an InvalidCsrf or InvalidSession will be thrown 
     instead
     """
-    InvalidKey = auto()
 
-    """ Thrown if the CSRF token is invalid """
     InvalidCsrf = auto()
+    """ Thrown if the CSRF token is invalid """
 
-    """ Thrown if the session cookie is invalid """
     InvalidSession = auto()
+    """ Thrown if the session cookie is invalid """
 
-    """ Thrown when a session or API key has expired """
     Expired = auto()
+    """ Thrown when a session or API key has expired """
 
-    """ Thrown when there is a connection error, eg to a database """
     Connection = auto()
+    """ Thrown when there is a connection error, eg to a database """
 
-    """ Thrown when a hash, eg password, is not in the given format """
     InvalidHash = auto()
+    """ Thrown when a hash, eg password, is not in the given format """
 
+    UnsupportedAlgorithm = auto()
     """ Thrown when an algorithm is requested but not supported, eg hashing 
     algorithm """
-    UnsupportedAlgorithm = auto()
 
+    KeyExists = auto()
     """ Thrown if you try to create a key which already exists in key 
     storage """
-    KeyExists = auto()
 
-    """ Thrown if the user needs to reset his or her password """
     PasswordChangeNeeded = auto()
-
     """ Thrown if the user needs to reset his or her password """
+
     PasswordResetNeeded = auto()
+    """ Thrown if the user needs to reset his or her password """
 
-    """ Thrown if the user needs to reset factor2 before logging in """
     Factor2ResetNeeded = auto()
+    """ Thrown if the user needs to reset factor2 before logging in """
 
-    """ Thrown when something is missing or inconsistent in configuration """
     Configuration = auto()
+    """ Thrown when something is missing or inconsistent in configuration """
 
-    """ Thrown if an email address in invalid """
     InvalidEmail = auto()
-
-    """ Thrown if a phone number in invalid """
-    InvalidPhoneNumber = auto()
-
     """ Thrown if an email address in invalid """
+
+    InvalidPhoneNumber = auto()
+    """ Thrown if a phone number in invalid """
+
     InvalidUsername = auto()
+    """ Thrown if an email address in invalid """
 
-    """ Thrown when two passwords do not match each other (eg signup) """
     PasswordMatch = auto()
+    """ Thrown when two passwords do not match each other (eg signup) """
 
-    """ Thrown when a token (eg TOTP or OTP) is invalid """
     InvalidToken = auto()
+    """ Thrown when a token (eg TOTP or OTP) is invalid """
 
-    """ Thrown during OAuth password flow if an MFA step is needed """
     MfaRequired = auto()
+    """ Thrown during OAuth password flow if an MFA step is needed """
 
+    PasswordFormat = auto()
     """ Thrown when a password does not match rules (length, 
     uppercase/lowercase/digits) """
-    PasswordFormat = auto()
 
-    """ Thrown when a the data field of key storage is not valid json """
     DataFormat = auto()
+    """ Thrown when a the data field of key storage is not valid json """
 
-    """ Thrown if a fetch failed """
     FetchError = auto()
+    """ Thrown if a fetch failed """
 
-    """ Thrown when attempting to create a user that already exists """
     UserExists = auto()
+    """ Thrown when attempting to create a user that already exists """
 
+    FormEntry = auto()
     """ Thrown by user-supplied validation functions if a user details form 
     was incorrectly filled out """
-    FormEntry = auto()
 
+    BadRequest = auto()
     """ Thrown when an invalid request is made, eg configure 2FA when 2FA is 
     switched off for user """
-    BadRequest = auto()
 
-    """ Thrown in the OAuth device code flow """
     AuthorizationPending = auto()
-
     """ Thrown in the OAuth device code flow """
+
     SlowDown = auto()
-
     """ Thrown in the OAuth device code flow """
-    ExpiredToken = auto()
 
+    ExpiredToken = auto()
+    """ Thrown in the OAuth device code flow """
+
+    ConstraintViolation = auto()
     """ Thrown in database handlers where an insert causes a constraint 
     violation """
-    ConstraintViolation = auto()
 
+    NotImplemented = auto()
     """ Thrown if a method is unimplemented, typically when a feature
     is not yet supported in this language. """
-    NotImplemented = auto()
 
-    """ Thrown a dict field is unexpectedly missing or wrong type """
     ValueError = auto()
+    """ Thrown a dict field is unexpectedly missing or wrong type """
 
-    """ Thrown for an condition not convered above. """
     UnknownError = auto()
+    """ Thrown for an condition not convered above. """
 
 _FRIENDLY_HTTP_STATUS : dict[str, str] = {
     '200': 'OK',
@@ -230,7 +230,16 @@ class CrossauthError(Exception):
     """
     Thrown by Crossauth functions whenever it encounters an error.
     """
-    def __init__(self, code : ErrorCode, message : str | list[str] | None = None):            
+
+    def __init__(self, code : ErrorCode, message : str | list[str] | None = None):        
+        """
+        Construct a CrossauthError object.
+
+        ## Arguments
+        - :param ErrorCode code: Return this type of error
+        - :param str message: Return this method.  If omitted, a default
+          will be returned.  You can also return an array of messages 
+        """    
 
         _message : str | None = None
         _http_status : int = 500
@@ -400,7 +409,7 @@ class CrossauthError(Exception):
         response into a CrossauthError object, call this function.
         
         :param str error: as returned by an OAuth call (converted to an 
-               :class: ErrorCode).
+               :class:`ErrorCode`).
         :param str error_description as returned by an OAuth call (put in the 
                `message`)
         :return a `CrossauthError` instance.
@@ -426,10 +435,12 @@ class CrossauthError(Exception):
 
     @property
     def code_name(self):
+        """ Return the name of the error code """
         return self.code.name
     
     @property
     def oauthErrorCode(self) -> str:
+        """ Return the OAuth name of an error code (eg "server_error")"""
         match (self.code):
             case ErrorCode.BadRequest: return "invalid_request"
             case ErrorCode.UnauthorizedClient: return "unauthorized_client"
@@ -451,11 +462,12 @@ class CrossauthError(Exception):
         it.  
         If not and it is an object with `errorCode` in it, creates a 
         CrossauthError from that and `errorMessage`, if present.
-        Otherwise creates a `CrossauthError` object with {@link @crossauth/common!ErrorCode}
+        Otherwise creates a `CrossauthError` object with :class:`ErrorCode`
         of `Unknown` from it, setting the `message` if possible.
         
-        :param any e: the error to convert.
-        :return:  a `CrossauthError` instance.
+        :param Any e: the error to convert.
+        :param str|None default_message: message to use if there was none in the original exception.
+        :return:  a :class:`CrossauthError` instance.
         """
         if isinstance(e, CrossauthError):
             return e

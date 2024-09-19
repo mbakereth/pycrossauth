@@ -23,7 +23,7 @@ from .crypto import Crypto
 from .storage import UserStorageGetOptions, UserStorageOptions, UserStorage, \
     KeyStorage, KeyDataEntry, \
     OAuthClientStorageOptions, OAuthClientStorage, \
-    OAuthAuthorizationStorageOptions, OAuthAuthorizationStorage
+    OAuthAuthorizationStorageOptions, OAuthAuthorizationStorage, UserAndSecrets
 
 from .storageimpl.inmemorystorage import InMemoryKeyStorage
 from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeyStorageOptions
@@ -52,4 +52,5 @@ __all__ = (
     "DoubleSubmitCsrfToken", "DoubleSubmitCsrfTokenOptions", 
     "SessionCookie", "SessionCookieOptions",
     "SessionManager", "SessionManagerOptions",
+    "UserAndSecrets"
 )

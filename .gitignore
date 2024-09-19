@@ -20,3 +20,6 @@
 **/node_modules
 **/~*.xlsx
 **/*.pyi
+docs/crossauth_backend*.rst
+docs/_build
+

@@ -19,111 +19,187 @@ class OAuthTokenConsumerOptions(TypedDict, total=False):
     Options that can be passed to:@link OAuthTokenConsumerBase}.
     """
 
+    jwt_key_type : str
     """ 
     Secret key if using a symmetric cipher for signing the JWT.  
     Either this or `jwt_secret_key_file` is required when using self kind of 
     cipher """
-    jwt_key_type : str
 
+    jwt_secret_key : str
     """ Secret key if using a symmetric cipher for signing the JWT.  
     Either this or `jwt_secret_key_file` is required when using self kind of 
     cipher """
-    jwt_secret_key : str
 
+    jwt_public_key : str
     """ The public key if using a public key cipher for signing the JWT.  
     Either this or `jwt_public_key_file` is required when using self kind of 
     cipher.  privateKey or privateKeyFile is also required."""
-    jwt_public_key : str
 
-    """ Number of seconds tolerance when checking expiration.  Default 10"""
     clock_tolerance : int
+    """ Number of seconds tolerance when checking expiration.  Default 10"""
 
+    auth_server_base_url : str
     """ The value to expect in the iss
     claim.  If the iss does not match self, the token is rejected.
     No default (required)"""
-    auth_server_base_url : str
 
+    oidc_config : Optional[OpenIdConfiguration|Dict[str,Any]]
     """
     For initializing the token consumer with a static OpenID Connect 
     configuration.
     """
-    oidc_config : Optional[OpenIdConfiguration|Dict[str,Any]]
 
+    persist_access_token : bool
     """ Whether to persist access tokens in key storage.  Default false.
         
         If you set self to True, you must also set `key_storage`.
     """
-    persist_access_token : bool
 
-    """ If persisting tokens, you need to provide a storage to persist them to"""
     key_storage : Optional[KeyStorage]
+    """ If persisting tokens, you need to provide a storage to persist them to"""
 
+    jwt_secret_key_file : str
     """ Filename with secret key if using a symmetric cipher for signing the 
         JWT.  Either self or `jwt_secret_key` is required when using self kind 
         of cipher"""
-    jwt_secret_key_file : str
 
+    jwt_public_key_file : str
     """ Filename for the public key if using a public key cipher for signing the 
         JWT.  Either self or `jwt_public_key` is required when using self kind of 
         cipher.  privateKey or privateKeyFile is also required."""
-    jwt_public_key_file : str
 
+    audience : str
     """
         The aud claim needs to match self value.
         No default (required)
     """
-    audience : str
 
 class OAuthTokenConsumer:
+    """
+    This abstract class is for validating OAuth JWTs. 
+    """
     
+    @property
+    def _auth_server_base_url(self):
+        return self.__auth_server_base_url
+
+    @property
+    def _audience(self):
+        return self.__audience
+    @_audience.setter
+    def _audience(self, val : str):
+        self.__audience = val
+
+    @property
+    def _jwt_key_type(self):
+        return self.__jwt_key_type
+    @_jwt_key_type.setter
+    def _jwt_key_type(self, val : str|None):
+        self.__jwt_key_type = val
+
+    @property
+    def _jwt_public_key_file(self):
+        return self.__jwt_public_key_file
+    @_jwt_public_key_file.setter
+    def _jwt_public_key_file(self, val : str|None):
+        self.__jwt_public_key_file = val
+
+    @property
+    def _jwt_public_key(self):
+        return self.__jwt_public_key
+    @_jwt_public_key.setter
+    def _jwt_public_key(self, val : str|None):
+        self.__jwt_public_key = val
+
+    @property
+    def _jwt_secret_key(self):
+        return self.__jwt_secret_key
+    @_jwt_secret_key.setter
+    def _jwt_secret_key(self, val : str|None):
+        self.__jwt_secret_key = val
+
+    @property
+    def _clock_tolerance(self):
+        return self.__clock_tolerance
+    @_clock_tolerance.setter
+    def _clock_tolerance(self, val : int):
+        self.__clock_tolerance = val
+
+    @property
+    def _persist_access_token(self):
+        return self.__persist_access_token
+    @_persist_access_token.setter
+    def _persist_access_token(self, val : bool):
+        self.__persist_access_token = val
+
+    @property
+    def oidc_config(self):
+        return self._oidc_config
+    @oidc_config.setter
+    def oidc_config(self, val : OpenIdConfiguration|None):
+        self._oidc_config = val
+
+    @property
+    def keys(self):
+        return self._keys
+    @keys.setter
+    def keys(self, val : Dict[str, Any]):
+        self._keys = val
+
     def __init__(self, audience: str, session: aiohttp.ClientSession, options: OAuthTokenConsumerOptions = {}):
-        
+        """
+        The OpenID Connect configuration for the authorization server,
+        either passed to the constructor or fetched from the authorization
+        server.
+        """
+
         set_parameter("jwt_key_type", ParamType.String, self, options, "JWT_KEY_TYPE", protected=True)
         set_parameter("audience", ParamType.String, self, options, "OAUTH_AUDIENCE", required=True, protected=True)
 
-        self._auth_server_base_url = ""
-        self._jwt_key_type : str|None =None
-        self._jwt_public_key_file : str|None = None
-        self._jwt_secret_key : str|None = None
-        self._jwt_public_key : str|None = None
-        self._jwt_secret_key_file : str|None = None
-        self._jwt_public_key_file : str|None = None
-        self._clock_tolerance = 10
-        self.persist_access_token = False
+        self.__auth_server_base_url : str = ""
+        self.__jwt_secret_key : str|None = None
+        self.__jwt_public_key : str|None = None
+        self.__jwt_secret_key_file : str|None = None
+        self.__jwt_public_key_file : str|None = None
+        self.__clock_tolerance = 10
 
-        self._audience = audience
-        self.oidc_config = options.get('oidc_config')
-        self.keys : Dict[str, Any] = {}
+        self.__persist_access_token = False
+
+        self.__audience = audience
+
+        self._oidc_config = options.get('oidc_config')
+        self._keys : Dict[str, Any] = {}
+
         self.__key_storage : KeyStorage|None = None
         if (options.get("key_storage") is not None):
             self.__key_storage = options.get("key_storage")
         self._session : aiohttp.ClientSession = session
 
-        set_parameter("auth_server_base_url", ParamType.String, self, options, "AUTH_SERVER_BASE_URL", required=True, public=True)
-        set_parameter("jwt_key_type", ParamType.String, self, options, "JWT_KEY_TYPE", protected=True)
-        set_parameter("jwt_public_key_file", ParamType.String, self, options, "JWT_PUBLIC_KEY_FILE", protected=True)
-        set_parameter("jwt_secret_key_file", ParamType.String, self, options, "JWT_SECRET_KEY_FILE", protected=True)
-        set_parameter("jwt_secret_key", ParamType.String, self, options, "JWT_SECRET_KEY", protected=True)
-        set_parameter("jwt_public_key", ParamType.String, self, options, "JWT_PUBLIC_KEY", protected=True)
-        set_parameter("clock_tolerance", ParamType.Number, self, options, "OAUTH_CLOCK_TOLERANCE", protected=True)
-        set_parameter("persist_access_token", ParamType.Boolean, self, options, "OAUTH_PERSIST_ACCESS_TOKEN", protected=True)
+        set_parameter("auth_server_base_url", ParamType.String, self, options, "AUTH_SERVER_BASE_URL", required=True)
+        set_parameter("jwt_key_type", ParamType.String, self, options, "JWT_KEY_TYPE")
+        set_parameter("jwt_public_key_file", ParamType.String, self, options, "JWT_PUBLIC_KEY_FILE",)
+        set_parameter("jwt_secret_key_file", ParamType.String, self, options, "JWT_SECRET_KEY_FILE")
+        set_parameter("jwt_secret_key", ParamType.String, self, options, "JWT_SECRET_KEY")
+        set_parameter("jwt_public_key", ParamType.String, self, options, "JWT_PUBLIC_KEY")
+        set_parameter("clock_tolerance", ParamType.Number, self, options, "OAUTH_CLOCK_TOLERANCE")
+        set_parameter("persist_access_token", ParamType.Boolean, self, options, "OAUTH_PERSIST_ACCESS_TOKEN")
 
         if self._jwt_public_key and not self._jwt_key_type:
             raise ValueError("If specifying jwtPublic key, must also specify jwtKeyType")
 
-        if (self._jwt_secret_key or self._jwt_secret_key_file):
-            if (self._jwt_public_key or self._jwt_public_key_file):
+        if (self._jwt_secret_key or self.__jwt_secret_key_file):
+            if (self._jwt_public_key or self.__jwt_public_key_file):
                 raise CrossauthError(ErrorCode.Configuration, 
                     "Cannot specify symmetric and public/private JWT keys")
             
-            if (self._jwt_secret_key and self._jwt_secret_key_file):
+            if (self._jwt_secret_key and self.__jwt_secret_key_file):
                 raise CrossauthError(ErrorCode.Configuration, 
                     "Cannot specify symmetric key and file")
             
-            if (self._jwt_secret_key_file is not None):
-                with open(self._jwt_secret_key_file, 'r', encoding='utf-8') as f:
+            if (self.__jwt_secret_key_file is not None):
+                with open(self.__jwt_secret_key_file, 'r', encoding='utf-8') as f:
                     self._jwt_secret_key = \
-                        f.read(self._jwt_secret_key_file)
+                        f.read(self.__jwt_secret_key_file)
             
         elif ((self._jwt_public_key is not None or self._jwt_public_key_file is not None)):
             if (self._jwt_public_key_file is not None and self._jwt_public_key is not None):
@@ -133,11 +209,14 @@ class OAuthTokenConsumer:
             if (self._jwt_public_key_file):
                 with open(self._jwt_public_key_file, 'r', encoding='utf-8') as f:
                     self._jwt_public_key = \
-                        f.read(self._jwt_public_key_file)
+                        f.read(self.__jwt_public_key_file)
             
-
-
     async def load_keys(self):
+        """
+        The RSA public keys or symmetric keys for the authorization server,
+        either passed to the constructor or fetched from the authorization
+        server.
+        """
         try:
             if self._jwt_secret_key:
                 if not self._jwt_key_type:
@@ -159,8 +238,17 @@ class OAuthTokenConsumer:
             raise ValueError("Couldn't load keys")
 
     async def load_config(self, oidc_config: Optional[Dict[str, Any]] = None):
+        """
+        Loads OpenID Connect configuration, or fetches it from the 
+        authorization server (using the well-known enpoint appended
+        to `authServerBaseUrl` )
+        :param Dict[str, Any]|None oidcConfig: the configuration, or undefined to load it from
+              the authorization server
+        :raises :class:`common!CrossauthError`: object with :class:`ErrorCode` of
+          - `Connection` if the fetch to the authorization server failed.
+        """
         if oidc_config:
-            self.oidc_config = oidc_config
+            self._oidc_config = oidc_config
             return
 
         if not self._auth_server_base_url:
@@ -170,15 +258,24 @@ class OAuthTokenConsumer:
             resp = await self._session.get(f"{self._auth_server_base_url}/.well-known/openid-configuration")
             if not resp:
                 raise ValueError("Couldn't get OIDC configuration")
-            self.oidc_config = {}
+            self._oidc_config = {}
 
             body = await resp.json()
-            self.oidc_config = {**body}
+            self._oidc_config = {**body}
         except Exception as e:
             CrossauthLogger.logger().debug(j({"err": e}))
             raise ValueError("Unrecognized response from OIDC configuration endpoint")
 
     async def load_jwks(self, jwks: Optional[Dict[str, Any]] = None):
+        """
+        Loads the JWT signature validation keys, or fetches them from the 
+        authorization server (using the URL in the OIDC configuration).
+        :param Dict[str, Any]|None jwks: the keys to load, or undefined to fetch them from
+               the authorization server.
+        :raises :class:`CrossauthError`: object with :class:`ErrorCode` of
+          - `Connection` if the fetch to the authorization server failed,
+            the OIDC configuration wasn't set or the keys could not be parsed.
+        """
         if jwks:
             self.keys = {}
             for key in jwks['keys']:
@@ -220,9 +317,23 @@ class OAuthTokenConsumer:
         return decoded
     
     async def token_authorized(self, token: str, tokenType: Literal["access", "refresh", "id"]) -> Optional[Dict[str, Any]]:
+        """
+        If the given token is valid, the paylaod is returned.  Otherwise
+        undefined is returned.  
+        
+        The signature must be valid, the expiry must not have passed and,
+        if `tokenType` is defined,. the `type` claim in the payload must
+        match it.
+        
+        Doesn't throw exceptions.
+        
+        :param str token: The token to validate
+        :param Literal["access", "refresh", "id"] token_type: If defined, the `type` claim in the payload must
+               match this value
+        """
         payload = await self._token_authorized(token, tokenType)
         if payload:
-            if tokenType == "access" and self.persist_access_token and self.__key_storage:
+            if tokenType == "access" and self._persist_access_token and self.__key_storage:
                 try:
                     key = KeyPrefix.access_token + Crypto.hash(payload['jti'])
                     token_in_storage = await self.__key_storage.get_key(key)

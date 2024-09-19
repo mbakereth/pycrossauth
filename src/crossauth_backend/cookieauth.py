@@ -2,56 +2,119 @@ from crossauth_backend.crypto import Crypto
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.interfaces import Key, PartialKey, KeyPrefix
-from crossauth_backend.storage import KeyStorage, UserStorage
+from crossauth_backend.storage import KeyStorage, UserStorage, UserAndSecrets
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.storage import UserStorage, UserStorageGetOptions
-from typing import Dict, Any, TypedDict, Literal, NotRequired, Optional, Callable, NamedTuple
+from typing import Mapping, Any, TypedDict, Literal, NotRequired, Optional, Callable, NamedTuple
 from datetime import datetime, timedelta
 from nulltype import NullType, Null
 CSRF_LENGTH = 16
 SESSIONID_LENGTH = 16
 
 class CookieOptions(TypedDict, total=False):
-        domain : str
-        expires : datetime
-        maxAge : int
-        httpOnly : bool
-        path : str
-        secure : bool
-        sameSite : bool | Literal["lax", "strict", "none"]
+    """
+    Optional parameters when setting cookies,
 
-def to_cookie_serialize_options(options: CookieOptions) -> Dict[str, Any]:
+    These match the HTTP cookie parameters of the same name.
+    """
+
+    domain : str
+    expires : datetime
+    maxAge : int
+    httpOnly : bool
+    path : str
+    secure : bool
+    sameSite : bool | Literal["lax", "strict", "none"]
+
+def to_cookie_serialize_options(options: CookieOptions) -> Mapping[str, Any]:
     return {
         **vars(options),
         'path': options["path"] if "path" in options else "/"
     }
 
 class Cookie(TypedDict, total=True):
+    """ Object encapsulating a cookie name, value and options. """
+
     name : str
     value : str
     options : CookieOptions
 
 class DoubleSubmitCsrfTokenOptions(CookieOptions):
+    """ Options for double-submit csrf tokens """
+
     cookie_name : NotRequired[str]
-    header_value : NotRequired[str]
+    header_name : NotRequired[str]
     secret: NotRequired[str]
 
 class DoubleSubmitCsrfToken:
+    """
+    Class for creating and validating CSRF tokens according to the double-submit cookie pattern.
+    
+    CSRF token is send as a cookie plus either a header or a hidden form field.
+    """
+
+    @property
+    def header_name(self):
+        return self._header_name
+    
+    @property
+    def cookie_name(self):
+        return self._cookie_name
+    
+    @property
+    def domain(self):
+        return self._domain
+
+    @property
+    def httpOnly(self):
+        return self._httpOnly
+    
+    @property
+    def path(self):
+        return self._path
+
+    @property
+    def secure(self):
+        return self._secure
+    
+    @property
+    def sameSite(self):
+        return self._sameSite
+        
     def __init__(self, options: DoubleSubmitCsrfTokenOptions = DoubleSubmitCsrfTokenOptions()):
-        self.header_value = "X-CROSSAUTH-CSRF"
-        self.cookie_name = options["cookie_name"] if "cookie_name" in options else "CSRFTOKEN"
-        self.domain = options["domain"] if "domain" in options else None
-        self.httpOnly = options["httpOnly"] if "httpOnly" in options else False
-        self.path = options["path"] if "path" in options else "/"
-        self.secure = options["secure"] if "secure" in options else True
-        self.sameSite = options["sameSite"] if "sameSite" in options else "lax"
-        self.secret = options["secret"] if "secret" in options else ""
+        """
+        Constructor
+
+        :param DoubleSubmitCsrfTokenOptions options: See :class:`DoubleSubmitCsrfTokenOptions`
+        """
+
+        self._header_name = "X-CROSSAUTH-CSRF"
+        self._cookie_name = options["cookie_name"] if "cookie_name" in options else "CSRFTOKEN"
+        self._domain = options["domain"] if "domain" in options else None
+        self._httpOnly = options["httpOnly"] if "httpOnly" in options else False
+        self._path = options["path"] if "path" in options else "/"
+        self._secure = options["secure"] if "secure" in options else True
+        self._sameSite = options["sameSite"] if "sameSite" in options else "lax"
+        self.__secret = options["secret"] if "secret" in options else ""
 
     def create_csrf_token(self) -> str:
+        """
+        Creates a session key and saves in storage
+        
+        Date created is the current date/time on the server.
+        
+        :return: a random CSRF token.
+        """
         return Crypto.random_value(CSRF_LENGTH)
 
     def make_csrf_cookie(self, token: str) -> Cookie:
-        cookie_value = Crypto.sign_secure_token(token, self.secret)
+        """
+        Returns a :class:`Cookie` object with the given session key.
+        
+        :param str token: the value of the csrf token, with signature
+        :return a :class:`Cookie` object,
+        """
+        cookie_value = Crypto.sign_secure_token(token, self.__secret)
         options : CookieOptions = {
             "path": self.path,
             "secure": self.secure,
@@ -65,9 +128,16 @@ class DoubleSubmitCsrfToken:
         return self.mask_csrf_token(token)
 
     def unsign_cookie(self, cookie_value: str) -> str:
-        return Crypto.unsign_secure_token(cookie_value, self.secret)
+        return Crypto.unsign_secure_token(cookie_value, self.__secret)
 
     def make_csrf_cookie_string(self, cookie_value: str) -> str:
+        """
+        Takes a session ID and creates a string representation of the cookie (value of the HTTP `Cookie` header).
+         
+        :param str cookie_value the value to put in the cookie
+        :return: a string representation of the cookie and options.
+        """
+
         cookie = f"{self.cookie_name}={cookie_value}; SameSite={self.sameSite}"
         if self.domain:
             cookie += f"; {self.domain}"
@@ -92,10 +162,21 @@ class DoubleSubmitCsrfToken:
         masked_token = parts[1]
         return Crypto.xor(masked_token, mask)
 
-    def validate_double_submit_csrf_token(self, cookie_value: str, form_or_header_value: str) -> None:
-        form_or_header_token = self.unmask_csrf_token(form_or_header_value)
+    def validate_double_submit_csrf_token(self, cookie_value: str, form_or_header_name: str) -> None:
+        """
+        Validates the passed CSRF token.  
+        
+        To be valid:
+            - The signature in the cookie must match the token in the cookie
+            - The token in the cookie must matched the value in the form or header after unmasking
+        
+        :param str cookie_value: the CSRF cookie value to validate.
+        :param str form_or_header_name the value from the csrfToken form header or the X-CROSSAUTH-CSRF header.
+        :raises :class:`CrossauthError` with :class:`ErrorCode` of `InvalidKey`
+        """
+        form_or_header_token = self.unmask_csrf_token(form_or_header_name)
         try:
-            cookie_token = Crypto.unsign_secure_token(cookie_value, self.secret)
+            cookie_token = Crypto.unsign_secure_token(cookie_value, self.__secret)
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             raise CrossauthError(ErrorCode.InvalidCsrf, "Invalid CSRF cookie")
@@ -106,11 +187,25 @@ class DoubleSubmitCsrfToken:
             raise CrossauthError(ErrorCode.InvalidCsrf)
 
     def validate_csrf_cookie(self, cookie_value: str) -> str:
+        """
+        Validates the passed CSRF cookie (doesn't check it matches the token, just that the cookie is valid).  
+        
+        To be valid:
+            - The signature in the cookie must match the token in the cookie
+            - The token in the cookie must matched the value in the form or header after unmasking
+        
+        :param str cookie_value: the CSRF cookie value to validate.
+        :raises :class:`CrossauthError` with :class:`ErrorCode` of `InvalidKey`
+        """
         try:
-            return Crypto.unsign_secure_token(cookie_value, self.secret)
+            return Crypto.unsign_secure_token(cookie_value, self.__secret)
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             raise CrossauthError(ErrorCode.InvalidCsrf, "Invalid CSRF cookie")
+
+class UserAndKey(NamedTuple):
+    user: UserAndSecrets|None
+    key: Key
 
 class SessionCookieOptions(CookieOptions, total=False): # Also inherit from TokenEmailerOptions
     """
@@ -157,43 +252,79 @@ class SessionCookie:
     Class for session management using a session id cookie.
     """
 
+    @property
+    def idle_timeout(self):
+        return self._idle_timeout
+    
+    @property 
+    def cookie_name(self):
+        return self._cookie_name
+
+    @property 
+    def maxAge(self):
+        return self._maxAge
+    
+    @property
+    def domain(self):
+        return self._domain
+    
+    @property
+    def httpOnly(self):
+        return self._httpOnly
+    
+    @property
+    def path(self):
+        return self._path
+    
+    @property
+    def secure(self):
+        return self._secure
+    
+    @property
+    def sameSite(self):
+        return self._sameSite
+
     def __init__(self, key_storage : KeyStorage, options: SessionCookieOptions = {}):
-        self.persist : bool = True
-        self.idle_timeout : int = 0
-        _filterFunction : Callable[[Key], bool] | None = None
+        """
+        Constructor
+
+        :param KeyStorage key_storage: where to store session keys
+        """
+        self.__persist : bool = True
+        self._idle_timeout : int = 0
+        self.__filter_function : Callable[[Key], bool] | None = None
 
         ## cookie settings
-        self.cookie_name : str = "SESSIONID"
-        """ Name of the CSRF Cookie, set from input options """
-        self.maxAge : int = 60*60*24*4; # 4 weeks
-        self.domain : str | None = None
-        self.httpOnly : bool = False
-        self.path : str = "/"
-        self.secure : bool = True
-        self.sameSite : bool | Literal["lax", "strict", "none"] | None = "lax"
+        self._cookie_name : str = "SESSIONID"
+        self._maxAge : int = 60*60*24*4; # 4 weeks
+        self._domain : str | None = None
+        self._httpOnly : bool = False
+        self._path : str = "/"
+        self._secure : bool = True
+        self._sameSite : bool | Literal["lax", "strict", "none"] | None = "lax"
 
         ## hasher settings
-        self._secret : str = ""
+        self.__secret : str = ""
 
-        self.user_storage = options["user_storage"] if "user_storage" in options else None
+        self.__user_storage = options["user_storage"] if "user_storage" in options else None
         self.key_storage = key_storage
         set_parameter("idle_timeout", ParamType.Number, self, options, "SESSION_IDLE_TIMEOUT")
         set_parameter("persist", ParamType.Number, self, options, "PERSIST_SESSION_ID")
         self.filter_function = options['filterFunction'] if 'filterFunction' in options else None
 
         # cookie settings
-        set_parameter("cookie_name", ParamType.String, self, options, "SESSION_COOKIE_NAME");
-        set_parameter("maxAge", ParamType.String, self, options, "SESSION_COOKIE_maxAge");
-        set_parameter("domain", ParamType.String, self, options, "SESSION_COOKIE_DOMAIN");
-        set_parameter("httpOnly", ParamType.Boolean, self, options, "SESSIONCOOKIE_HTTPONLY");
-        set_parameter("path", ParamType.String, self, options, "SESSION_COOKIE_PATH");
-        set_parameter("secure", ParamType.Boolean, self, options, "SESSION_COOKIE_SECURE");
-        set_parameter("sameSite", ParamType.String, self, options, "SESSION_COOKIE_SAMESITE");
+        set_parameter("cookie_name", ParamType.String, self, options, "SESSION_COOKIE_NAME")
+        set_parameter("maxAge", ParamType.String, self, options, "SESSION_COOKIE_maxAge")
+        set_parameter("domain", ParamType.String, self, options, "SESSION_COOKIE_DOMAIN")
+        set_parameter("httpOnly", ParamType.Boolean, self, options, "SESSIONCOOKIE_HTTPONLY")
+        set_parameter("path", ParamType.String, self, options, "SESSION_COOKIE_PATH")
+        set_parameter("secure", ParamType.Boolean, self, options, "SESSION_COOKIE_SECURE")
+        set_parameter("sameSite", ParamType.String, self, options, "SESSION_COOKIE_SAMESITE")
 
         # hasher settings
-        self._secret = options["secret"] if "secret" in options else ""
+        self.__secret = options["secret"] if "secret" in options else ""
 
-    def expiry(self, date_created: datetime) -> datetime | None:
+    def _expiry(self, date_created: datetime) -> datetime | None:
         expires = None
         if self.maxAge > 0:
             expires = date_created + timedelta(0, self.maxAge)
@@ -201,23 +332,44 @@ class SessionCookie:
 
     @staticmethod
     def hash_session_id(session_id: str) -> str:
+        """
+        Returns a hash of a session ID, with the session ID prefix for storing
+        in the storage table.
+        :param str session_id the session ID to hash
+        :return: a base64-url-encoded string that can go into the storage
+        """
         return KeyPrefix.session + Crypto.hash(session_id)
 
-    async def create_session_key(self, userid: str | int | None, extra_fields: Optional[Dict[str, Any]] = None) -> Key:
-        if extra_fields is None:
-            extra_fields = {}
+    async def create_session_key(self, userid: str | int | None, extra_fields: Mapping[str, Any] = {}) -> Key:
+        """
+        Creates a session key and saves in storage
+        
+        Date created is the current date/time on the server.
+        
+        In the unlikely event of the key already existing, it is retried up to 10 times before throwing
+        an error with ErrorCode.KeyExists
+        
+        :param str | int | None userid: the user ID to store with the session key.
+        :param Dict[str, Any]|None extra_fields: Any fields in here will also be added to the session
+               record
+        :return: the new session key
+        :raises :class:`CrossauthError`: with 
+                :class:`ErrorCode` `KeyExists` if maximum
+                 attempts exceeded trying to create a unique session id
+        """
         max_tries = 10
         num_tries = 0
         session_id = Crypto.random_value(SESSIONID_LENGTH)
         date_created = datetime.now()
-        expires = self.expiry(date_created)
+        expires = self._expiry(date_created)
         succeeded = False
 
+        extra_fields_copy = {**extra_fields}
         while num_tries < max_tries and not succeeded:
             hashed_session_id = self.hash_session_id(session_id)
             try:
                 if self.idle_timeout > 0 and userid:
-                    extra_fields['lastActivity'] = datetime.now()
+                    extra_fields_copy['lastActivity'] = datetime.now()
                 await self.key_storage.save_key(userid, hashed_session_id, date_created, expires, None, extra_fields)
                 succeeded = True
             except Exception as e:
@@ -241,10 +393,19 @@ class SessionCookie:
         return key
 
     def make_cookie(self, session_key: Key, persist: Optional[bool] = None) -> Cookie:
-        signed_value = Crypto.sign_secure_token( session_key['value'], self._secret)
+        """
+        Returns a :class:`Cookie` object with the given session key.
+        
+        This class is compatible, for example, with Express.
+        
+        :param Key session_key: the value of the session key
+        :param bool|None persist: if passed, overrides the persistSessionId setting
+        :return: a :class:`Cookie` object,
+        """
+        signed_value = Crypto.sign_secure_token( session_key['value'], self.__secret)
         options : CookieOptions = {}
         if persist is None:
-            persist = self.persist
+            persist = self.__persist
         if self.domain:
             options['domain'] = self.domain
         if 'expires' in session_key and type(session_key['expires']) != NullType and persist:
@@ -263,6 +424,13 @@ class SessionCookie:
         }
 
     def make_cookie_string(self, cookie: Cookie) -> str:
+        """
+        Takes a session ID and creates a string representation of the cookie
+        (value of the HTTP `Cookie` header).
+        
+        :param Cookie cookie: the cookie vlaues to make a string from
+        :return: a string representation of the cookie and options.
+        """
         cookie_string = f"{cookie['name']}={cookie['value']}"
         if self.sameSite:
             cookie_string += f"; SameSite={self.sameSite}"
@@ -280,25 +448,65 @@ class SessionCookie:
         return cookie_string
 
     async def update_session_key(self, session_key: PartialKey) -> None:
+        """
+        Updates a session record in storage
+        :param PartialKey session_key: the fields to update.  `value` must be set, and
+               will not be updated.  All other defined fields will be updated.
+        :raises :class:`CrossauthError`: if the session does
+                not exist. 
+        """
         if 'value' not in session_key:
             raise CrossauthError(ErrorCode.InvalidKey, "No session when updating activity")
         session_key['value'] = self.hash_session_id(session_key['value'])
         await self.key_storage.update_key(session_key)
 
     def unsign_cookie(self, cookie_value: str) -> str:
-        return Crypto.unsign_secure_token(cookie_value, self._secret)
+        """
+        Unsigns a cookie and returns the original value.
+        :param str cookie_value: the signed cookie value
+        :return: the unsigned value
+        :raises :class:`CrossauthError`: if the signature
+                is invalid. 
+        """
+        return Crypto.unsign_secure_token(cookie_value, self.__secret)
 
-    async def get_user_for_session_id(self, session_id: str, options: UserStorageGetOptions = {}):
+    async def get_user_for_session_id(self, session_id: str, options: UserStorageGetOptions = {}) -> UserAndKey:
+        """
+        Returns the user matching the given session key in session storage, or throws an exception.
+        
+        Looks the user up in the {@link UserStorage} instance passed to the constructor.
+        
+        Undefined will also fail is CookieAuthOptions.filterFunction is defined and returns false,
+        
+        :param str session_id: the value in the session cookie
+        :param UserStorageGetOptions options: See :class:`UserStorageGetOptions`
+        :return: a :class:`User` object, with the password hash removed, and the:class:`Key` with the unhashed
+                 session_id
+        :raises :class:`CrossauthError`: with :class:`ErrorCode` set to `InvalidSessionId` or `Expired`.
+        """
         key = await self.get_session_key(session_id)
-        if not self.user_storage:
-            return {'key': key, 'user': None}
+        if not self.__user_storage:
+            return UserAndKey(None, key)
         if 'userid' in key and type(key['userid']) is not NullType:
-            user = await self.user_storage.get_user_by_id(key['userid'], options) # type: ignore
-            return {'user': user, 'key': key}
+            user = await self.__user_storage.get_user_by_id(key['userid'], options) # type: ignore
+            return UserAndKey(user, key)
         else:
-            return {'user': None, 'key': key}
+            return UserAndKey(None, key)
 
     async def get_session_key(self, session_id: str) -> Key:
+        """
+        Returns the user matching the given session key in session storage, or throws an exception.
+        
+        Looks the user up in the :class:`UserStorage` instance passed to the constructor.
+        
+        Undefined will also fail is CookieAuthOptions.filterFunction is defined and returns false,
+        
+        :param str session_id: the unsigned value of the session cookie
+        :return: a :class:`User` object, with the password hash removed.
+        :raises :class:`CrossauthError`: with 
+                :class:`ErrorCode` set to `InvalidSessionId`,
+                `Expired` or `UserNotExist`.
+        """
         now = datetime.now()
         hashed_session_id = self.hash_session_id(session_id)
         key = await self.key_storage.get_key(hashed_session_id)
@@ -317,6 +525,11 @@ class SessionCookie:
         return key
 
     async def delete_all_for_user(self, userid: str | int, except_key: str|None = None) -> None:
+        """
+        Deletes all keys for the given user
+        :param str|int userid: the user to delete keys for
+        :param str|None except_key: if defined, don't delete this key
+        """
         if except_key:
             except_key = self.hash_session_id(except_key)
         await self.key_storage.delete_all_for_user(userid, KeyPrefix.session, except_key)
