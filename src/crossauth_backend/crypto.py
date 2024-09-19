@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from typing import TypedDict
@@ -216,9 +216,13 @@ class Crypto:
         return base64.urlsafe_b64encode(json.dumps({**payload, 't': timestamp, 's': salt}).encode()).decode()
 
     @staticmethod
-    def sign(payload: Union[Dict[str, Any], str], secret: str, salt: Optional[str] = None, timestamp: Optional[int] = None) -> str:
-        if not isinstance(payload, str):
-            payload = Crypto.signable_token(payload, salt, timestamp)
+    def sign(payload: Dict[str, Any], secret: str, salt: Optional[str] = None, timestamp: Optional[int] = None) -> str:
+        payloadStr = Crypto.signable_token(payload, salt, timestamp)
+        hmac_signature = hmac.new(secret.encode(), payloadStr.encode(), hashlib.sha256).hexdigest()
+        return f"{payloadStr}.{hmac_signature}"
+
+    @staticmethod
+    def sign_secure_token(payload: str, secret: str) -> str:
         hmac_signature = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
         return f"{payload}.{hmac_signature}"
 
@@ -234,6 +238,19 @@ class Crypto:
             expire_time = payload['t'] + expiry * 1000
             if expire_time > datetime.now().timestamp():
                 raise CrossauthError(ErrorCode.Expired)
+        new_sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
+        if new_sig != sig:
+            raise CrossauthError(ErrorCode.InvalidKey, "Signature does not match payload")
+        return payload
+
+    @staticmethod
+    def unsign_secure_token(signed_message: str, secret: str, expiry: Optional[int] = None) -> str:
+        parts = signed_message.split(".")
+        if len(parts) != 2:
+            raise CrossauthError(ErrorCode.InvalidKey)
+        msg = parts[0]
+        sig = parts[1]
+        payload = msg
         new_sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
         if new_sig != sig:
             raise CrossauthError(ErrorCode.InvalidKey, "Signature does not match payload")

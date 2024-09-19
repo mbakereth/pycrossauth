@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Union, TypedDict, cast, Mapping
 from nulltype import Null, NullType
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 from sqlalchemy import text, Row
-from sqlalchemy.inspection import inspect
 
 class SqlAlchemyKeyStorageOptions(TypedDict, total=False):
     """

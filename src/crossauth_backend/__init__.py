@@ -28,6 +28,8 @@ from .storage import UserStorageGetOptions, UserStorageOptions, UserStorage, \
 from .storageimpl.inmemorystorage import InMemoryKeyStorage
 from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeyStorageOptions
 
+from .cookieauth import DoubleSubmitCsrfToken, DoubleSubmitCsrfTokenOptions, SessionCookie, SessionCookieOptions
+
 __all__ = (
     "ErrorCode", "CrossauthError",
     "CrossauthLogger", "j",
@@ -46,4 +48,6 @@ __all__ = (
     "OAuthAuthorizationStorageOptions", "OAuthAuthorizationStorage",
     "InMemoryKeyStorage",
     "SqlAlchemyKeyStorage", "SqlAlchemyKeyStorageOptions",
+    "DoubleSubmitCsrfToken", "DoubleSubmitCsrfTokenOptions", 
+    "SessionCookie", "SessionCookieOptions"
 )

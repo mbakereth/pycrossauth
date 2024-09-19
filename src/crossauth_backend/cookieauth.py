@@ -1,11 +1,13 @@
 from crossauth_backend.crypto import Crypto
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
-from crossauth_backend.common.interfaces import Key, KeyPrefix
+from crossauth_backend.common.interfaces import Key, PartialKey, KeyPrefix
+from crossauth_backend.storage import KeyStorage, UserStorage
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.storage import UserStorage, UserStorageGetOptions
-from typing import Dict, Any, TypedDict, Literal, NotRequired, Optional, Mapping, Callable
+from typing import Dict, Any, TypedDict, Literal, NotRequired, Optional, Callable, NamedTuple
 from datetime import datetime, timedelta
+from nulltype import NullType
 CSRF_LENGTH = 16
 SESSIONID_LENGTH = 16
 
@@ -55,7 +57,7 @@ class DoubleSubmitCsrfToken:
             "secure": self.secure,
             "httpOnly": self.httpOnly}
         if (self.domain is not None): options["domain"] = self.domain
-        if (self.sameSite is not None): options["sameSite"] = self.domain
+        options["sameSite"] = self.sameSite
 
         return Cookie(name=self.cookie_name, value=cookie_value, options=options)
 
@@ -144,12 +146,18 @@ class SessionCookieOptions(CookieOptions, total=False): # Also inherit from Toke
     before returning. Function should return true if the session is valid or false otherwise.
     """
 
+class CookieReturn(NamedTuple):
+    userid: str|int|None
+    value: str
+    created: datetime
+    expires: datetime | None
+
 class SessionCookie:
     """
     Class for session management using a session id cookie.
     """
 
-    def __init__(self, key_storage, options: SessionCookieOptions = {}):
+    def __init__(self, key_storage : KeyStorage, options: SessionCookieOptions = {}):
         self.persist : bool = True
         self.idle_timeout : int = 0
         _filterFunction : Callable[[Key], bool] | None = None
@@ -158,11 +166,11 @@ class SessionCookie:
         self.cookie_name : str = "SESSIONID"
         """ Name of the CSRF Cookie, set from input options """
         self.maxAge : int = 60*60*24*4; # 4 weeks
-        self.domain : key_storage | None = None
+        self.domain : str | None = None
         self.httpOnly : bool = False
         self.path : str = "/"
         self.secure : bool = True
-        self.sameSite : bool | Literal["lax", "strict", "none"] | None = "lax";
+        self.sameSite : bool | Literal["lax", "strict", "none"] | None = "lax"
 
         ## hasher settings
         self._secret : str = ""
@@ -195,7 +203,7 @@ class SessionCookie:
     def hash_session_id(session_id: str) -> str:
         return KeyPrefix.session + Crypto.hash(session_id)
 
-    async def create_session_key(self, userid: str | int | None, extra_fields: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def create_session_key(self, userid: str | int | None, extra_fields: Optional[Dict[str, Any]] = None) -> CookieReturn:
         if extra_fields is None:
             extra_fields = {}
         max_tries = 10
@@ -224,12 +232,7 @@ class SessionCookie:
                     CrossauthLogger.logger().debug({"err": e})
                     raise e
 
-        return {
-            'userid': userid,
-            'value': session_id,
-            'created': date_created,
-            'expires': expires
-        }
+        return CookieReturn(userid, session_id, date_created, expires)
 
     def make_cookie(self, session_key: Dict[str, Any], persist: Optional[bool] = None) -> Dict[str, Any]:
         signed_value = Crypto.sign({'v': session_key['value']}, self._secret, "")
@@ -270,7 +273,7 @@ class SessionCookie:
             cookie_string += "; secure"
         return cookie_string
 
-    async def update_session_key(self, session_key: Dict[str, Any]) -> None:
+    async def update_session_key(self, session_key: PartialKey) -> None:
         if 'value' not in session_key:
             raise CrossauthError(ErrorCode.InvalidKey, "No session when updating activity")
         session_key['value'] = self.hash_session_id(session_key['value'])
@@ -283,22 +286,23 @@ class SessionCookie:
         key = await self.get_session_key(session_id)
         if not self.user_storage:
             return {'key': key, 'user': None}
-        if key['userid']:
-            user = await self.user_storage.get_user_by_id(key['userid'], options)
+        if 'userid' in key and type(key['userid']) is not NullType:
+            user = await self.user_storage.get_user_by_id(key['userid'], options) # type: ignore
             return {'user': user, 'key': key}
         else:
             return {'user': None, 'key': key}
 
-    async def get_session_key(self, session_id: str) -> Dict[str, Any]:
+    async def get_session_key(self, session_id: str) -> Key:
         now = datetime.now()
         hashed_session_id = self.hash_session_id(session_id)
         key = await self.key_storage.get_key(hashed_session_id)
         key['value'] = session_id  # storage only has hashed version
         if 'expires' in key:
-            if now > key['expires']:
-                CrossauthLogger.logger().warn(j({"msg": "Session id in cookie expired in key storage", "hashedSessionCookie": Crypto.hash(session_id)}))
-                raise CrossauthError(ErrorCode.Expired)
-        if key.get('userid') and self.idle_timeout > 0 and 'lastactive' in key and now > key['lastactive'] + self.idle_timeout:
+            expires = key['expires']
+            if type(expires) is not NullType and now > expires: # type: ignore
+                    CrossauthLogger.logger().warn(j({"msg": "Session id in cookie expired in key storage", "hashedSessionCookie": Crypto.hash(session_id)}))
+                    raise CrossauthError(ErrorCode.Expired)
+        if key.get('userid') and self.idle_timeout > 0 and 'lastactive' in key and now > key['lastactive'] + timedelta(0, self.idle_timeout):
             CrossauthLogger.logger().warn(j({"msg": "Session cookie with expired idle time received", "hashedSessionCookie": Crypto.hash(session_id)}))
             raise CrossauthError(ErrorCode.Expired)
         if self.filter_function and not self.filter_function(key):
