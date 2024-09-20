@@ -128,8 +128,8 @@ class SessionManager:
         self.__token_emailer = None
 
         set_parameter("allowed_factor2", ParamType.JsonArray, self, options, "ALLOWED_FACTOR2", protected=True)
-        set_parameter("enable_email_verification", ParamType.Boolean, self, options, "ENABLE_EMAIL_VERIFICATION", protected=True)
-        set_parameter("enable_password_reset", ParamType.Boolean, self, options, "ENABLE_PASSWORD_RESET", protected=True)
+        set_parameter("enable_email_verification", ParamType.Boolean, self, options, "ENABLE_EMAIL_VERIFICATION")
+        set_parameter("enable_password_reset", ParamType.Boolean, self, options, "ENABLE_PASSWORD_RESET")
         self._email_token_storage = self._key_storage
         if self._user_storage and (self.__enable_email_verification or self.__enable_password_reset):
             raise CrossauthError(ErrorCode.NotImplemented, "email verification is not supported in this version")

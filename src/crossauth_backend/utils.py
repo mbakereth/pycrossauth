@@ -39,32 +39,34 @@ def has_option(param: str, options: Mapping[str, Any]) -> bool:
 
 def set_from_option(instance: Any, param: str, options: Mapping[str, Any], public : bool =False, protected : bool =False) -> None:
     value = get_option(param, options)
-    if (protected): 
-        param = "_" + param
-    elif (not public):
-        param = "__" + param
-    setattr(instance, param.replace(".", "_"), value)
+    param = attr_name(instance, param, public=public, protected=protected)
+    setattr(instance, param, value)
 
 def set_from_env(instance: Any, param: str, param_type: ParamType, name_in_env_file: str, public : bool = False, protected : bool =False) -> None:
-    key = param.replace(".", "_")
-    if (protected): 
-        key = "_" + key
-    elif (not public):
-        key = "__" + key
+    param = attr_name(instance, param.replace(".", "_"), public=public, protected=protected)
 
     env_value = os.environ.get(name_in_env_file)
     if (env_value is None): return
 
     if param_type == ParamType.String:
-        setattr(instance, key, None if env_value == "null" else env_value)
+        setattr(instance, param, None if env_value == "null" else env_value)
     elif param_type == ParamType.Number:
-        setattr(instance, key, None if env_value == "null" else float(env_value))
+        setattr(instance, param, None if env_value == "null" else float(env_value))
     elif param_type == ParamType.Boolean:
-        setattr(instance, key, env_value.lower() in ["1", "true"] if env_value else False)
+        setattr(instance, param, env_value.lower() in ["1", "true"] if env_value else False)
     elif param_type == ParamType.Json:
-        setattr(instance, key, json.loads(env_value or "{}"))
+        setattr(instance, param, json.loads(env_value or "{}"))
     elif param_type == ParamType.JsonArray:
-        setattr(instance, key, json.loads(env_value or "[]"))
+        setattr(instance, param, json.loads(env_value or "[]"))
+
+def attr_name(instance : Any, param : str, public:bool=False, protected:bool=False):
+    param = param.replace(".", "_")
+    if (protected): 
+        param = "_" + param
+    elif (not public):
+        param = "_" + instance.__class__.__name__ + "__" + param
+    return param
+
 
 def set_parameter(param: str,
                   param_type: ParamType,
@@ -109,10 +111,15 @@ def set_parameter(param: str,
     if required and not has_option(param, options) and not (name_in_env_file and name_in_env_file in os.environ):
         raise CrossauthError(ErrorCode.Configuration, f"{param} is required")
     
+    attr = attr_name(instance, param, public=public, protected=protected)
+    if (not attr in instance.__dict__):
+        raise CrossauthError(ErrorCode.Configuration, attr + " does not exist")
+
     if has_option(param, options):
         set_from_option(instance, param, options, public=public, protected=protected)
     elif env_name and name_in_env_file in os.environ and name_in_env_file is not None:
         set_from_env(instance, param, param_type, name_in_env_file, public=public, protected=protected)
+
 
 T = TypeVar('T')
 

@@ -308,18 +308,18 @@ class SessionCookie:
 
         self.__user_storage = options["user_storage"] if "user_storage" in options else None
         self.key_storage = key_storage
-        set_parameter("idle_timeout", ParamType.Number, self, options, "SESSION_IDLE_TIMEOUT")
+        set_parameter("idle_timeout", ParamType.Number, self, options, "SESSION_IDLE_TIMEOUT", protected=True)
         set_parameter("persist", ParamType.Number, self, options, "PERSIST_SESSION_ID")
         self.filter_function = options['filterFunction'] if 'filterFunction' in options else None
 
         # cookie settings
-        set_parameter("cookie_name", ParamType.String, self, options, "SESSION_COOKIE_NAME")
-        set_parameter("maxAge", ParamType.String, self, options, "SESSION_COOKIE_maxAge")
-        set_parameter("domain", ParamType.String, self, options, "SESSION_COOKIE_DOMAIN")
-        set_parameter("httpOnly", ParamType.Boolean, self, options, "SESSIONCOOKIE_HTTPONLY")
-        set_parameter("path", ParamType.String, self, options, "SESSION_COOKIE_PATH")
-        set_parameter("secure", ParamType.Boolean, self, options, "SESSION_COOKIE_SECURE")
-        set_parameter("sameSite", ParamType.String, self, options, "SESSION_COOKIE_SAMESITE")
+        set_parameter("cookie_name", ParamType.String, self, options, "SESSION_COOKIE_NAME", protected=True)
+        set_parameter("maxAge", ParamType.String, self, options, "SESSION_COOKIE_maxAge", protected=True)
+        set_parameter("domain", ParamType.String, self, options, "SESSION_COOKIE_DOMAIN", protected=True)
+        set_parameter("httpOnly", ParamType.Boolean, self, options, "SESSIONCOOKIE_HTTPONLY", protected=True)
+        set_parameter("path", ParamType.String, self, options, "SESSION_COOKIE_PATH", protected=True)
+        set_parameter("secure", ParamType.Boolean, self, options, "SESSION_COOKIE_SECURE", protected=True)
+        set_parameter("sameSite", ParamType.String, self, options, "SESSION_COOKIE_SAMESITE", protected=True)
 
         # hasher settings
         self.__secret = options["secret"] if "secret" in options else ""
