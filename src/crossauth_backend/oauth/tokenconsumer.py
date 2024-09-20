@@ -146,16 +146,16 @@ class OAuthTokenConsumer:
     def keys(self, val : Dict[str, Any]):
         self._keys = val
 
-    def __init__(self, audience: str, session: aiohttp.ClientSession, options: OAuthTokenConsumerOptions = {}):
+    def __init__(self, audience: str, options: OAuthTokenConsumerOptions = {}):
         """
         The OpenID Connect configuration for the authorization server,
         either passed to the constructor or fetched from the authorization
         server.
         """
 
-        set_parameter("jwt_key_type", ParamType.String, self, options, "JWT_KEY_TYPE", protected=True)
-        set_parameter("audience", ParamType.String, self, options, "OAUTH_AUDIENCE", required=True, protected=True)
 
+        self.__audience = audience
+        self.__jwt_key_type : str|None = ""
         self.__auth_server_base_url : str = ""
         self.__jwt_secret_key : str|None = None
         self.__jwt_public_key : str|None = None
@@ -163,9 +163,11 @@ class OAuthTokenConsumer:
         self.__jwt_public_key_file : str|None = None
         self.__clock_tolerance = 10
 
+        set_parameter("jwt_key_type", ParamType.String, self, options, "JWT_KEY_TYPE")
+        set_parameter("audience", ParamType.String, self, options, "OAUTH_AUDIENCE", required=True)
+
         self.__persist_access_token = False
 
-        self.__audience = audience
 
         self._oidc_config = options.get('oidc_config')
         self._keys : Dict[str, Any] = {}
@@ -173,7 +175,6 @@ class OAuthTokenConsumer:
         self.__key_storage : KeyStorage|None = None
         if (options.get("key_storage") is not None):
             self.__key_storage = options.get("key_storage")
-        self._session : aiohttp.ClientSession = session
 
         set_parameter("auth_server_base_url", ParamType.String, self, options, "AUTH_SERVER_BASE_URL", required=True)
         set_parameter("jwt_key_type", ParamType.String, self, options, "JWT_KEY_TYPE")
@@ -255,13 +256,15 @@ class OAuthTokenConsumer:
             raise ValueError("Couldn't get OIDC configuration. Either set authServerBaseUrl or set config manually")
 
         try:
-            resp = await self._session.get(f"{self._auth_server_base_url}/.well-known/openid-configuration")
-            if not resp:
-                raise ValueError("Couldn't get OIDC configuration")
-            self._oidc_config = {}
+            async with aiohttp.ClientSession() as session:
 
-            body = await resp.json()
-            self._oidc_config = {**body}
+                resp = await session.get(f"{self._auth_server_base_url}/.well-known/openid-configuration")
+                if not resp:
+                    raise ValueError("Couldn't get OIDC configuration")
+                self._oidc_config = {}
+
+                body = await resp.json()
+                self._oidc_config = {**body}
         except Exception as e:
             CrossauthLogger.logger().debug(j({"err": e}))
             raise ValueError("Unrecognized response from OIDC configuration endpoint")
@@ -284,16 +287,18 @@ class OAuthTokenConsumer:
             if not self.oidc_config:
                 raise ValueError("Load OIDC config before Jwks")
             try:
-                resp = await self._session.get(self.oidc_config['jwks_uri'])
-                if not resp:
-                    raise ValueError("Couldn't get OIDC configuration")
-                self.keys = {}
-                body = await resp.json()
-                if 'keys' not in body or not isinstance(body['keys'], list):
-                    raise ValueError("Couldn't fetch keys")
-                for key in body['keys']:
-                    kid = key.get('kid', "_default")
-                    self.keys[kid] = await self._import_jwk(key)
+                async with aiohttp.ClientSession() as session:
+
+                    resp = await session.get(self.oidc_config['jwks_uri'])
+                    if not resp:
+                        raise ValueError("Couldn't get OIDC configuration")
+                    self.keys = {}
+                    body = await resp.json()
+                    if 'keys' not in body or not isinstance(body['keys'], list):
+                        raise ValueError("Couldn't fetch keys")
+                    for key in body['keys']:
+                        kid = key.get('kid', "_default")
+                        self.keys[kid] = await self._import_jwk(key)
             except Exception as e:
                 CrossauthLogger.logger().debug(j({"cerr": e}))
                 raise ValueError("Unrecognized response from OIDC jwks endpoint")

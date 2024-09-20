@@ -268,7 +268,6 @@ class OAuthClient:
         :param OAuthClientOptions options: see :class: OAuthClientOptions
         """
 
-        self._session = aiohttp.ClientSession() 
         self._verifier_length = 32
         self._state_length = 32
         self._client_id : str = ""
@@ -288,16 +287,18 @@ class OAuthClient:
         self.auth_server_base_url = auth_server_base_url
         set_parameter("client_id", ParamType.String, self, options, "OAUTH_CLIENT_ID", required=True, protected=True)
         set_parameter("client_secret", ParamType.String, self, options, "OAUTH_CLIENT_SECRET", required=True, protected=True)
+        set_parameter("redirect_uri", ParamType.String, self, options, "OAUTH_REDIRECT_URI", required=True, protected=True)
 
-        self._token_consumer = OAuthTokenConsumer(self._client_id, self._session, options)
+        self._token_consumer = OAuthTokenConsumer(self._client_id, options)
         set_parameter("state_length", ParamType.String, self, options, "OAUTH_STATE_LENGTH", protected=True)
         set_parameter("verifier_length", ParamType.String, self, options, "OAUTH_VERIFIER_LENGTH", protected=True)
         set_parameter("client_secret", ParamType.String, self, options, "OAUTH_CLIENT_SECRET", protected=True)
         set_parameter("code_challenge_method", ParamType.String, self, options, "OAUTH_CODE_CHALLENGE_METHOD", protected=True)
         set_parameter("device_authorization_url", ParamType.String, self, options, "OAUTH_DEVICE_AUTHORIZATION_URL", protected=True)
+        set_parameter("auth_server_credentials", ParamType.String, self, options, "OAUTH_AUTH_SERVER_CREDENTIALS", protected=True)
+        set_parameter("auth_server_mode", ParamType.String, self, options, "OAUTH_AUTH_SERVER_MODE", protected=True)
+        set_parameter("auth_server_headers", ParamType.Json, self, options, "OAUTH_AUTH_SERVER_HEADERS", protected=True)
         if (self._device_authorization_url is not None and self._device_authorization_url[0:1] == "/"): self._device_authorization_url = self._device_authorization_url[1:]
-
-
 
     async def load_config(self, oidc_config : OpenIdConfiguration|None=None):
         """
@@ -329,8 +330,9 @@ class OAuthClient:
             options["credentials"] = self._auth_server_credentials
 
         try:
-            response = await self._session.get(url, **options)
-            response.raise_for_status()
+            async with aiohttp.ClientSession() as session:
+                response = await session.get(url, **options)
+                response.raise_for_status()
         except requests.RequestException as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             raise Exception("Couldn't get OIDC configuration from URL")
@@ -338,12 +340,12 @@ class OAuthClient:
         self._oidc_config : OpenIdConfiguration | None= None
         try:
             body : Mapping[str,str] = await response.json()
-            self.oidc_config = {**body}
+            self._oidc_config = {**(cast(OpenIdConfiguration, body))}
         except json.JSONDecodeError:
             raise Exception("Unrecognized response from OIDC configuration endpoint")
 
     def get_oidc_config(self):
-        return self.oidc_config
+        return self._oidc_config
 
     @abstractmethod
     def random_value(self, length : int) -> str:
@@ -379,12 +381,12 @@ class OAuthClient:
             await self.load_config()
         if (self._oidc_config is None):
             raise CrossauthError(ErrorCode.Connection, "Couldn't load OIDC Configuration")
-        if "code" not in self._oidc_config["response_types_supported"] or not "query" in self.oidc_config["response_modes_supported"]:
+        if "code" not in self._oidc_config["response_types_supported"] or not "query" in self._oidc_config["response_modes_supported"]:
             return {
                 "error": "invalid_request",
                 "error_description": "Server does not support authorization code flow"
             }
-        if not self.oidc_config.get("authorization_endpoint"):
+        if not self._oidc_config.get("authorization_endpoint"):
             return {
                 "error": "server_error",
                 "error_description": "Cannot get authorize endpoint"
@@ -401,7 +403,7 @@ class OAuthClient:
                 "error_description": "Cannot make authorization code flow without Redirect Uri"
             }
 
-        base = self.oidc_config["authorization_endpoint"]
+        base = self._oidc_config["authorization_endpoint"]
         url = f"{base}?response_type=code&client_id={urllib.parse.quote(self._client_id)}&state={urllib.parse.quote(self.state)}&redirect_uri={urllib.parse.quote(self._redirect_uri)}"
 
         if scope:
@@ -425,8 +427,10 @@ class OAuthClient:
         :return: an OAuth token endpoint response
         """
 
-        if not self.oidc_config: 
+        if not self._oidc_config: 
             await self.load_config()
+        if (not self._oidc_config):
+            return {"error": "server_error", "error_description": "Couldn't load OIDC configuration"}
         if error is not None or not code:
             if error is None:
                 error = "server_error"
@@ -437,17 +441,17 @@ class OAuthClient:
             return {"error": "access_denied", "error_description": "State is not valid"}
         self.authzCode = code
 
-        if "authorization_code" not in self.oidc_config["grant_types_supported"]:
+        if "authorization_code" not in self._oidc_config["grant_types_supported"]:
             return {
                 "error": "invalid_request",
                 "error_description": "Server does not support authorization code grant"
             }
-        if not self.oidc_config.get("token_endpoint"):
+        if not self._oidc_config.get("token_endpoint"):
             return {
                 "error": "server_error",
                 "error_description": "Cannot get token endpoint"
             }
-        url = self.oidc_config["token_endpoint"]
+        url = self._oidc_config["token_endpoint"]
 
         grant_type = "authorization_code"
         client_secret = self._client_secret
@@ -477,22 +481,22 @@ class OAuthClient:
         """
 
         CrossauthLogger.logger().debug(j({"msg": "Starting client credentials flow"}))
-        if not self.oidc_config:
+        if not self._oidc_config: 
             await self.load_config()
-        if "client_credentials" not in self.oidc_config["grant_types_supported"]:
+        if self._oidc_config is None or self._oidc_config["token_endpoint"] == "":
+            return {"error": "server_error", "error_description": "Cannot get token endpoint"}
+        if "client_credentials" not in self._oidc_config["grant_types_supported"]:
             return {
                 "error": "invalid_request",
                 "error_description": "Server does not support client credentials grant"
             }
-        if self._oidc_config is None or self._oidc_config["token_endpoint"] == "":
-            return {"error": "server_error", "error_description": "Cannot get token endpoint"}
         if self._client_id == "":
             return {
                 "error": "invalid_request",
                 "error_description": "Cannot make client credentials flow without client id"
             }
 
-        url = self.oidc_config["token_endpoint"]
+        url = self._oidc_config["token_endpoint"]
 
         params : TokenBodyType = {
             "grant_type": "client_credentials",
@@ -523,7 +527,7 @@ class OAuthClient:
         """
 
         CrossauthLogger.logger().debug(j({"msg": "Starting password flow"}))
-        if not self.oidc_config:
+        if not self._oidc_config:
             await self.load_config()
         if (self._oidc_config is None):
             raise CrossauthError(ErrorCode.Connection, "Couldn't fet OIDC configuration")
@@ -532,13 +536,13 @@ class OAuthClient:
                 "error": "invalid_request",
                 "error_description": "Server does not support password grant"
             }
-        if not self.oidc_config.get("token_endpoint"):
+        if not self._oidc_config.get("token_endpoint"):
             return {
                 "error": "server_error",
                 "error_description": "Cannot get token endpoint"
             }
 
-        url = self.oidc_config["token_endpoint"]
+        url = self._oidc_config["token_endpoint"]
 
         params : TokenBodyType = {
             "grant_type": "password",
@@ -581,10 +585,10 @@ class OAuthClient:
                 "error": "invalid_request",
                 "error_description": "Server does not support password_mfa grant"
             }
-        if not self.oidc_config.get("issuer"):
+        if not self._oidc_config.get("issuer"):
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
-        url = f"{self.oidc_config['issuer']}/mfa/authenticators" if self.oidc_config['issuer'].endswith("/") else f"{self.oidc_config['issuer']}/mfa/authenticators"
+        url = f"{self._oidc_config['issuer']}/mfa/authenticators" if self._oidc_config['issuer'].endswith("/") else f"{self._oidc_config['issuer']}/mfa/authenticators"
         resp = await self._get(url, {'authorization': f'Bearer {mfa_token}', **self._auth_server_headers})
         if not isinstance(resp, list):
             return {
@@ -622,7 +626,7 @@ class OAuthClient:
         """
 
         CrossauthLogger.logger().debug(j({"msg": "Making MFA OTB request"}))
-        if not self.oidc_config:
+        if not self._oidc_config:
             await self.load_config()
         if (self._oidc_config is None):
             raise CrossauthError(ErrorCode.Connection, "Couldn't fet OIDC configuration")
@@ -631,10 +635,10 @@ class OAuthClient:
                 "error": "invalid_request",
                 "error_description": "Server does not support password_mfa grant"
             }
-        if not self.oidc_config.get("issuer"):
+        if not self._oidc_config.get("issuer"):
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
-        url = f"{self.oidc_config['issuer']}/mfa/challenge" if self.oidc_config['issuer'].endswith("/") else f"{self.oidc_config['issuer']}/mfa/challenge"
+        url = f"{self._oidc_config['issuer']}/mfa/challenge" if self._oidc_config['issuer'].endswith("/") else f"{self._oidc_config['issuer']}/mfa/challenge"
         resp = await self._post(url, {
             "client_id": self._client_id,
             "client_secret": self._client_secret,
@@ -680,10 +684,10 @@ class OAuthClient:
                 "error": "invalid_request",
                 "error_description": "Server does not support password_mfa grant"
             }
-        if not self.oidc_config.get("issuer"):
+        if not self._oidc_config.get("issuer"):
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
-        otpUrl = self.oidc_config["token_endpoint"]
+        otpUrl = self._oidc_config["token_endpoint"]
         otpResp = await self._post(otpUrl, {
             "grant_type": "http://auth0.com/oauth/grant-type/mfa-otp",
             "client_id": self._client_id,
@@ -734,10 +738,10 @@ class OAuthClient:
                 "error": "invalid_request",
                 "error_description": "Server does not support password_mfa grant"
             }
-        if not self.oidc_config.get("issuer"):
+        if not self._oidc_config.get("issuer"):
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
-        url = f"{self.oidc_config['issuer']}/mfa/challenge" if self.oidc_config['issuer'].endswith("/") else f"{self.oidc_config['issuer']}/mfa/challenge"
+        url = f"{self._oidc_config['issuer']}/mfa/challenge" if self._oidc_config['issuer'].endswith("/") else f"{self._oidc_config['issuer']}/mfa/challenge"
         resp = await self._post(url, {
             "client_id": self._client_id,
             "client_secret": self._client_secret,
@@ -782,10 +786,10 @@ class OAuthClient:
                 "error": "invalid_request",
                 "error_description": "Server does not support password_mfa grant"
             }
-        if not self.oidc_config.get("issuer"):
+        if not self._oidc_config.get("issuer"):
             return {"error": "server_error", "error_description": "Cannot get issuer"}
 
-        url = self.oidc_config["token_endpoint"]
+        url = self._oidc_config["token_endpoint"]
         resp = await self._post(url, {
             "grant_type": "http://auth0.com/oauth/grant-type/mfa-oob",
             "client_id": self._client_id,
@@ -828,13 +832,13 @@ class OAuthClient:
                 "error": "invalid_request",
                 "error_description": "Server does not support refresh_token grant"
             }
-        if not self.oidc_config.get("token_endpoint"):
+        if not self._oidc_config.get("token_endpoint"):
             return {
                 "error": "server_error",
                 "error_description": "Cannot get token endpoint"
             }
 
-        url = self.oidc_config["token_endpoint"]
+        url = self._oidc_config["token_endpoint"]
 
         client_secret = self._client_secret
 
@@ -909,7 +913,7 @@ class OAuthClient:
                 "error": "invalid_request",
                 "error_description": "Server does not support device code grant"
             }
-        if not self.oidc_config.get("token_endpoint"):
+        if not self._oidc_config.get("token_endpoint"):
             return {
                 "error": "server_error",
                 "error_description": "Cannot get token endpoint"
@@ -922,7 +926,7 @@ class OAuthClient:
             "device_code": device_code,
         }
         try:
-            resp = await self._post(self.oidc_config["token_endpoint"], params, self._auth_server_headers)
+            resp = await self._post(self._oidc_config["token_endpoint"], params, self._auth_server_headers)
             return cast(OAuthDeviceResponse, resp)
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
@@ -942,12 +946,13 @@ class OAuthClient:
             options["credentials"] = self._auth_server_credentials
         if self._auth_server_mode:
             options["mode"] = self._auth_server_mode
-        resp = await self._session.post(url, json=params, headers={
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            **headers,
-        })
-        return await resp.json()
+        async with aiohttp.ClientSession() as session:
+            resp = await session.post(url, json=params, headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                **headers,
+            })
+            return await resp.json()
 
     async def _get(self, url: str, headers: Mapping[str, Any] = {}) -> Mapping[str, Any] | List[Any]:
         CrossauthLogger.logger().debug(j({"msg": "Fetch GET", "url": url}))
@@ -956,12 +961,13 @@ class OAuthClient:
             options["credentials"] = self._auth_server_credentials
         if self._auth_server_mode:
             options["mode"] = self._auth_server_mode
-        resp = await self._session.get(url, headers={
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            **headers,
-        })
-        return await resp.json()
+        async with aiohttp.ClientSession() as session:
+            resp = await session.get(url, headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                **headers,
+            })
+            return await resp.json()
     
     async def validate_id_token(self, token: str) -> Optional[Dict[str, Any]]:
         """
