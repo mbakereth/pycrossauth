@@ -1,9 +1,8 @@
 nulltype==2.3.1
 requests
-jwcrypto
-pyjwt
 aiohttp
 pycryptodome
 psycopg
 psycopg_pool
 sqlalchemy[asyncio]
+jwt

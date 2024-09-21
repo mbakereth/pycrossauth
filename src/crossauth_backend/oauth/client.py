@@ -12,7 +12,9 @@ import urllib.parse
 from abc import abstractmethod
 import requests
 from urllib.parse import urlparse
-import jwt
+from jwt import (
+    JWT
+)
 import aiohttp
 
 class OAuthFlows:
@@ -878,11 +880,13 @@ class OAuthClient:
                 "error_description": "Server does not support device code grant"
             }
 
-        params = {
+        params : TokenBodyType = {
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             "client_id": self._client_id,
-            "client_secret": self._client_secret,
         }
+        if self._client_secret is not None:
+            params["client_secret"] = self._client_secret
+
         if scope:
             params["scope"] = scope
         try:
@@ -919,12 +923,14 @@ class OAuthClient:
                 "error_description": "Cannot get token endpoint"
             }
 
-        params = {
+        params : TokenBodyType = {
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             "client_id": self._client_id,
-            "client_secret": self._client_secret,
             "device_code": device_code,
         }
+        if self._client_secret is not None:
+            params["client_secret"] = self._client_secret
+            
         try:
             resp = await self._post(self._oidc_config["token_endpoint"], params, self._auth_server_headers)
             return cast(OAuthDeviceResponse, resp)
@@ -1006,6 +1012,6 @@ class OAuthClient:
         """
         Validates a token and, if valid, returns the payload
         """
-        
-        return jwt.decode(token, options={"verify_signature": False}) 
+        instance = JWT()
+        return instance.decode(token, None, do_verify=False, do_time_check=False)
     

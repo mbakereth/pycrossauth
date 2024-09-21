@@ -7,12 +7,23 @@ from crossauth_backend.crypto import Crypto
 from crossauth_backend.storage import KeyStorage
 from crossauth_backend.utils import MapGetter
 
-from typing import TypedDict, Optional, Dict, Any, Literal
+from typing import TypedDict, Optional, Dict, Any, Literal, List
 import json
-from datetime import datetime 
+from datetime import datetime
 import aiohttp
+from jwt import (
+    JWT,
+    jwk_from_dict,
+    jwk_from_pem,
+    AbstractJWKBase
+)
+
+import base64
 
 type EncryptionKey = Dict[str, Any] | str
+
+class Keys(TypedDict, total=True):
+    keys: List[AbstractJWKBase]
 
 class OAuthTokenConsumerOptions(TypedDict, total=False):
     """
@@ -80,8 +91,8 @@ class OAuthTokenConsumer:
     """
     
     @property
-    def _auth_server_base_url(self):
-        return self.__auth_server_base_url
+    def auth_server_base_url(self):
+        return self._auth_server_base_url
 
     @property
     def _audience(self):
@@ -108,14 +119,14 @@ class OAuthTokenConsumer:
     def _jwt_public_key(self):
         return self.__jwt_public_key
     @_jwt_public_key.setter
-    def _jwt_public_key(self, val : str|None):
+    def _jwt_public_key(self, val : bytes|None):
         self.__jwt_public_key = val
 
     @property
     def _jwt_secret_key(self):
         return self.__jwt_secret_key
     @_jwt_secret_key.setter
-    def _jwt_secret_key(self, val : str|None):
+    def _jwt_secret_key(self, val : bytes|None):
         self.__jwt_secret_key = val
 
     @property
@@ -143,7 +154,7 @@ class OAuthTokenConsumer:
     def keys(self):
         return self._keys
     @keys.setter
-    def keys(self, val : Dict[str, Any]):
+    def keys(self, val : Dict[str, AbstractJWKBase]):
         self._keys = val
 
     def __init__(self, audience: str, options: OAuthTokenConsumerOptions = {}):
@@ -156,27 +167,26 @@ class OAuthTokenConsumer:
 
         self.__audience = audience
         self.__jwt_key_type : str|None = ""
-        self.__auth_server_base_url : str = ""
-        self.__jwt_secret_key : str|None = None
-        self.__jwt_public_key : str|None = None
+        self._auth_server_base_url : str = ""
+        self.__jwt_secret_key : bytes|None = None
+        self.__jwt_public_key : bytes|None = None
         self.__jwt_secret_key_file : str|None = None
         self.__jwt_public_key_file : str|None = None
         self.__clock_tolerance = 10
 
         set_parameter("jwt_key_type", ParamType.String, self, options, "JWT_KEY_TYPE")
-        set_parameter("audience", ParamType.String, self, options, "OAUTH_AUDIENCE", required=True)
 
         self.__persist_access_token = False
 
 
         self._oidc_config = options.get('oidc_config')
-        self._keys : Dict[str, Any] = {}
+        self._keys : Dict[str, AbstractJWKBase] = {}
 
         self.__key_storage : KeyStorage|None = None
         if (options.get("key_storage") is not None):
             self.__key_storage = options.get("key_storage")
 
-        set_parameter("auth_server_base_url", ParamType.String, self, options, "AUTH_SERVER_BASE_URL", required=True)
+        set_parameter("auth_server_base_url", ParamType.String, self, options, "AUTH_SERVER_BASE_URL", required=True, protected=True)
         set_parameter("jwt_key_type", ParamType.String, self, options, "JWT_KEY_TYPE")
         set_parameter("jwt_public_key_file", ParamType.String, self, options, "JWT_PUBLIC_KEY_FILE",)
         set_parameter("jwt_secret_key_file", ParamType.String, self, options, "JWT_SECRET_KEY_FILE")
@@ -198,9 +208,8 @@ class OAuthTokenConsumer:
                     "Cannot specify symmetric key and file")
             
             if (self.__jwt_secret_key_file is not None):
-                with open(self.__jwt_secret_key_file, 'r', encoding='utf-8') as f:
-                    self._jwt_secret_key = \
-                        f.read(self.__jwt_secret_key_file)
+                with open(self.__jwt_secret_key_file, 'rb') as f:
+                    self._jwt_secret_key = f.read()
             
         elif ((self._jwt_public_key is not None or self._jwt_public_key_file is not None)):
             if (self._jwt_public_key_file is not None and self._jwt_public_key is not None):
@@ -208,9 +217,8 @@ class OAuthTokenConsumer:
                     "Cannot specify both public key and public key file")
             
             if (self._jwt_public_key_file):
-                with open(self._jwt_public_key_file, 'r', encoding='utf-8') as f:
-                    self._jwt_public_key = \
-                        f.read(self.__jwt_public_key_file)
+                with open(self._jwt_public_key_file, 'rb') as f:
+                    self._jwt_public_key = f.read()
             
     async def load_keys(self):
         """
@@ -220,14 +228,15 @@ class OAuthTokenConsumer:
         """
         try:
             if self._jwt_secret_key:
-                if not self._jwt_key_type:
-                    raise ValueError("Must specify jwtKeyType if setting jwt_secret_key")
-                self.keys["_default"] = await self._import_pkcs8(self._jwt_secret_key, self._jwt_key_type)
+                #if not self._jwt_key_type:
+                #    raise ValueError("Must specify jwtKeyType if setting jwt_secret_key")
+                jwk : AbstractJWKBase = jwk_from_pem(self._jwt_secret_key)
+                self.keys["_default"] = jwk
             elif self._jwt_public_key:
-                if not self._jwt_key_type:
-                    raise ValueError("Must specify jwtKeyType if setting jwt_public_key")
-                key = await self._import_spki(self._jwt_public_key, self._jwt_key_type)
-                self.keys["_default"] = key
+                #if not self._jwt_key_type:
+                #    raise ValueError("Must specify jwtKeyType if setting jwt_public_key")
+                jwk : AbstractJWKBase = jwk_from_pem(self._jwt_public_key)
+                self.keys["_default"] = jwk
             else:
                 if not self.oidc_config:
                     await self.load_config()
@@ -235,7 +244,9 @@ class OAuthTokenConsumer:
                     raise ValueError("Load OIDC config before Jwks")
                 await self.load_jwks()
         except Exception as e:
-            print(f"Error loading keys: {e}")
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            CrossauthLogger.logger().error(j({"msg": "Couldn't load keys", "cerr": ce}))
             raise ValueError("Couldn't load keys")
 
     async def load_config(self, oidc_config: Optional[Dict[str, Any]] = None):
@@ -269,7 +280,7 @@ class OAuthTokenConsumer:
             CrossauthLogger.logger().debug(j({"err": e}))
             raise ValueError("Unrecognized response from OIDC configuration endpoint")
 
-    async def load_jwks(self, jwks: Optional[Dict[str, Any]] = None):
+    async def load_jwks(self, jwks: Optional[Keys] = None):
         """
         Loads the JWT signature validation keys, or fetches them from the 
         authorization server (using the URL in the OIDC configuration).
@@ -281,8 +292,9 @@ class OAuthTokenConsumer:
         """
         if jwks:
             self.keys = {}
-            for key in jwks['keys']:
-                self.keys[key.get('kid', "_default")] = await self._import_jwk(key)
+            for jwk in jwks['keys']:
+                kid : str = jwk.get_kid()
+                self.keys[kid] = jwk
         else:
             if not self.oidc_config:
                 raise ValueError("Load OIDC config before Jwks")
@@ -296,9 +308,10 @@ class OAuthTokenConsumer:
                     body = await resp.json()
                     if 'keys' not in body or not isinstance(body['keys'], list):
                         raise ValueError("Couldn't fetch keys")
-                    for key in body['keys']:
-                        kid = key.get('kid', "_default")
-                        self.keys[kid] = await self._import_jwk(key)
+                    for k in body['keys']:
+                        kid = k.get('kid', "_default")
+                        self.keys[kid] = jwk_from_dict(k)
+
             except Exception as e:
                 CrossauthLogger.logger().debug(j({"cerr": e}))
                 raise ValueError("Unrecognized response from OIDC jwks endpoint")
@@ -310,14 +323,15 @@ class OAuthTokenConsumer:
         if not decoded:
             return None
         if decoded.get('type') != token_type:
-            print(f"{token_type} expected but got: {decoded.get('type')}")
+            CrossauthLogger.logger().error(j({"msg": token_type + " expected but got " + decoded.get('type', "")}))
+            return None
         if decoded.get('iss') != self._auth_server_base_url:
-            print(f"Invalid issuer: {decoded.get('iss')} in access token")
+            CrossauthLogger.logger().error(j({"msg": f"Invalid issuer: {decoded.get('iss')} in access token", "hashedAccessToken": self.hash(decoded["jti"])}))
             return None
         if 'aud' in decoded:
             if (isinstance(decoded['aud'], list) and self._audience not in decoded['aud']) or \
                (not isinstance(decoded['aud'], list) and decoded['aud'] != self._audience):
-                print(f"Invalid audience: {decoded['aud']} in access token")
+                CrossauthLogger.logger().warn(j({"msg": f"Invalid audience: {decoded['aud']} in access token"}))
                 return None
         return decoded
     
@@ -357,13 +371,16 @@ class OAuthTokenConsumer:
 
     async def _validate_token(self, access_token: str) -> Optional[Dict[str, Any]]:
         if not self.keys or len(self.keys) == 0:
-            print("No keys loaded so cannot validate tokens")
-        kid = None
+            CrossauthLogger.logger().warn(j({"msg": "No keys loaded so cannot validate tokens"}))
+        kid : str|None = None
+        instance = JWT()
         try:
-            header = self._decode_protected_header(access_token)
-            kid = header.get('kid')
-        except:
-            print("Invalid access token format")
+            header = OAuthTokenConsumer.decode_header(access_token)
+            kid = header.get('kid', "_default")
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            CrossauthLogger.logger().warn(j({"msg": "Invalid access token format", "cerr": ce}))
             return None
         key = self.keys.get("_default")
         for loaded_kid in self.keys:
@@ -371,36 +388,26 @@ class OAuthTokenConsumer:
                 key = self.keys[loaded_kid]
                 break
         if not key:
-            print("No matching keys found for access token")
+            CrossauthLogger.logger().warn(j({"msg": "No matching keys found for access token"}));
             return None
         try:
-            payload = await self._compact_verify(access_token, key)
-            decoded_payload = json.loads(payload.decode())
-            if decoded_payload['exp'] * 1000 < (datetime.now().timestamp() + self._clock_tolerance):
-                print("Access token has expired")
-                return None
+            decoded_payload = instance.decode(access_token, key)
+            # if decoded_payload['exp'] * 1000 < (datetime.now().timestamp() + self._clock_tolerance):
+            #     CrossauthLogger.logger.warn(j({("msg": "Access token has expired"}))
+            #     return None
             return decoded_payload
         except Exception as e:
             CrossauthLogger.logger().debug(j({"err":e}))
             return None
 
-    async def _import_pkcs8(self, key: str, key_type: str):
-        # Implement the import logic here
-        pass
-
-    async def _import_spki(self, key: str, key_type: str):
-        # Implement the import logic here
-        pass
-
-    async def _import_jwk(self, key: Dict[str, Any]):
-        # Implement the import logic here
-        pass
-
-    def _decode_protected_header(self, token: str) -> Dict[str, Any]:
-        # Implement the decode logic here
-        return {}
-
-    async def _compact_verify(self, token: str, key: Any) -> bytes:
-        # Implement the verification logic here
-        return b""
-
+    @staticmethod
+    def decode_header(token : str):
+        parts = token.split(".")
+        if (len(parts) != 3):
+            raise CrossauthError(ErrorCode.DataFormat, "Invalid JWT")
+        header_str = base64.urlsafe_b64decode(parts[0])
+        return json.loads(header_str)
+    
+    def hash(self, plaintext : str) -> str: 
+        return Crypto.hash(plaintext); 
+    

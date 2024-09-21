@@ -301,7 +301,7 @@ class Crypto:
         if salt is None:
             salt = Crypto.random_salt()
         if timestamp is None:
-            timestamp = int(datetime.now().timestamp())
+            timestamp = int(datetime.now().timestamp()*1000)
         return base64.urlsafe_b64encode(json.dumps({**payload, 't': timestamp, 's': salt}).encode()).decode()
 
     @staticmethod
