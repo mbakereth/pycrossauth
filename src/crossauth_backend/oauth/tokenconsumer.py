@@ -95,11 +95,11 @@ class OAuthTokenConsumer:
         return self._auth_server_base_url
 
     @property
-    def _audience(self):
-        return self.__audience
-    @_audience.setter
-    def _audience(self, val : str):
-        self.__audience = val
+    def audience(self):
+        return self._audience
+    @audience.setter
+    def audience(self, val : str):
+        self._audience = val
 
     @property
     def _jwt_key_type(self):
@@ -165,7 +165,7 @@ class OAuthTokenConsumer:
         """
 
 
-        self.__audience = audience
+        self._audience = audience
         self.__jwt_key_type : str|None = ""
         self._auth_server_base_url : str = ""
         self.__jwt_secret_key : bytes|None = None

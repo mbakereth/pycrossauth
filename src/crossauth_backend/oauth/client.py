@@ -466,7 +466,11 @@ class OAuthClient:
             params["client_secret"] = client_secret
         params["code_verifier"] = self._code_verifier
         try:
-            return cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers)) 
+            ret = cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers)) 
+            if ("id_token" in ret):
+                if (await self.validate_id_token(ret["id_token"]) is None):
+                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+            return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -558,7 +562,11 @@ class OAuthClient:
         if scope:
             params["scope"] = scope
         try:
-            return cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers))
+            ret = cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers))
+            if ("id_token" in ret):
+                if (await self.validate_id_token(ret["id_token"]) is None):
+                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+            return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -699,6 +707,9 @@ class OAuthClient:
             "otp": otp,
             "scope": scope,
         }, self._auth_server_headers)
+        if ("id_token" in otpResp):
+            if (await self.validate_id_token(otpResp["id_token"]) is None):
+                raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
         return cast(OAuthTokenResponse, {
             "id_token": otpResp.get("id_token"),
             "access_token": otpResp.get("access_token"),
@@ -807,6 +818,9 @@ class OAuthClient:
                 "error": MapGetter[str].get(resp, "error", ""),
                 "error_description": MapGetter[str].get(resp, "error_description", ""),
             }
+        if ("id_token" in resp):
+            if (await self.validate_id_token(resp["id_token"]) is None):
+                raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
         return cast(OAuthTokenResponse, {
             "id_token": resp.get("id_token"),
             "access_token": resp.get("access_token"),
@@ -852,7 +866,11 @@ class OAuthClient:
         if client_secret:
             params["client_secret"] = client_secret
         try:
-            return cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers))
+            ret = cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers))
+            if ("id_token" in ret):
+                if (await self.validate_id_token(ret["id_token"]) is None):
+                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+            return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -890,7 +908,11 @@ class OAuthClient:
         if scope:
             params["scope"] = scope
         try:
-            return cast(OAuthDeviceAuthorizationResponse, await self._post(url, params, self._auth_server_headers))
+            ret = cast(OAuthDeviceAuthorizationResponse, await self._post(url, params, self._auth_server_headers))
+            if ("id_token" in ret):
+                if (await self.validate_id_token(ret["id_token"]) is None):
+                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+            return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -930,10 +952,14 @@ class OAuthClient:
         }
         if self._client_secret is not None:
             params["client_secret"] = self._client_secret
-            
+
         try:
             resp = await self._post(self._oidc_config["token_endpoint"], params, self._auth_server_headers)
-            return cast(OAuthDeviceResponse, resp)
+            ret = cast(OAuthDeviceResponse, resp)
+            if ("id_token" in ret):
+                if (await self.validate_id_token(ret["id_token"]) is None):
+                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+            return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
