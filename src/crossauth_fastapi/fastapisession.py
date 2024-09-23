@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from typing import Callable, Mapping, Optional, Dict, Any, List, cast, TypedDict, Literal
 from datetime import datetime
-from typing import Mapping
+from typing import Mapping, Tuple, Set
 import json
 from fastapi import Request, FastAPI, Response
 from fastapi.responses import JSONResponse
@@ -136,7 +136,7 @@ class JsonOrFormData:
         return None
 
 class FastApiSessionServerOptions(SessionManagerOptions, total=False):
-    """ Options for :class:`FastifySessionServer`. """
+    """ Options for :class:`FastApiSessionServer`. """
 
     add_to_session: Callable[[Request], Mapping[str, str|int|float|datetime|None]]
     """
@@ -159,7 +159,7 @@ class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     Defaults to "error.jinja2".
     """
 
-class FastifySessionServer:
+class FastApiSessionServer:
 
     @property
     def app(self):
@@ -192,6 +192,10 @@ class FastifySessionServer:
         @app.middleware("http")
         async def pre_handler(request: Request, call_next): # type: ignore
             CrossauthLogger.logger().debug(j({"msg": "Getting session cookie"}))
+            add_cookies : Dict[str, Tuple[str, CookieOptions]] = {}
+            delete_cookies : Set[str] = set()
+            headers : Dict[str, str] = {}
+
             session_cookie_value = self.get_session_cookie_value(request)
             report_session = {}
             if session_cookie_value:
@@ -208,26 +212,33 @@ class FastifySessionServer:
                     self.session_manager.validate_csrf_cookie(cookie_value)
             except Exception as e:
                 CrossauthLogger.logger().warn(j({"msg": "Invalid csrf cookie received", "cerr": str(e), "hashedCsrfCookie": self.get_hash_of_csrf_cookie(request)}))
-                response = Response()
-                response.delete_cookie(self.session_manager.csrf_cookie_name)
+                #response.delete_cookie(self.session_manager.csrf_cookie_name)
+                if (self.session_manager.csrf_cookie_name in add_cookies):
+                    del add_cookies[self.session_manager.csrf_cookie_name]
+                delete_cookies.add(self.session_manager.csrf_cookie_name)
                 cookie_value = None
 
-            response : Response = cast(Response, await call_next(request))
+            #response : Response = cast(Response, await call_next(request))
             if request.method in ["GET", "OPTIONS", "HEAD"]:
+
                 try:
                     if not cookie_value:
                         CrossauthLogger.logger().debug(j({"msg": "Invalid CSRF cookie - recreating"}))
                         csrf = await self.session_manager.create_csrf_token()
                         csrf_cookie = csrf.csrf_cookie
                         csrf_form_or_header_value = csrf.csrf_form_or_header_value
-                        options = toFastApiCookieOptions(csrf_cookie["options"])
-                        response.set_cookie(csrf_cookie["name"], csrf_cookie["value"], **options)
+                        #options = toFastApiCookieOptions(csrf_cookie["options"])
+                        #response.set_cookie(csrf_cookie["name"], csrf_cookie["value"], **options)
+                        add_cookies[csrf_cookie["name"]] = (csrf_cookie["value"],csrf_cookie["options"])
+                        if (csrf_cookie["name"] in delete_cookies):
+                            delete_cookies.remove(csrf_cookie["name"])
                         request.state.csrf_token = csrf_form_or_header_value
                     else:
                         CrossauthLogger.logger().debug(j({"msg": "Valid CSRF cookie - creating token"}))
                         csrf_form_or_header_value = await self.session_manager.create_csrf_form_or_header_value(cookie_value)
                         request.state.csrf_token = csrf_form_or_header_value
-                    response.headers[self.session_manager.csrf_header_name] = request.state.csrf_token
+                    #response.headers[self.session_manager.csrf_header_name] = request.state.csrf_token
+                    headers[self.session_manager.csrf_header_name] = request.state.csrf_token
                 except Exception as e:
                     CrossauthLogger.logger().error(j({
                         "msg": "Couldn't create CSRF token",
@@ -236,11 +247,11 @@ class FastifySessionServer:
                         **report_session,
                     }))
                     CrossauthLogger.logger().debug(j({"err": str(e)}))
-                    response.delete_cookie(self.session_manager.csrf_cookie_name)
+                    #response.delete_cookie(self.session_manager.csrf_cookie_name)
             else:
                 if cookie_value:
                     try:
-                        await self.csrf_token(request, response)
+                        await self.csrf_token(request, add_cookies=add_cookies, delete_cookies=delete_cookies, headers=headers)
                     except Exception as e:
                         CrossauthLogger.logger().error(j({
                             "msg": "Couldn't create CSRF token",
@@ -269,9 +280,22 @@ class FastifySessionServer:
                         "msg": "Invalid session cookie received",
                         "hashOfSessionId": self.get_hash_of_session_id(request)
                     }))
-                    response.delete_cookie(self.session_manager.session_cookie_name)
+                    #response.delete_cookie(self.session_manager.session_cookie_name)
+                    if (self.session_manager.session_cookie_name in add_cookies):
+                        del add_cookies[self.session_manager.session_cookie_name]
+                    delete_cookies.add(self.session_manager.session_cookie_name)
 
+            response : Response = cast(Response, await call_next(request))
+            for cookie in delete_cookies:
+                response.delete_cookie(cookie)
+            for name in add_cookies:
+                cookie = add_cookies[name]
+                options = toFastApiCookieOptions(cookie[1])
+                response.set_cookie(name, cookie[0], **options)
+            for header_name in headers:
+                response.headers[header_name] = headers[header_name]
             return response
+
 
     async def create_anonymous_session(self, request: Request, response: Response, data: Optional[Dict[str, Any]] = None) -> str:
         CrossauthLogger.logger().debug(j({"msg": "Creating session ID"}))
@@ -343,7 +367,7 @@ class FastifySessionServer:
         self.session_manager.validate_double_submit_csrf_token(self.get_csrf_cookie_value(request) or "", request.state.csrf_token)
         return self.get_csrf_cookie_value(request)
 
-    async def csrf_token(self, request: Request, response: Response) -> Optional[str]:
+    async def csrf_token(self, request: Request, headers: Dict[str,str]|None=None, add_cookies : Dict[str, Tuple[str, CookieOptions]]|None=None, delete_cookies : Set[str]|None=None, response : Response|None = None) -> Optional[str]:
         token : str|None = None
         header1 = self.session_manager.csrf_header_name
         if request.headers and header1.lower() in request.headers:
@@ -362,7 +386,10 @@ class FastifySessionServer:
             try:
                 self.session_manager.validate_double_submit_csrf_token(self.get_csrf_cookie_value(request) or "", token)
                 request.state.csrf_token = token
-                response.headers[self.session_manager.csrf_header_name] = token
+                if (headers is not None):
+                    headers[self.session_manager.csrf_header_name] = token
+                if (response is not None):
+                    response.headers[self.session_manager.csrf_header_name] = token
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
                 CrossauthLogger.logger().debug(j({"msg": ce}))
@@ -370,7 +397,12 @@ class FastifySessionServer:
                     "msg": "Invalid CSRF token",
                     "hashedCsrfCookie": self.get_hash_of_csrf_cookie(request)
                 }))
-                response.delete_cookie(self.session_manager.csrf_cookie_name)
+                if (delete_cookies is not None):
+                 delete_cookies.add(self.session_manager.csrf_cookie_name)
+                if add_cookies is not None and self.session_manager.csrf_cookie_name in add_cookies:
+                    del add_cookies[self.session_manager.csrf_cookie_name]
+                if (response is not None):
+                    response.delete_cookie(self.session_manager.csrf_cookie_name)
                 request.state.csrf_token = None
         else:
             request.state.csrf_token = None
