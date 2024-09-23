@@ -6,3 +6,5 @@ psycopg
 psycopg_pool
 sqlalchemy[asyncio]
 jwt
+Jinja2
+

@@ -7,7 +7,7 @@ from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.interfaces import User, UserSecrets
 from crossauth_backend.auth import Authenticator, AuthenticationParameters
-from typing import TypedDict, List, Mapping, NamedTuple, Any
+from typing import TypedDict, List, Mapping, NamedTuple, Any, Dict
 from datetime import datetime
 import json
 
@@ -182,7 +182,7 @@ class SessionManager:
                 return None
             raise ce
 
-    async def data_for_session_id(self, session_id : str) -> str|None:
+    async def data_for_session_id(self, session_id : str) -> Dict[str,Any]|None:
         """
         Returns the data object for a session id, or undefined, as an object.
         
@@ -342,44 +342,11 @@ class SessionManager:
 
     async def initiate_two_factor_signup(self, user: User, params: UserSecrets, session_id: str, repeat_params: UserSecrets|None):
         """ Not implemented """
-        if not self._user_storage:
-            raise Exception("Cannot call initiateTwoFactorSignup if no user storage provided")
-        if user['factor1'] not in self._authenticators:
-            raise Exception("Authenticator cannot create users")
-        if 'factor2' not in user or user['factor2'] not in self._authenticators:
-            raise Exception("Two factor authentication not enabled for user")
-
-        authenticator = self._authenticators[user['factor2']]
-        factor2_data = await authenticator.prepare_configuration(user)
-        user_data = factor2_data.get('userData', {}) if factor2_data else {}
-        session_data = factor2_data.get('sessionData', {}) if factor2_data else {}
-
-        factor1_secrets = await self._authenticators[user['factor1']].create_persistent_secrets(user['username'], params, repeat_params)
-        user['state'] = "awaitingtwofactorsetup"
-        await self._key_storage.update_data(self._session.hash_session_id(session_id), "2fa", session_data)
-
-        new_user = await self._user_storage.create_user(user, factor1_secrets)
-        return {"userid": new_user['id'], "userData": user_data}
+        raise CrossauthError(ErrorCode.NotImplemented, "Factor2 not implemented in this version")
 
     async def initiate_two_factor_setup(self, user: User, new_factor2: str|None, session_id: str) -> Mapping[str, Any]:
         """ Not implemented """
-        if not self._user_storage:
-            raise Exception("Cannot call initiateTwoFactorSetup if no user storage provided")
-
-        if new_factor2 is not None:
-            if new_factor2 not in self._authenticators:
-                raise Exception("Two factor authentication not enabled for user")
-            authenticator = self._authenticators[new_factor2]
-            factor2_data = await authenticator.prepare_configuration(user)
-            user_data = factor2_data.get('userData', {}) if factor2_data else {}
-            session_data = factor2_data.get('sessionData', {}) if factor2_data else {}
-
-            await self._key_storage.update_data(self._session.hash_session_id(session_id), "2fa", session_data)
-            return user_data
-
-        await self._user_storage.update_user({"id": user['id'], "factor2": new_factor2 or ""})
-        await self._key_storage.update_data(self._session.hash_session_id(session_id), "2fa", None)
-        return {}
+        raise CrossauthError(ErrorCode.NotImplemented, "Factor2 not implemented in this version")
 
     async def repeat_two_factor_signup(self, session_id: str) -> Mapping[str, Any]:
         """ Not implemented """
@@ -429,3 +396,29 @@ class SessionManager:
         """ Not implemented """
         raise CrossauthError(ErrorCode.NotImplemented, "Password reset is not implemented in this version")
 
+
+    @property
+    def session_cookie_name(self):
+        """ Returns the name used for session ID cookies. """
+        return self._session.cookie_name
+    
+    @property
+    def session_cookie_path(self):
+        """ Returns the name used for session ID cookies """
+        return self._session.path
+    
+    @property
+    def csrf_cookie_name(self):
+        """ Returns the name used for CSRF token cookies. """
+        return self._csrf_tokens.cookie_name
+    
+    @property
+    def csrf_cookie_path(self):
+        """ Returns the name used for CSRF token cookies. """
+        return self._csrf_tokens.path
+    
+    @property
+    def csrf_header_name(self):
+        """ Returns the name used for CSRF token cookies """
+        return self._csrf_tokens.header_name
+    
