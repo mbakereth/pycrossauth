@@ -3,6 +3,7 @@ from typing import Dict, Any
 from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage
+from crossauth_backend.common.interfaces import Key
 from crossauth_fastapi.fastapisession import FastApiSessionServer
 
 def state(request : Request) -> Dict[str, Any]:
@@ -78,9 +79,18 @@ class FastifyMiddlewareTest(unittest.IsolatedAsyncioTestCase):
         app = FastAPI()
         app.get("/")(create_session)
         key_storage = InMemoryKeyStorage()
-        FastApiSessionServer(app, key_storage, {}, {})
+        session_server = FastApiSessionServer(app, key_storage, {}, {})
         client = TestClient(app)
         resp = client.get("/")
         json = resp.json()
         self.assertTrue("csrf_token" in json)
         self.assertTrue("session_id" in json)
+        session_id = resp.cookies.get("SESSIONID")
+        self.assertIsNotNone(session_id)
+        parts = (session_id or "").split(".")
+        hash_session_id = session_server.session_manager.session.hash_session_id(parts[0])
+        key : Key|None = None
+        try:
+            key = await key_storage.get_key(hash_session_id)
+        except: pass
+        self.assertIsNotNone(key)
