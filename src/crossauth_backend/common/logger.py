@@ -165,27 +165,30 @@ def j(arg: Mapping[str, Any] | str) -> Dict[str, Any] | str:
     elif (isinstance(arg, Mapping)):
         argcopy = {**arg}
     if isinstance(arg, dict) and "cerr" in arg and isinstance(arg["cerr"], CrossauthError):
-        argcopy["error_code"] = arg["cerr"].code
+        argcopy["error_code"] = arg["cerr"].code.value
         argcopy["error_code_name"] = arg["cerr"].code_name
         argcopy["http_status"] = arg["cerr"].http_status
         if "msg" not in argcopy:
-            argcopy["msg"] = argcopy["cerr"]["message"]
+            argcopy["msg"] = argcopy["cerr"].message
 
     if isinstance(arg, dict) and "err" in arg and isinstance(arg["err"], CrossauthError):
-        argcopy["error_code"] = arg["err"].code
+        argcopy["error_code"] = arg["err"].code.value
         argcopy["error_code_name"] = arg["err"].code_name
         argcopy["http_status"] = arg["err"].http_status
         if "msg" not in argcopy:
             if ("cerr" in argcopy):
-                argcopy["msg"] = argcopy["cerr"]["message"]
+                argcopy["msg"] = argcopy["cerr"].message
             elif ("err" in argcopy):
-                argcopy["msg"] = argcopy["err"]["message"]
+                argcopy["msg"] = argcopy["err"].message
         argcopy["stack"] = str(traceback.format_exception(arg["err"]))
 
     elif isinstance(arg, dict) and "err" in arg and isinstance(arg["err"], Exception):
         argcopy["stack"] = str(traceback.format_exception(arg["err"]))
         if "msg" not in argcopy:
             argcopy["msg"]  = str(str(arg["err"]))
+
+    if ("err" in argcopy): del argcopy["err"]
+    if ("cerr" in argcopy): del argcopy["cerr"]
 
     if (type(arg) == str):
         return arg

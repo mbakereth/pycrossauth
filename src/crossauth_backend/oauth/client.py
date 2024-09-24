@@ -146,7 +146,7 @@ class OAuthTokenResponse(TypedDict, total=False):
     refresh_token : str
     id_token : str
     token_type : str
-    expires_in : str
+    expires_in : int
     error : str
     error_description : str
     scope : str

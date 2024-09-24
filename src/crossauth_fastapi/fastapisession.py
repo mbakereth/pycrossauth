@@ -16,6 +16,7 @@ from crossauth_backend.auth import Authenticator
 from crossauth_backend.session import SessionManager
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.crypto import Crypto
+from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
 
 class FastApiCookieOptions(TypedDict, total=True):
     max_age: int|None
@@ -159,7 +160,7 @@ class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     Defaults to "error.jinja2".
     """
 
-class FastApiSessionServer:
+class FastApiSessionServer(FastApiSessionAdapter):
 
     @property
     def app(self):
