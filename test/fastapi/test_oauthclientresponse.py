@@ -16,6 +16,7 @@ from crossauth_fastapi.fastapioauthclient import FastApiOAuthClient, \
     send_in_page, \
     save_in_session_and_load, \
     save_in_session_and_redirect
+from crossauth_backend.oauth.client import OAuthFlows
 
 from jwt.utils import get_int_from_datetime
 from datetime import datetime, timedelta, timezone
@@ -24,7 +25,7 @@ from jwt import (
     jwk_from_pem,
     AbstractJWKBase
 )
-from typing import Any
+from typing import Any, TypedDict, cast
 
 def make_token() -> str:
     with open("keys/rsa-private-key.pem", 'rb') as f:
@@ -38,29 +39,67 @@ def make_token() -> str:
 token = make_token()
 session_id = ""
 
+class ServerAndClient(TypedDict):
+    app: FastAPI
+    server : FastApiServer
+    session: FastApiSessionServer
+    client: FastApiOAuthClient
+    key_storage: InMemoryKeyStorage
+
+async def makeServerAndClient() -> ServerAndClient:
+    app = FastAPI()
+    key_storage = InMemoryKeyStorage()
+    server = FastApiServer({
+        "session": {
+            "key_storage": key_storage
+        },
+        "oauth_client": {
+            "auth_server_base_url": "http://localhost/auth",
+            "options": {
+                "valid_flows": [OAuthFlows.All],
+                "client_id": "ABC",
+                "client_secret": "DEF",
+                "redirect_uri": "http://localhost/redirect",
+                "device_authorization_url": "devicecode"
+            }
+        }
+    }, {
+        "app": app
+    })
+    session = server.session_server
+    client = server.oauth_client
+
+    return {
+        "app": app,
+        "server": server,
+        "session": cast(FastApiSessionServer, session),
+        "client": client,
+        "key_storage": key_storage,
+    }
+
 async def get_json_error(request : Request, response : Response) -> Response:
-    server = FastApiServer()
-    FastApiOAuthClient(server, "http://localhost/auth")
+    sc = await makeServerAndClient()
+    server = sc["server"]
     ce = CrossauthError(ErrorCode.Configuration, "Error message")
     return await json_error(server, request, response, ce)
 
 async def get_page_error(request : Request, response : Response) -> Response:
-    server = FastApiServer()
-    FastApiOAuthClient(server, "http://localhost/auth")
+    sc = await makeServerAndClient()
+    server = sc["server"]
     ce = CrossauthError(ErrorCode.Configuration, "Error message")
     return await page_error(server, request, response, ce)
 
 async def get_send_json(request : Request, response : Response) -> Response:
-    server = FastApiServer()
-    client = FastApiOAuthClient(server, "http://localhost/auth")
+    sc = await makeServerAndClient()
+    client = sc["client"]
     token_response : OAuthTokenResponse = {
         "access_token": token
     }
     return await send_json(token_response, client, request, response) or JSONResponse({})
 
 async def get_send_in_page(request : Request, response : Response) -> Response:
-    server = FastApiServer()
-    client = FastApiOAuthClient(server, "http://localhost/auth")
+    sc = await makeServerAndClient()
+    client = sc["client"]
     token_response : OAuthTokenResponse = {
         "access_token": token
     }
@@ -68,9 +107,9 @@ async def get_send_in_page(request : Request, response : Response) -> Response:
 
 
 async def get_save_in_session_and_load(request : Request, response : Response) -> Response:
-    global server
+    global sc
     global session_id
-    client = FastApiOAuthClient(server, "http://localhost/auth")
+    client = sc["client"]
 
     token_response : OAuthTokenResponse = {
         "access_token": token
@@ -80,9 +119,9 @@ async def get_save_in_session_and_load(request : Request, response : Response) -
     return resp
 
 async def get_save_in_session_and_redirect(request : Request, response : Response) -> Response:
-    global server
+    global sc
     global session_id
-    client = FastApiOAuthClient(server, "http://localhost/auth")
+    client = sc["client"]
 
     token_response : OAuthTokenResponse = {
         "access_token": token
@@ -128,12 +167,12 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp, token)
 
     async def test_save_in_session_and_load(self):
-        global server
+        global sc
         global session_id
-        app = FastAPI()
-        key_storage = InMemoryKeyStorage()
-        session = FastApiSessionServer(app, key_storage, {}, {})
-        server = FastApiServer(session)
+        sc = await makeServerAndClient()
+        app = sc["app"]
+        session = sc["session"]
+        key_storage = sc["key_storage"]
         app.get("/")(get_save_in_session_and_load)
 
         fclient = TestClient(app)
@@ -146,7 +185,8 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
         key : Key|None = None
         try:
             key = await key_storage.get_key(hash_session_id)
-        except: pass
+        except Exception as e: 
+            print(e)
         self.assertIsNotNone(key)
         if (key is not None):
             data = key["data"] if "data" in key else "{}"
@@ -154,12 +194,12 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(keydata["oauth"]["access_token"], token)
 
     async def test_save_in_session_and_redirect(self):
-        global server
+        global sc
         global session_id
-        app = FastAPI()
-        key_storage = InMemoryKeyStorage()
-        session = FastApiSessionServer(app, key_storage, {}, {})
-        server = FastApiServer(session)
+        sc = await makeServerAndClient()
+        app = sc["app"]
+        session = sc["session"]
+        key_storage = sc["key_storage"]
         app.get("/")(get_save_in_session_and_redirect)
 
         fclient = TestClient(app)

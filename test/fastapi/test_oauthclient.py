@@ -2,7 +2,7 @@ import unittest
 from jwt import JWT, jwk_from_pem, AbstractJWKBase
 from jwt.utils import get_int_from_datetime
 from datetime import datetime, timedelta, timezone
-from typing import Any, TypedDict, Dict
+from typing import Any, TypedDict, Dict, cast
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from aioresponses import aioresponses, CallbackResult
@@ -80,18 +80,26 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
     async def makeServerAndClient(self) -> ServerAndClient:
         app = FastAPI()
         key_storage = InMemoryKeyStorage()
-        session = FastApiSessionServer(app, key_storage, {}, {})
-        server = FastApiServer(session, {
-            "app": app,
-            "device_authorization_url": "http://localhost/server/devicecodeauthorized"
+        server = FastApiServer({
+            "session": {
+                "key_storage": key_storage
+            },
+            "oauth_client": {
+                "auth_server_base_url": "http://localhost/server",
+                "options": {
+                    "valid_flows": [OAuthFlows.All],
+                    "client_id": "ABC",
+                    "client_secret": "DEF",
+                    "redirect_uri": "http://localhost/redirect",
+                    "device_authorization_url": "devicecode"
+                }
+            }
+        }, {
+            "app": app
         })
-        client = FastApiOAuthClient(server, "http://localhost/server", {
-            "valid_flows": [OAuthFlows.All],
-            "client_id": "ABC",
-            "client_secret": "DEF",
-            "redirect_uri": "http://localhost/redirect",
-            "device_authorization_url": "devicecode"
-        })
+        session = server.session_server
+        client = server.oauth_client
+        
         fclient = TestClient(app)
 
         app.get("/")(state)
@@ -110,7 +118,7 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
         return {
             "app": app,
             "server": server,
-            "session": session,
+            "session": cast(FastApiSessionServer, session),
             "client": client,
             "key_storage": key_storage,
             "fclient": fclient,

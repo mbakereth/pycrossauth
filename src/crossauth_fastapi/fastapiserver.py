@@ -1,19 +1,19 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
-from typing import Optional, Dict, Any, cast
+from typing import Optional, Dict, Any, cast, Callable, TypedDict, Required, Mapping
 from fastapi import Request, Response, FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.interfaces import User
+from crossauth_backend.storage import KeyStorage
+from crossauth_backend.auth import Authenticator
 from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
 from crossauth_fastapi.fastapisession import FastApiSessionServer, FastApiSessionServerOptions
-from crossauth_fastapi.fastapioauthclient import FastApiOAuthClientOptions
+from crossauth_fastapi.fastapioauthclient import FastApiOAuthClientOptions, FastApiOAuthClient
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_fastapi.fastapiserverbase import FastApiServerBase, FastApiErrorFn, MaybeErrorResponse
 
-class FastifyServerOptions(FastApiSessionServerOptions, FastApiOAuthClientOptions, total=False):
-    app : FastAPI
 
 """
 Type for the function that is called to pass an error back to the user
@@ -65,6 +65,54 @@ DEFAULT_ERROR = {
     500: ERROR_500
 }
 
+class FastApiServerOptions(FastApiSessionServerOptions,
+                           FastApiOAuthClientOptions, total=False):
+    """
+    Options for :class:`FastApiServer`.
+    """
+
+    app : FastAPI
+    """
+    You can pass your own FastAPI instance or omit this, in which case Crossauth will create one
+    """
+
+    is_admin_fn : Callable[[User], bool]
+    """
+    Function to return whether given user is an admin.  If not set, 
+    the `admin` field of the user is used, which is assumed to be
+    bool
+    """
+
+    template_dir : str
+    """ If this is passed, it is registered as a Jinja2 view folder """
+
+    authenticators : Mapping[str, Authenticator]
+
+class FastApiSessionServerParams(TypedDict, total=False):
+    key_storage: Required[KeyStorage]
+    options: FastApiSessionServerOptions
+
+class FastApiOAuthClientParams(TypedDict, total=False):
+    auth_server_base_url: Required[str]
+    options: FastApiOAuthClientOptions
+
+class FastApiServerParams(TypedDict, total=False):
+    """ Configuration for the FastAPI server - which services to instantiate """
+
+    session : FastApiSessionServerParams
+    """ Parameters to create a session server """
+
+    session_adapter: FastApiSessionAdapter
+    """ If you are using a different session, implement 
+        :class:`FastApiSessionAdapter` to use it, and pass it here
+    """
+    oauth_client: FastApiOAuthClientParams
+    """ Paramneters to create an OAuth client """
+
+    options: FastApiServerOptions
+    """ Global options which will be passed to all of the above (and
+        be overridden by their own options if present)
+    """
 
 class FastApiServer(FastApiServerBase):
     @property
@@ -75,6 +123,9 @@ class FastApiServer(FastApiServerBase):
 
     @property
     def session_server(self): return self._session_server
+
+    @property
+    def oauth_client(self): return self._oauth_client
 
     @property 
     def have_session_server(self) -> bool: return self._session_server is not None
@@ -108,16 +159,41 @@ class FastApiServer(FastApiServerBase):
         if self._session_adapter is None: raise CrossauthError(ErrorCode.Configuration, "Cannot create update data as no session server or adapter given")
         return await self._session_adapter.delete_session_data(request, name)
 
-    def __init__(self, session_server : FastApiSessionServer | None = None, options : FastifyServerOptions = {}):
-        self._session_adapter : FastApiSessionAdapter|None = session_server
-        self._session_server : FastApiSessionServer|None = session_server
-        self.__template_dir = "templates"
-        self._error_page = "error.jinja2"
+    def __init__(self, params : FastApiServerParams, options : FastApiServerOptions = {}):
+
         if ("app" in options): 
             self._app = options["app"]
         else:
             self._app = FastAPI()
+        authenticators : Mapping[str, Authenticator] = {}
+        if ("authenticators" in options):
+            authenticators = options["authenticators"]
+
+        session_server_params = params["session"] if "session" in params else None
+        session_adapter = params["session_adapter"] if "session_adapter" in params else None
+        client_params = params["oauth_client"] if "oauth_client" in params else None
+        if (session_adapter is not None and session_server_params is not None):
+            raise CrossauthError(ErrorCode.Configuration, "Cannot have both a session server and session adapter")
         
+        self._session_adapter : FastApiSessionAdapter|None = None
+        self._session_server : FastApiSessionServer|None = None
+        if (session_adapter is not None):
+            self._session_adapter = session_adapter
+        elif (session_server_params is not None):
+            session_server_options : FastApiSessionServerOptions = session_server_params["options"] if "options" in session_server_params else {}
+            session_options : FastApiSessionServerOptions = {**session_server_options, **options}
+            self._session_server = FastApiSessionServer(self._app, 
+                session_server_params["key_storage"], 
+                authenticators, 
+                session_options)
+            self._session_adapter  = self._session_server
+        self.__template_dir = "templates"
+        self._error_page = "error.jinja2"
+        
+        if (client_params is not None):
+            oauth_client_options : FastApiOAuthClientOptions = client_params["options"] if "options" in client_params else {}
+            client_options : FastApiOAuthClientOptions = {**oauth_client_options, **options}
+            self._oauth_client = FastApiOAuthClient(self, client_params["auth_server_base_url"], client_options)
         app = self._app
 
         @app.middleware("http") 
