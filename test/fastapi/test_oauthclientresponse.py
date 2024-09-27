@@ -40,19 +40,19 @@ session_id = ""
 
 async def get_json_error(request : Request, response : Response) -> Response:
     server = FastApiServer()
-    client = FastApiOAuthClient(server)
+    FastApiOAuthClient(server, "http://localhost/auth")
     ce = CrossauthError(ErrorCode.Configuration, "Error message")
-    return await json_error(client, request, response, ce)
+    return await json_error(server, request, response, ce)
 
 async def get_page_error(request : Request, response : Response) -> Response:
     server = FastApiServer()
-    client = FastApiOAuthClient(server)
+    FastApiOAuthClient(server, "http://localhost/auth")
     ce = CrossauthError(ErrorCode.Configuration, "Error message")
-    return await page_error(client, request, response, ce)
+    return await page_error(server, request, response, ce)
 
 async def get_send_json(request : Request, response : Response) -> Response:
     server = FastApiServer()
-    client = FastApiOAuthClient(server)
+    client = FastApiOAuthClient(server, "http://localhost/auth")
     token_response : OAuthTokenResponse = {
         "access_token": token
     }
@@ -60,7 +60,7 @@ async def get_send_json(request : Request, response : Response) -> Response:
 
 async def get_send_in_page(request : Request, response : Response) -> Response:
     server = FastApiServer()
-    client = FastApiOAuthClient(server)
+    client = FastApiOAuthClient(server, "http://localhost/auth")
     token_response : OAuthTokenResponse = {
         "access_token": token
     }
@@ -70,7 +70,7 @@ async def get_send_in_page(request : Request, response : Response) -> Response:
 async def get_save_in_session_and_load(request : Request, response : Response) -> Response:
     global server
     global session_id
-    client = FastApiOAuthClient(server)
+    client = FastApiOAuthClient(server, "http://localhost/auth")
 
     token_response : OAuthTokenResponse = {
         "access_token": token
@@ -82,7 +82,7 @@ async def get_save_in_session_and_load(request : Request, response : Response) -
 async def get_save_in_session_and_redirect(request : Request, response : Response) -> Response:
     global server
     global session_id
-    client = FastApiOAuthClient(server)
+    client = FastApiOAuthClient(server, "http://localhost/auth")
 
     token_response : OAuthTokenResponse = {
         "access_token": token
@@ -164,7 +164,7 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
 
         fclient = TestClient(app)
         resp = fclient.get("/", follow_redirects=False)
-        self.assertEqual(resp.headers.get("location"), "http://authorized")
+        self.assertEqual(resp.headers.get("location"), "authorized")
 
         self.assertIsNotNone(session_id)
         parts = (session_id or "").split(".")
@@ -178,3 +178,4 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
             data = key["data"] if "data" in key else "{}"
             keydata = json.loads(data)
             self.assertEqual(keydata["oauth"]["access_token"], token)
+

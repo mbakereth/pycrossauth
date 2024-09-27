@@ -1,21 +1,19 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
-from typing import Callable
-from fastapi import Request, Response
-from crossauth_backend.common.error import CrossauthError
+from typing import Optional, Dict, Any, cast
+from fastapi import Request, Response, FastAPI
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from crossauth_backend.common.error import CrossauthError, ErrorCode
+from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.interfaces import User
 from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
-from crossauth_fastapi.fastapisession import FastApiSessionServer
+from crossauth_fastapi.fastapisession import FastApiSessionServer, FastApiSessionServerOptions
+from crossauth_fastapi.fastapioauthclient import FastApiOAuthClientOptions
+from crossauth_backend.utils import set_parameter, ParamType
+from crossauth_fastapi.fastapiserverbase import FastApiServerBase, FastApiErrorFn, MaybeErrorResponse
 
-class FastApiServer:
-    @property
-    def session_adapter(self): return self._session_adapter
-
-    @property
-    def session_server(self): return self._session_server
-
-    def __init__(self, session_server : FastApiSessionServer | None = None):
-        self._session_adapter : FastApiSessionAdapter|None = session_server
-        self._session_server : FastApiSessionServer|None = session_server
+class FastifyServerOptions(FastApiSessionServerOptions, FastApiOAuthClientOptions, total=False):
+    app : FastAPI
 
 """
 Type for the function that is called to pass an error back to the user
@@ -24,10 +22,171 @@ The function is passed this instance, the request that generated the
 error, the response object for sending the respons to and the
 exception that was raised.
 """
-type FastApiErrorFn = Callable[[FastApiServer,
-    Request,
-    Response,
-    CrossauthError], Response]
+
+ERROR_400 = """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>400 Bad Request</title>
+</head><body>
+<h1>400 Bad Request</h1>
+<p>The server was unable to handle your request.</p>
+</body></html>
+"""
+
+ERROR_401 = """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>401 Unauthorized</title>
+</head><body>
+<h1>401 Unauthorized</h1>
+<p>You are not authorized to access this URL.</p>
+</body></html>
+"""
+
+ERROR_403= """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>403 Forbidden</title>
+</head><body>
+<h1>403 Forbidden</h1>
+<p>You are not authorized to make this request.</p>
+</body></html>
+"""
+
+ERROR_500 = """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>500 Server Error</title>
+</head><body>
+<h1>500 Error</h1>
+<p>Sorry, an unknown error has occured</p>
+</body></html>
+"""
+
+DEFAULT_ERROR = {
+    400: ERROR_400,
+    401: ERROR_401,
+    500: ERROR_500
+}
+
+
+class FastApiServer(FastApiServerBase):
+    @property
+    def app(self): return self._app
+
+    @property
+    def session_adapter(self): return self._session_adapter
+
+    @property
+    def session_server(self): return self._session_server
+
+    @property 
+    def have_session_server(self) -> bool: return self._session_server is not None
+
+    @property 
+    def have_session_adapter(self) -> bool: return self._session_adapter is not None
+
+    @property
+    def templates(self): return self._templates
+
+    @property
+    def error_page(self): return self._error_page
+
+    def get_session_cookie_value(self, request: Request) -> Optional[str]: 
+        if (self._session_server is None): return None
+        return self._session_server.get_session_cookie_value(request)
+    
+    async def create_anonymous_session(self, request: Request, response: Response, data: Optional[Dict[str, Any]] = None) -> str: 
+        if self._session_server is None: raise CrossauthError(ErrorCode.Configuration, "Cannot create anonymous session as session server not instantiated")
+        return await self._session_server.create_anonymous_session(request, response, data)
+
+    async def update_session_data(self, request: Request, name: str, value: Any):
+        if self._session_adapter is None: raise CrossauthError(ErrorCode.Configuration, "Cannot create update data as no session server or adapter given")
+        return await self._session_adapter.update_session_data(request, name, value)
+
+    async def get_session_data(self, request: Request, name: str) -> Optional[Dict[str, Any]]:
+        if self._session_adapter is None: raise CrossauthError(ErrorCode.Configuration, "Cannot create update data as no session server or adapter given")
+        return await self._session_adapter.get_session_data(request, name)
+
+    async def delete_session_data(self, request: Request, name: str): 
+        if self._session_adapter is None: raise CrossauthError(ErrorCode.Configuration, "Cannot create update data as no session server or adapter given")
+        return await self._session_adapter.delete_session_data(request, name)
+
+    def __init__(self, session_server : FastApiSessionServer | None = None, options : FastifyServerOptions = {}):
+        self._session_adapter : FastApiSessionAdapter|None = session_server
+        self._session_server : FastApiSessionServer|None = session_server
+        self.__template_dir = "templates"
+        self._error_page = "error.jinja2"
+        if ("app" in options): 
+            self._app = options["app"]
+        else:
+            self._app = FastAPI()
+        
+        app = self._app
+
+        @app.middleware("http") 
+        async def pre_handler(request: Request, call_next): # type: ignore
+            request.state.user = None
+            request.state.csrf_token = None
+            request.state.session_id = None
+            return cast(Response, await call_next(request))
+
+        set_parameter("template_dir", ParamType.JsonArray, self, options, "TEMPLATE_DIR")
+        self._templates = Jinja2Templates(directory=self.__template_dir)
+        set_parameter("error_page", ParamType.String, self, options, "ERROR_PAGE", protected=True)
+
+    """
+    Calls the passed error function passed if the CSRF
+    token in the request is invalid.  
+    
+    Use this to require a CSRF token in your endpoints.
+    
+    @param request the Fastify request
+    @param reply the Fastify reply object
+    @param errorFn the error function to call if the CSRF token is invalid
+    @returns if no error, returns an object with `error` set to false and
+    `reply` set to the passed reply object.  Otherwise returns the reply
+    from calling `errorFn`.
+    """
+    async def error_if_csrf_invalid(self, request: Request,
+        response: Response,
+        error_fn: FastApiErrorFn|None) -> MaybeErrorResponse:
+        try:
+            if (request.state.csrf_token is None): raise CrossauthError(ErrorCode.InvalidCsrf)
+            return MaybeErrorResponse(response, False)
+        except Exception as e:
+            CrossauthLogger.logger().debug(j({"err": e}))
+            CrossauthLogger.logger().warn(j({
+                "msg": "Attempt to access url without csrf token",
+                "url": str(request.url)
+            }))
+            try:
+                if (error_fn):
+                    ce = CrossauthError.as_crossauth_error(e)
+                    response = await error_fn(self, request, response, ce)
+                    return MaybeErrorResponse(response, True)
+                elif (self._session_server is not None and self._session_server.error_page):
+
+                    ce = CrossauthError(ErrorCode.InvalidCsrf, "CSRF Token not provided")
+                    response = self._templates.TemplateResponse(
+                        request=request,
+                        name=self._error_page,
+                        context = {
+                            "status": ce.http_status,
+                            "error_message": ce.message,
+                            "error_messages": ce.messages,
+                            "error_code": ce.code.value,
+                            "error_code_name": ce.code_name
+                        },
+                    headers=response.headers,
+                    status_code=ce.http_status)
+
+                    return MaybeErrorResponse(response, True)
+            except Exception as e2:
+                CrossauthLogger.logger().error(j({"err": e2}));
+                response = HTMLResponse(ERROR_401, status_code=401)
+                return MaybeErrorResponse(response, True)                
+            
+            response = HTMLResponse(ERROR_401, status_code=401)
+            return MaybeErrorResponse(response, True)                
+        
+    
 
 def default_is_admin_fn(user : User) -> bool:
     """

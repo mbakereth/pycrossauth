@@ -34,10 +34,10 @@ class OAuthFlows:
     ClientCredentials = "clientCredentials"
     """ Auth client credentials flow """
 
-    refresh_token = "refresh_token"
+    RefreshToken = "refresh_token"
     """ OAuth refresh token flow """
 
-    device_code = "device_code"
+    DeviceCode = "device_code"
     """ OAuth device code flow """
 
     Password = "password"
@@ -53,8 +53,8 @@ class OAuthFlows:
         AuthorizationCode: "Authorization Code",
         AuthorizationCodeWithPKCE: "Authorization Code with PKCE",
         ClientCredentials: "Client Credentials",
-        refresh_token: "Refresh Token",
-        device_code: "Device Code",
+        RefreshToken: "Refresh Token",
+        DeviceCode: "Device Code",
         Password: "Password",
         PasswordMfa: "Password MFA",
         OidcAuthorizationCode: "OIDC Authorization Code",
@@ -101,8 +101,8 @@ class OAuthFlows:
             OAuthFlows.AuthorizationCode,
             OAuthFlows.AuthorizationCodeWithPKCE,
             OAuthFlows.ClientCredentials,
-            OAuthFlows.refresh_token,
-            OAuthFlows.device_code,
+            OAuthFlows.RefreshToken,
+            OAuthFlows.DeviceCode,
             OAuthFlows.Password,
             OAuthFlows.PasswordMfa,
             OAuthFlows.OidcAuthorizationCode,
@@ -126,13 +126,13 @@ class OAuthFlows:
                 return ["authorization_code"]
             case OAuthFlows.ClientCredentials: 
                 return ["client_credentials"]
-            case OAuthFlows.refresh_token: 
+            case OAuthFlows.RefreshToken: 
                 return ["refresh_token"]
             case OAuthFlows.Password: 
                 return ["password"]
             case OAuthFlows.PasswordMfa: 
                 return ["http://auth0.com/oauth/grant-type/mfa-otp", "http://auth0.com/oauth/grant-type/mfa-oob"]
-            case OAuthFlows.device_code: 
+            case OAuthFlows.DeviceCode: 
                 return ["urn:ietf:params:oauth:grant-type:device_code"]
             case _:
                 raise CrossauthError(ErrorCode.BadRequest, "Invalid OAuth flow " + oauthFlow)
@@ -160,7 +160,7 @@ class OAuthTokenResponse(TypedDict, total=False):
 class OAuthMfaAuthenticator(TypedDict, total=False):
     authenticator_type: str
     id : str
-    active: str
+    active: bool
     oob_channel : str
     name: str
     error: str
@@ -170,6 +170,9 @@ class OAuthMfaAuthenticatorsResponse(TypedDict, total=False):
     authenticators: List[OAuthMfaAuthenticator]
     error : str
     error_description: str
+
+class OAuthMfaAuthenticatorsOrTokenResponse(OAuthMfaAuthenticatorsResponse, OAuthTokenResponse, total=False):
+    pass
 
 class OAuthMfaChallengeResponse(TypedDict, total=False):
     challenge_type: str
@@ -288,8 +291,8 @@ class OAuthClient:
 
         self.auth_server_base_url = auth_server_base_url
         set_parameter("client_id", ParamType.String, self, options, "OAUTH_CLIENT_ID", required=True, protected=True)
-        set_parameter("client_secret", ParamType.String, self, options, "OAUTH_CLIENT_SECRET", required=True, protected=True)
-        set_parameter("redirect_uri", ParamType.String, self, options, "OAUTH_REDIRECT_URI", required=True, protected=True)
+        set_parameter("client_secret", ParamType.String, self, options, "OAUTH_CLIENT_SECRET", protected=True)
+        set_parameter("redirect_uri", ParamType.String, self, options, "OAUTH_REDIRECT_URI", protected=True)
 
         self._token_consumer = OAuthTokenConsumer(self._client_id, options)
         set_parameter("state_length", ParamType.String, self, options, "OAUTH_STATE_LENGTH", protected=True)

@@ -171,7 +171,7 @@ class DoubleSubmitCsrfToken:
             - The token in the cookie must matched the value in the form or header after unmasking
         
         :param str cookie_value: the CSRF cookie value to validate.
-        :param str form_or_header_name the value from the csrfToken form header or the X-CROSSAUTH-CSRF header.
+        :param str form_or_header_name the value from the csrf_token form header or the X-CROSSAUTH-CSRF header.
         :raises :class:`CrossauthError` with :class:`ErrorCode` of `InvalidKey`
         """
         form_or_header_token = self.unmask_csrf_token(form_or_header_name)
@@ -182,6 +182,7 @@ class DoubleSubmitCsrfToken:
             raise CrossauthError(ErrorCode.InvalidCsrf, "Invalid CSRF cookie")
 
         if cookie_token != form_or_header_token:
+            print("CSRF", cookie_token, form_or_header_token, cookie_value)
             CrossauthLogger.logger().warn(j({"msg": "Invalid CSRF token received - form/header value does not match", 
                                           "csrfCookieHash": Crypto.hash(cookie_value)}))
             raise CrossauthError(ErrorCode.InvalidCsrf)

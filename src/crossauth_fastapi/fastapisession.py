@@ -193,6 +193,9 @@ class FastApiSessionServer(FastApiSessionAdapter):
         @app.middleware("http")
         async def pre_handler(request: Request, call_next): # type: ignore
             CrossauthLogger.logger().debug(j({"msg": "Getting session cookie"}))
+            request.state.user= None
+            request.state.csrf_token  = None
+            request.state.session_id = None
             add_cookies : Dict[str, Tuple[str, CookieOptions]] = {}
             delete_cookies : Set[str] = set()
             headers : Dict[str, str] = {}
@@ -244,7 +247,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                     CrossauthLogger.logger().error(j({
                         "msg": "Couldn't create CSRF token",
                         "cerr": str(e),
-                        "user": request.user.username if request.user else None,
+                        "user": request.state.user.username if request.state.user else None,
                         **report_session,
                     }))
                     CrossauthLogger.logger().debug(j({"err": str(e)}))
@@ -257,7 +260,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                         CrossauthLogger.logger().error(j({
                             "msg": "Couldn't create CSRF token",
                             "cerr": str(e),
-                            "user": request.user.username if request.user else None,
+                            "user": request.state.user.username if request.state.user else None,
                             **report_session,
                         }))
                         CrossauthLogger.logger().debug(j({"err": str(e)}))
@@ -330,7 +333,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
             CrossauthLogger.logger().error(j({
                 "cerr": ce,
                 "hashOfSessionId": self.get_hash_of_session_id(request),
-                "user": request.user.username if request.user else None
+                "user": request.state.user.username if request.state.user else None
             }))
             return error_fn(response, ce)
         except Exception as e:

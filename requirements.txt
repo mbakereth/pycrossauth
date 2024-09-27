@@ -7,4 +7,4 @@ psycopg_pool
 sqlalchemy[asyncio]
 jwt
 Jinja2
-
+qrcode[pil]
