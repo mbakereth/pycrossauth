@@ -196,6 +196,8 @@ class FastApiSessionServer(FastApiSessionAdapter):
             request.state.user= None
             request.state.csrf_token  = None
             request.state.session_id = None
+            request.state.authType = None
+            request.state.id_token_payload = None
             add_cookies : Dict[str, Tuple[str, CookieOptions]] = {}
             delete_cookies : Set[str] = set()
             headers : Dict[str, str] = {}

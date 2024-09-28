@@ -19,6 +19,17 @@ class OAuthTokenResponseWithExpiry(OAuthTokenResponse, total=False):
     expires_at: int
 
 ###################################################################
+# Helpers
+
+def string_is_true(val : str) -> bool:
+    val = val.lower() 
+    if (val == "1" or val == "yes" or \
+        val == "true" or val == "t" or \
+        val == "y" or val == "on"):
+        return True
+    return False
+
+###################################################################
 ## OPTIONS
 
 class BffEndpoint(NamedTuple):
@@ -122,7 +133,7 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     authorized_url : str
     """
     If the {@link FastApiOAuthClientOptions.token_response_type} is
-    `saveInSessionAndRedirect`, this is the relative URL that the usder
+    `save_in_session_and_redirect`, this is the relative URL that the usder
     will be redirected to after authorization is complete.
     """
 
@@ -179,10 +190,10 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     """
 
     token_response_type : Literal[
-        "sendJson",
-        "saveInSessionAndLoad",
-        "saveInSessionAndRedirect",
-        "sendInPage",
+        "send_json",
+        "save_in_session_and_load",
+        "save_in_session_and_redirect",
+        "send_in_page",
         "custom"]
     """
     What to do when receiving tokens.
@@ -190,8 +201,8 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     """
 
     error_response_type : Literal[
-        "sendJson", 
-        "error_page", 
+        "json_error", 
+        "page_error", 
         "custom"]
     """
     What do do on receiving an OAuth error.
@@ -230,7 +241,17 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     
     Defaults to empty.
     """
+
     valid_flows : List[str]
+    """
+    List of flows to create endpoints for.  See :class:´crossauth_backend.OAuthFlows`.
+    Default none
+    """
+
+    jwt_tokens : List[Literal["access","id","refresh"]]
+    """
+    These token types will be treated as JWT.  Default all of them
+    """
 
 ##############################################################
 ## Class
@@ -279,6 +300,9 @@ class FastApiOAuthClient(OAuthClient):
     @property
     def templates(self): return self._templates
 
+    @property
+    def jwt_tokens(self): return self._jwt_tokens
+
     def __init__(self, server: FastApiServerBase, auth_server_base_url: str, options: FastApiOAuthClientOptions = {}):
 
         super().__init__(auth_server_base_url, options)
@@ -316,7 +340,10 @@ class FastApiOAuthClient(OAuthClient):
         self.__token_endpoints: List[Literal["access_token", "refresh_token", "id_token",
         "have_access_token", "have_refresh_token", "have_id_token"]] = []
         self.__template_dir = "templates"
+        self._jwt_tokens : List[Literal["access","id","refresh"]] = ["access", "id", "refresh"]
 
+        self._test_middleware = False
+        self._test_request : Request|None = None
 
         set_parameter("session_data_name", ParamType.String, self, options, "OAUTH_SESSION_DATA_NAME", protected=True)
         set_parameter("site_url", ParamType.String, self, options, "SITE_URL", True)
@@ -335,7 +362,7 @@ class FastApiOAuthClient(OAuthClient):
         set_parameter("delete_tokens_page", ParamType.String, self, options, "OAUTH_DELETE_TOKENS_PAGE", protected=True)
         set_parameter("delete_tokens_get_url", ParamType.String, self, options, "OAUTH_DELETE_TOKENS_GET_URL", protected=True)
         set_parameter("delete_tokens_post_url", ParamType.String, self, options, "OAUTH_DELETE_TOKENS_POST_URL", protected=True)
-        set_parameter("api_delete_tokens_post_url", ParamType.String, self, options, "OAUTHAPI__DELETE_TOKENS_POST_URL", protected=True)
+        set_parameter("api_delete_tokens_post_url", ParamType.String, self, options, "OAUTH_API_DELETE_TOKENS_POST_URL", protected=True)
         set_parameter("mfa_otp_page", ParamType.String, self, options, "OAUTH_MFA_OTP_PAGE", protected=True)
         set_parameter("mfa_oob_page", ParamType.String, self, options, "OAUTH_MFA_OOB_PAGE", protected=True)
         set_parameter("device_code_flow_url", ParamType.String, self, options, "OAUTH_DEVICECODE_FLOW_URL", protected=True)
@@ -344,6 +371,7 @@ class FastApiOAuthClient(OAuthClient):
         set_parameter("bff_base_url", ParamType.String, self, options, "OAUTH_BFF_BASEURL", protected=True)
         set_parameter("valid_flows", ParamType.JsonArray, self, options, "OAUTH_VALIFGLOWS")
         set_parameter("template_dir", ParamType.JsonArray, self, options, "TEMPLATE_DIR")
+        set_parameter("jwt_tokens", ParamType.JsonArray, self, options, "OAUTH_JWT_TOKENS", protected=True)
 
         if (len(self.__valid_flows) == 1 and self.__valid_flows[0] == OAuthFlows.All):
             flows = OAuthFlows.all_flows()
@@ -382,7 +410,7 @@ class FastApiOAuthClient(OAuthClient):
             self.__receive_token_fn = send_in_page
         elif self._token_response_type == "save_in_session_and_load":
             self.__receive_token_fn = save_in_session_and_load
-        elif self.token_response_type == "save_in_session_and_redirect": # type: ignore
+        elif self._token_response_type == "save_in_session_and_redirect": # type: ignore
             self.__receive_token_fn = save_in_session_and_redirect
 
         if self._error_response_type == "custom" and not options.get("error_fn"): # type: ignore
@@ -395,6 +423,34 @@ class FastApiOAuthClient(OAuthClient):
             self.__error_fn = page_error
 
         self._redirect_uri = self.__site_url + self.__prefix + "authzcode"
+
+        #####
+        # Hooks
+
+        app = self.server.app
+        @app.middleware("http")
+        async def pre_handler(request: Request, call_next): # type: ignore
+            CrossauthLogger.logger().debug(j({"msg": "Calling OAuth client hook"}))
+            if (request.state.user or not self._server.have_session_adapter):
+                return cast(Response, await call_next(request))
+
+            session_data = await self._server.get_session_data(request, self.session_data_name) 
+            if (session_data is not None and "id_payload" in session_data):
+                expiry = session_data["expires_at"]
+                if (expiry is not None and expiry > datetime.now().timestamp()*1000 and session_data["id_payload"]["sub"]):
+                    request.state.user = {
+                        "id" : session_data["id_payload"]["userid"] if "userid" in session_data["id_payload"] else session_data["id_payload"]["sub"],
+                        "username" : session_data["id_payload"]["sub"],
+                        "state" : session_data["id_payload"]["state"] if "state" in session_data["id_payload"] else "active",
+                    }
+                    request.state.id_token_payload = session_data["id_payload"]
+                    request.state.auth_type = "oidc"
+
+            if self._test_middleware:
+                self._test_request = request 
+
+            return cast(Response, await call_next(request))
+
 
         #####
         # Authorization code flow
@@ -451,6 +507,10 @@ class FastApiOAuthClient(OAuthClient):
             }))
             resp = await self.redirect_endpoint(request.query_params.get("code"), request.query_params.get("state"), request.query_params.get("error"), request.query_params.get("error_description"))
             try:
+                if ("id_token" in resp):
+                    # This token is intended for us, so validate it
+                    if (await self.validate_id_token(resp["id_token"]) is None):
+                        resp : OAuthTokenResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
                 if "error" in resp:
                     ce = CrossauthError.from_oauth_error(resp["error"], 
                         resp["error_description"] if "error_description" in resp else resp["error"])
@@ -480,13 +540,17 @@ class FastApiOAuthClient(OAuthClient):
                 "user": request.state.user.username if request.state.user else None
             }))
             if self._server.have_session_adapter:
-                resp = await self._server.error_if_csrf_invalid(request, response, self.__error_fn)
-                if resp.error:
-                    return resp.response
+                resp1 = await self._server.error_if_csrf_invalid(request, response, self.__error_fn)
+                if resp1.error:
+                    return resp1.response
             try:
                 body = JsonOrFormData()
                 await body.load(request)
                 resp = await self.client_credentials_flow(body.getAsStr("scope", None))
+                if ("id_token" in resp):
+                    # This token is intended for us, so validate it
+                    if (await self.validate_id_token(resp["id_token"]) is None):
+                        resp : OAuthTokenResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
                 if "error" in resp:
                     ce = CrossauthError.from_oauth_error(resp["error"], 
                         resp["error_description"] if "error_description" in resp else resp["error"])
@@ -516,9 +580,9 @@ class FastApiOAuthClient(OAuthClient):
             }))
 
             # if sessions are enabled, require a csrf token
-            resp = await self._server.error_if_csrf_invalid(request, response, self.__error_fn)
-            if resp.error:
-                return resp.response
+            resp1 = await self._server.error_if_csrf_invalid(request, response, self.__error_fn)
+            if resp1.error:
+                return resp1.response
 
             # get refresh token from body if present, otherwise try to find in session
             body = JsonOrFormData()
@@ -543,6 +607,10 @@ class FastApiOAuthClient(OAuthClient):
 
             try:
                 resp = await self.refresh_token_flow(refresh_token)
+                if ("id_token" in resp):
+                    # This token is intended for us, so validate it
+                    if (await self.validate_id_token(resp["id_token"]) is None):
+                        resp : OAuthTokenResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
                 if "error" in resp:
                     ce = CrossauthError.from_oauth_error(resp["error"], 
                         resp["error_description"] if "error_description" in resp else resp["error"])
@@ -889,14 +957,21 @@ class FastApiOAuthClient(OAuthClient):
                     "user": request.state.user.username if hasattr(request.state, 'user') else None
                 }))
 
-                if not request.headers.get("X-CSRF-Token"):
-                    return JSONResponse(status_code=401, content={"ok": False, "msg": "No csrf token given"})
-
                 is_have = False
                 token_name = token_type
                 if token_type.startswith("have_"):
                     token_name = token_type.replace("have_", "")
                     is_have = True
+
+                token_name1 = token_name.replace("_token", "")
+                decode_token = False
+                if (token_name1 in self._jwt_tokens):
+                    data = JsonOrFormData()
+                    await data.load(request)
+                    decode_token = data.getAsBool("decode") or True
+
+                if not request.headers.get("X-CSRF-Token"):
+                    return JSONResponse(status_code=401, content={"ok": False, "msg": "No csrf token given"})
 
                 if self._server.have_session_adapter:
                     raise CrossauthError(ErrorCode.Configuration, "Cannot get session data if sessions not enabled")
@@ -908,7 +983,7 @@ class FastApiOAuthClient(OAuthClient):
                     return JSONResponse({}, status_code=204)
 
                 token = oauth_data.get(token_name)
-                payload = decode_payload(token)
+                payload = decode_payload(token) if decode_token else token
 
                 if not payload:
                     if is_have:
@@ -933,6 +1008,9 @@ class FastApiOAuthClient(OAuthClient):
                 "user": request.state.user.username if hasattr(request.state, 'user') and request.state.user else None
             }))
 
+            data = JsonOrFormData()
+            await data.load(request)
+
             if not request.headers.get("X-CSRF-Token"):  # Assuming CSRF token is in headers
                 return JSONResponse(status_code=401, content={"ok": False, "msg": "No csrf token given"})
 
@@ -946,15 +1024,21 @@ class FastApiOAuthClient(OAuthClient):
 
             tokens_returning: Dict[str, Any] = {}
             for token_type in self.__token_endpoints:
+
                 is_have = False
                 token_name = token_type
                 if token_type.startswith("have_"):
                     token_name = token_type.replace("have_", "")
                     is_have = True
 
+                token_name1 = token_name.replace("_token", "")
+                decode_token = False
+                if (token_name1 in self._jwt_tokens):
+                     decode_token = data.getAsBool("decode") or True
+
                 if token_name in oauth_data:
                     payload = oauth_data[token_name]
-                    payload = decode_payload(oauth_data[token_name])
+                    payload = decode_payload(oauth_data[token_name]) if decode_token else oauth_data[token_name]
                     if payload:
                         tokens_returning[token_type] = True if is_have else payload
                 elif is_have:
@@ -984,6 +1068,10 @@ class FastApiOAuthClient(OAuthClient):
         if not only_if_expired or expires_at <= int(datetime.now().timestamp() * 1000):
             try:
                 resp = await self.refresh_token_flow(refresh_token)
+                if ("id_token" in resp):
+                    # This token is intended for us, so validate it
+                    if (await self.validate_id_token(resp["id_token"]) is None):
+                        resp : OAuthTokenResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
                 if not resp.get('error') and not resp.get('access_token'):
                     resp['error'] = "server_error"
                     resp['error_description'] = "Unexpectedly did not receive error or access token"
@@ -1000,7 +1088,7 @@ class FastApiOAuthClient(OAuthClient):
                     return await self.__error_fn(self.server, request, response, ce)
                 expires_in = resp.get('expires_in')
                 instance = JWT()
-                if not expires_in and "access_token" in resp:
+                if not expires_in and "access_token" in resp and "access" in self._jwt_tokens:
                     payload = instance.decode(resp['access_token'], None, do_verify=False, do_time_check=False)
                     if payload.get('exp'):
                         expires_in = payload['exp']
@@ -1084,18 +1172,26 @@ class FastApiOAuthClient(OAuthClient):
     async def _password_post(self, is_api: bool, request : Request, response : Response) -> Response|None:
         if self.server.have_session_adapter:
             # if sessions are enabled, require a csrf token
-            resp = await self._server.error_if_csrf_invalid(request, response, self.__error_fn)
-            if resp.error:
-                return resp.response
+            resp1 = await self._server.error_if_csrf_invalid(request, response, self.__error_fn)
+            if resp1.error:
+                return resp1.response
         body = JsonOrFormData()
         await body.load(request)
         try:
             if (body.getAsStr("username") is None or body.getAsStr("password") is None):
                 raise CrossauthError(ErrorCode.BadRequest, "Username and password must be given for the password flow")
             resp = await self.password_flow(body.getAsStr("username") or "", body.getAsStr("password") or "", body.getAsStr("scope"))
+            if ("id_token" in resp):
+                # This token is intended for us, so validate it
+                if (await self.validate_id_token(resp["id_token"]) is None):
+                    resp : OAuthTokenResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
             if "error" in resp and resp["error"] == "mfa_required" and "mfa_token" in resp and resp["mfa_token"] and OAuthFlows.PasswordMfa in self.__valid_flows:
                 mfa_token = resp["mfa_token"]
                 resp2 = await self._password_mfa(is_api, mfa_token, body.getAsStr("scope", None), request, response)
+                if ("id_token" in resp2):
+                    # This token is intended for us, so validate it
+                    if (await self.validate_id_token(resp2["id_token"]) is None):
+                        resp2 : OAuthTokenResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
                 if "error" in resp2:
                     ce = CrossauthError.from_oauth_error(resp2["error"], resp2["error_description"] if "error_description" in resp2 else resp2["error"])
                     if is_api:
@@ -1219,6 +1315,10 @@ class FastApiOAuthClient(OAuthClient):
         if (body.getAsStr("mfa_token") is None or body.getAsStr("otp") is None):
             raise CrossauthError(ErrorCode.BadRequest, "mfa_token or otp missing in Password OTP request")
         resp = await self.mfa_otp_complete(body.getAsStr("mfa_token") or "", body.getAsStr("otp") or "")
+        if ("id_token" in resp):
+            # This token is intended for us, so validate it
+            if (await self.validate_id_token(resp["id_token"]) is None):
+                resp : OAuthTokenResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
         if "error" in resp:
             error = resp["error"] if "error" in resp else "server_error"
             error_description = resp["error_description"] if "error_description" in resp else "Error completing MFA"
@@ -1253,6 +1353,10 @@ class FastApiOAuthClient(OAuthClient):
         if (body.getAsStr("mfa_token") is None or body.getAsStr("oob_code") is None or body.getAsStr("binding_code") is None):
             raise CrossauthError(ErrorCode.BadRequest, "mfa_token, oob_code and binding_code required for OOB request")
         resp = await self.mfa_oob_complete(body.getAsStr("mfa_token") or "", body.getAsStr("oob_code") or "", body.getAsStr("binding_code") or "")
+        if ("id_token" in resp):
+            # This token is intended for us, so validate it
+            if (await self.validate_id_token(resp["id_token"]) is None):
+                resp : OAuthTokenResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
         if "error" in resp:
             error = resp["error"] if "error" in resp else "server_error"
             error_description = resp["error_description"] if "error_description" in resp else "Error completing MFA"
@@ -1385,6 +1489,10 @@ class FastApiOAuthClient(OAuthClient):
             raise CrossauthError(ErrorCode.BadRequest, "device_code not present")
         try:
             resp = await self.poll_device_code_flow(device_code)
+            if ("id_token" in resp):
+                # This token is intended for us, so validate it
+                if (await self.validate_id_token(resp["id_token"]) is None):
+                    resp : OAuthDeviceResponse = {"error": "access_denied", "error_description": "Invalid ID token received"}
 
             if resp.get("error"):
                 return JSONResponse(content=resp, headers=response.headers)
@@ -1459,13 +1567,13 @@ async def send_json(oauth_response: OAuthTokenResponse|OAuthDeviceResponse,
             "ok": True,
             **oauth_response,
         }
-        if "id_token" in  oauth_response:
+        if "id_token" in oauth_response and "id" in client.jwt_tokens:
             resp["id_payload"] = decode_payload(oauth_response["id_token"])
         return JSONResponse(resp, 200, headers=response.headers)
 
-def log_tokens(oauth_response: OAuthTokenResponse|OAuthDeviceResponse):
+def log_tokens(oauth_response: OAuthTokenResponse|OAuthDeviceResponse, client: FastApiOAuthClient):
     instance = JWT()
-    if "access_token" in oauth_response:
+    if "access_token" in oauth_response and "access" in client.jwt_tokens:
         try:
             jwt = instance.decode(oauth_response["access_token"], None, do_verify=False, do_time_check=False)
             jti : str|None = jwt.get("jti")
@@ -1474,7 +1582,7 @@ def log_tokens(oauth_response: OAuthTokenResponse|OAuthDeviceResponse):
         except Exception as e:
             CrossauthLogger.logger().debug(j({"err": e}))
 
-    if "id_token" in oauth_response:
+    if "id_token" in oauth_response and "id" in client.jwt_tokens:
         try:
             jwt = instance.decode(oauth_response["id_token"], None, do_verify=False, do_time_check=False)
             jti : str|None = jwt.get("jti")
@@ -1483,7 +1591,7 @@ def log_tokens(oauth_response: OAuthTokenResponse|OAuthDeviceResponse):
         except Exception as e:
             CrossauthLogger.logger().debug(j({"err": e}))
 
-    if "refresh_token" in oauth_response:
+    if "refresh_token" in oauth_response and "refresh" in client.jwt_tokens:
         try:
             jwt = instance.decode(oauth_response["refresh_token"], None, do_verify=False, do_time_check=False)
             jti : str|None = jwt.get("jti")
@@ -1513,7 +1621,7 @@ async def send_in_page(oauth_response: OAuthTokenResponse|OAuthDeviceResponse,
                 } , status_code=ce.http_status,
             headers=response.headers)
 
-    log_tokens(oauth_response)
+    log_tokens(oauth_response, client)
 
     if response:
         templates = client.templates
@@ -1547,7 +1655,7 @@ async def update_session_data(oauth_response: OAuthTokenResponse,
         raise CrossauthError(ErrorCode.Configuration, "Cannot update session data if sessions not enabled")
     
     expires_in : int|None = oauth_response["expires_in"] if "expires_in" in oauth_response else None
-    if expires_in is None and "access_token" in oauth_response:
+    if expires_in is None and "access_token" in oauth_response and "access" in client.jwt_tokens:
         instance = JWT()
         payload = instance.decode(oauth_response["access_token"], None, do_verify=False, do_time_check=False)
         if 'exp' in payload:
@@ -1558,14 +1666,20 @@ async def update_session_data(oauth_response: OAuthTokenResponse,
     
     expires_at = int(datetime.now().timestamp()*1000) + (expires_in * 1000)
     
+    session_data : dict[str,Any] = {**oauth_response, "expires_at": expires_at}
+    if ("id_token" in oauth_response and "id" in client.jwt_tokens):
+        # this was already validated before receive_token_fn was called
+        id_payload = decode_payload(oauth_response["id_token"])
+        session_data["id_payload"] = id_payload
+
     if client.server.have_session_server:
         session_cookie_value = client.server.get_session_cookie_value(request)
         if not session_cookie_value and response is not None:
             session_cookie_value = await client.server.create_anonymous_session(request, response, {
-                client.session_data_name: {**oauth_response, "expires_at": expires_at}
+                client.session_data_name: session_data
             })
         else:
-            await client.server.update_session_data(request, client.session_data_name, {**oauth_response, "expires_at": expires_at})
+            await client.server.update_session_data(request, client.session_data_name, session_data)
     else:
         if not client.server.have_session_adapter:
             raise CrossauthError(ErrorCode.Configuration, "Cannot get session data if sessions not enabled")
@@ -1591,7 +1705,7 @@ async def save_in_session_and_load(oauth_response: OAuthTokenResponse|OAuthDevic
                     "error_code_name": ce.code_name
                 }, status_code=ce.http_status, headers=response.headers)
 
-    log_tokens(oauth_response)
+    log_tokens(oauth_response, client)
     templates = client.templates
     try:
         if "access_token" in oauth_response or "id_token" in oauth_response or "refresh_token" in oauth_response:
@@ -1601,7 +1715,7 @@ async def save_in_session_and_load(oauth_response: OAuthTokenResponse|OAuthDevic
 
             context : Dict[str,Any] = {**oauth_response}
             if ("id_token" in oauth_response):
-                context["id_payload"] = oauth_response["id_token"]
+                context["id_payload"] = decode_payload(oauth_response["id_token"])
 
             return templates.TemplateResponse(
                     request=request,
@@ -1643,7 +1757,7 @@ async def save_in_session_and_redirect(oauth_response: OAuthTokenResponse|OAuthD
                         "error_code_name": ce.code_name
                     }, status_code=ce.http_status, headers=response.headers)
 
-    log_tokens(oauth_response)
+    log_tokens(oauth_response, client)
 
     templates = client.templates
     try:

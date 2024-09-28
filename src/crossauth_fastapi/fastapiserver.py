@@ -175,6 +175,11 @@ class FastApiServer(FastApiServerBase):
         if (session_adapter is not None and session_server_params is not None):
             raise CrossauthError(ErrorCode.Configuration, "Cannot have both a session server and session adapter")
         
+        if (client_params is not None):
+            oauth_client_options : FastApiOAuthClientOptions = client_params["options"] if "options" in client_params else {}
+            client_options : FastApiOAuthClientOptions = {**oauth_client_options, **options}
+            self._oauth_client = FastApiOAuthClient(self, client_params["auth_server_base_url"], client_options)
+
         self._session_adapter : FastApiSessionAdapter|None = None
         self._session_server : FastApiSessionServer|None = None
         if (session_adapter is not None):
@@ -190,10 +195,6 @@ class FastApiServer(FastApiServerBase):
         self.__template_dir = "templates"
         self._error_page = "error.jinja2"
         
-        if (client_params is not None):
-            oauth_client_options : FastApiOAuthClientOptions = client_params["options"] if "options" in client_params else {}
-            client_options : FastApiOAuthClientOptions = {**oauth_client_options, **options}
-            self._oauth_client = FastApiOAuthClient(self, client_params["auth_server_base_url"], client_options)
         app = self._app
 
         @app.middleware("http") 
@@ -201,6 +202,8 @@ class FastApiServer(FastApiServerBase):
             request.state.user = None
             request.state.csrf_token = None
             request.state.session_id = None
+            request.state.auth_type = None
+            request.state.id_token_payload = None
             return cast(Response, await call_next(request))
 
         set_parameter("template_dir", ParamType.JsonArray, self, options, "TEMPLATE_DIR")

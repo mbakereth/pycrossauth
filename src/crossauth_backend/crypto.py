@@ -100,11 +100,11 @@ class Crypto:
     @staticmethod
     def base64_decode(encoded: str) -> str:
         """
-        Decodes a string from base64 to UTF-89
+        Decodes a string from base64 to UTF-8
         :param str encoded: base64-encoded text
         :return: URF-8 text
         """
-        return base64.b64decode(encoded).decode('utf-8')
+        return base64.urlsafe_b64decode(Crypto.base64_pad(encoded)).decode('utf-8')
 
     @staticmethod
     def base64_encode(text: str) -> str:
@@ -113,7 +113,7 @@ class Crypto:
         :param str: text UTF-8 text
         :return: Base64 text
         """
-        return base64.b64encode(text.encode('utf-8')).decode('utf-8')
+        return base64.urlsafe_b64encode(text.encode('utf-8')).decode('utf-8')
 
     @staticmethod
     def decode_password_hash(hash: str) -> PasswordHash:

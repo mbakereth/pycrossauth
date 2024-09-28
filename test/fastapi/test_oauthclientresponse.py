@@ -27,7 +27,7 @@ from jwt import (
 )
 from typing import Any, TypedDict, cast
 
-def make_token() -> str:
+def make_access_token() -> str:
     with open("keys/rsa-private-key.pem", 'rb') as f:
         private_key = f.read()
     private_jwk : AbstractJWKBase = jwk_from_pem(private_key)
@@ -36,7 +36,17 @@ def make_token() -> str:
             datetime.now(timezone.utc) + timedelta(hours=1))}
     return instance.encode(payload, private_jwk, alg='RS256')
 
-token = make_token()
+def make_id_token() -> str:
+    with open("keys/rsa-private-key.pem", 'rb') as f:
+        private_key = f.read()
+    private_jwk : AbstractJWKBase = jwk_from_pem(private_key)
+    instance = JWT()
+    payload : dict[str, Any]= {"jti": "ABC", "sub": "bob", "exp": get_int_from_datetime(
+            datetime.now(timezone.utc) + timedelta(hours=1))}
+    return instance.encode(payload, private_jwk, alg='RS256')
+
+token = make_access_token()
+id_token = make_id_token()
 session_id = ""
 
 class ServerAndClient(TypedDict):
@@ -130,6 +140,19 @@ async def get_save_in_session_and_redirect(request : Request, response : Respons
     session_id = request.state.session_id
     return resp
 
+async def get_save_in_session_and_redirect_oidc(request : Request, response : Response) -> Response:
+    global sc
+    global session_id
+    client = sc["client"]
+
+    token_response : OAuthTokenResponse = {
+        "access_token": token,
+        "id_token": id_token
+    }
+    resp = await save_in_session_and_redirect(token_response, client, request, response) or JSONResponse({})
+    session_id = request.state.session_id
+    return resp
+
 class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
     
     async def test_json_error(self):
@@ -218,4 +241,31 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
             data = key["data"] if "data" in key else "{}"
             keydata = json.loads(data)
             self.assertEqual(keydata["oauth"]["access_token"], token)
+
+    async def test_save_id_payload(self):
+        global sc
+        global session_id
+        sc = await makeServerAndClient()
+        app = sc["app"]
+        session = sc["session"]
+        key_storage = sc["key_storage"]
+        app.get("/")(get_save_in_session_and_redirect_oidc)
+
+        fclient = TestClient(app)
+        resp = fclient.get("/", follow_redirects=False)
+        self.assertEqual(resp.headers.get("location"), "authorized")
+
+        self.assertIsNotNone(session_id)
+        parts = (session_id or "").split(".")
+        hash_session_id = session.session_manager.session.hash_session_id(parts[0])
+        key : Key|None = None
+        try:
+            key = await key_storage.get_key(hash_session_id)
+        except: pass
+        self.assertIsNotNone(key)
+        if (key is not None):
+            data = key["data"] if "data" in key else "{}"
+            keydata = json.loads(data)
+            self.assertEqual(keydata["oauth"]["id_token"], id_token)
+            self.assertEqual(keydata["oauth"]["id_payload"]["sub"], "bob")
 
