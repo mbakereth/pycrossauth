@@ -8,12 +8,14 @@ from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.interfaces import User
 from crossauth_backend.storage import KeyStorage
 from crossauth_backend.auth import Authenticator
+from crossauth_backend.oauth.client import OAuthTokenConsumer
 from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
 from crossauth_fastapi.fastapisession import FastApiSessionServer, FastApiSessionServerOptions
 from crossauth_fastapi.fastapioauthclient import FastApiOAuthClientOptions, FastApiOAuthClient
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_fastapi.fastapiserverbase import FastApiServerBase, FastApiErrorFn, MaybeErrorResponse
-
+from crossauth_fastapi.fastapiresserver import FastApiOAuthResourceServerOptions, FastApiOAuthResourceServer
+from crossauth_backend.utils import set_parameter, ParamType
 
 """
 Type for the function that is called to pass an error back to the user
@@ -66,7 +68,8 @@ DEFAULT_ERROR = {
 }
 
 class FastApiServerOptions(FastApiSessionServerOptions,
-                           FastApiOAuthClientOptions, total=False):
+                           FastApiOAuthClientOptions, 
+                           FastApiOAuthResourceServerOptions, total=False):
     """
     Options for :class:`FastApiServer`.
     """
@@ -96,6 +99,9 @@ class FastApiOAuthClientParams(TypedDict, total=False):
     auth_server_base_url: Required[str]
     options: FastApiOAuthClientOptions
 
+class FastApiOAuthResServerParams(TypedDict, total=False):
+    options: FastApiOAuthResourceServerOptions
+
 class FastApiServerParams(TypedDict, total=False):
     """ Configuration for the FastAPI server - which services to instantiate """
 
@@ -106,8 +112,12 @@ class FastApiServerParams(TypedDict, total=False):
     """ If you are using a different session, implement 
         :class:`FastApiSessionAdapter` to use it, and pass it here
     """
+
     oauth_client: FastApiOAuthClientParams
     """ Paramneters to create an OAuth client """
+
+    oauth_resserver: FastApiOAuthResServerParams
+    """ Paramneters to create an OAuth resource server """
 
     options: FastApiServerOptions
     """ Global options which will be passed to all of the above (and
@@ -126,6 +136,9 @@ class FastApiServer(FastApiServerBase):
 
     @property
     def oauth_client(self): return self._oauth_client
+
+    @property
+    def oauth_resserver(self): return self._oauth_resserver
 
     @property 
     def have_session_server(self) -> bool: return self._session_server is not None
@@ -169,17 +182,31 @@ class FastApiServer(FastApiServerBase):
         if ("authenticators" in options):
             authenticators = options["authenticators"]
 
+        # Create session server or adapter
         session_server_params = params["session"] if "session" in params else None
         session_adapter = params["session_adapter"] if "session_adapter" in params else None
         client_params = params["oauth_client"] if "oauth_client" in params else None
+        resserver_params = params["oauth_resserver"] if "oauth_resserver" in params else None
         if (session_adapter is not None and session_server_params is not None):
             raise CrossauthError(ErrorCode.Configuration, "Cannot have both a session server and session adapter")
         
+        # Create OAuth client
+        self._oauth_client : FastApiOAuthClient|None = None
         if (client_params is not None):
             oauth_client_options : FastApiOAuthClientOptions = client_params["options"] if "options" in client_params else {}
             client_options : FastApiOAuthClientOptions = {**oauth_client_options, **options}
             self._oauth_client = FastApiOAuthClient(self, client_params["auth_server_base_url"], client_options)
 
+        # Create OAuth resource server
+        self._oauth_resserver : FastApiOAuthResourceServer|None = None
+        if (resserver_params is not None):
+            oauth_resserver_options : FastApiOAuthResourceServerOptions = resserver_params["options"] if "options" in resserver_params else {}
+            resserver_options : FastApiOAuthResourceServerOptions = {**oauth_resserver_options, **options}
+            self.__audience : str = ""
+            set_parameter("audience", ParamType.String, self, options, "OAUTH_AUDIENCE", required=True)
+            consumers = OAuthTokenConsumer(self.__audience, options)
+            self._oauth_resserver = FastApiOAuthResourceServer(self._app, [consumers], resserver_options)
+        
         self._session_adapter : FastApiSessionAdapter|None = None
         self._session_server : FastApiSessionServer|None = None
         if (session_adapter is not None):
@@ -197,6 +224,7 @@ class FastApiServer(FastApiServerBase):
         
         app = self._app
 
+        # Create middleware to initialize everything to None
         @app.middleware("http") 
         async def pre_handler(request: Request, call_next): # type: ignore
             request.state.user = None
@@ -204,6 +232,10 @@ class FastApiServer(FastApiServerBase):
             request.state.session_id = None
             request.state.auth_type = None
             request.state.id_token_payload = None
+            request.state.auth_error = None
+            request.state.auth_error_description = None
+            request.state.access_token_payload = None
+            request.state.scope = None
             return cast(Response, await call_next(request))
 
         set_parameter("template_dir", ParamType.JsonArray, self, options, "TEMPLATE_DIR")

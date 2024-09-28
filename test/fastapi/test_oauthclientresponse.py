@@ -79,6 +79,9 @@ async def makeServerAndClient() -> ServerAndClient:
     session = server.session_server
     client = server.oauth_client
 
+    if (client is None):
+        raise Exception("Client unexpectedly None")
+    
     return {
         "app": app,
         "server": server,

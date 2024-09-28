@@ -337,7 +337,7 @@ class OAuthTokenConsumer:
     
     async def token_authorized(self, token: str, tokenType: Literal["access", "refresh", "id"]) -> Optional[Dict[str, Any]]:
         """
-        If the given token is valid, the paylaod is returned.  Otherwise
+        If the given token is valid, the payload is returned.  Otherwise
         undefined is returned.  
         
         The signature must be valid, the expiry must not have passed and,

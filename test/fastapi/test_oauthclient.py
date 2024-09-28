@@ -100,6 +100,7 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
         })
         session = server.session_server
         client = server.oauth_client
+        if (client is None): raise Exception("unexpectedly got  no client")
         
         fclient = TestClient(app)
 
