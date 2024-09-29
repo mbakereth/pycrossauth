@@ -15,7 +15,7 @@ class ProtectedEndpoint(TypedDict, total=False):
 
 class FastApiOAuthResourceServerOptions(OAuthResourceServerOptions, total=False):
     """
-    Options for {@link FastifyOAuthResourceServer}
+    Options for :class:`FastApiOAuthResourceServer`
     """
 
     user_storage : UserStorage
@@ -50,9 +50,47 @@ class Authorization(TypedDict, total=False):
     error_description: str
 
 class FastApiOAuthResourceServer(OAuthResourceServer):
+    """
+    OAuth resource server. 
+    
+    You can subclass this, simply instantiate it, or create it through
+    :class:`FastApiServer`.  
+    
+    There are two way of using this class.  If you don't set
+    `protected_endpoints` in 
+    the constructor, then in your
+    protected endpoints, call :attr:`FastApiOAuthResourceServer.authorized`
+    to check if the access token is valid and get any user credentials.
+    
+    If you do set `protected_endpoints` in 
+    the constructor
+    then a `preHandler` iscreated.
+
+    ** Middleware **
+    The middleware
+    hook will set the `access_token_payload`, `user` and `scope` fields 
+    on the FastApi request object based on the content
+    of the access token in the `Authorization` header if it is valid.
+    It will also set `auth_type` to `oauth`.  
+    If a user storage is provided,
+    it will be used to look the user up.  Otherwise a minimal user object
+    is created.
+    If it is not valid it will set the `auth_error` and `auth_error_description`.
+    If the access token is invalid, or there is an error, a 401 or 500
+    response is sent before executing your endpoint code.  As per
+    OAuth requirements, if the response is a 401, the WWW-Authenticate header
+    is set.  If a scope is required this is included in that header.
+    """
 
     def __init__(self, app: FastAPI, token_consumers: List[OAuthTokenConsumer], options: FastApiOAuthResourceServerOptions = {}):
+        """
+        Constructor
+
+        :param FastAPI app: the FastAPI app
+        :param token_consumers: A list of token consumers, one per issuer and audience
+        :param FastApiOAuthResourceServerOptions options: See :class:`FastApiOAuthResourceServerOptions`
         
+        """
         super().__init__(token_consumers, options)
         self.user_storage = options["user_storage"] if "user_storage" in options else None
         self._protected_endpoints: Mapping[str, ProtectedEndpoint] = {}
@@ -135,6 +173,22 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
         return ""
 
     async def authorized(self, request: Request) -> Optional[Dict[str, Any]]:
+        """
+        If there is no bearer token, returns `undefinerd`.  If there is a
+        bearer token and it is a valid access token, returns the token
+        payload.  If there was an error, returns it in OAuth form.
+        
+        :param Request request: the FastAPI Request object
+
+        :return: an object with the following fiekds
+          - `authorized` : `true` or `false`
+          - `tokenPayload` : the token payload if the token is valid
+          - `error` : if the token is not valid
+          - `error_description` : if the token is not valid
+          - `user` set if `sub` is defined in the token, a userStorage has
+            been defined and it matches
+        If there was no valid token, None is returned
+        """
         try:
             header = request.headers.get('Authorization')
             if header and header.startswith("Bearer "):

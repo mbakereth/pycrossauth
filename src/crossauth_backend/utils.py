@@ -102,7 +102,7 @@ def set_parameter(param: str,
     :param bool protected: If true, `__` will be prepended to the field nam,e
                 in the target.  Default False.  Don't use this and `public` together.
     
-    :raises: :class:`CrossauthError`: with :class:`ErrorCode` Configuration if `required`
+    :raises: :class:`crossauth_backend.CrossauthError`: with :class:`ErrorCode` Configuration if `required`
                         is set but the option was not present, or if there was a parsing
                         error.
     """

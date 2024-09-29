@@ -40,6 +40,7 @@ class Authenticator(ABC):
         """
         Constructor.
         :param AuthenticationOptions options:  see :class:`AuthenticationOptions`
+        
         """
 
         if "friendly_name" not in options:

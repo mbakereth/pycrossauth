@@ -161,6 +161,32 @@ class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     """
 
 class FastApiSessionServer(FastApiSessionAdapter):
+    """
+    This class adds user endpoints to the FastAPI session server.
+
+    **Important Note** This class is imcomplete.  It supports only enough
+    functionality to provide CSRF cookies and anonymous sessions (where there
+    is no user).  The rest of the functionality will come later.
+
+    You shouldn't have create create this directly - it is created by
+    :class:`FastApiServer`.
+
+    **Using your own FastAPI app**
+
+    If you are serving other endpoints, or you want to use something other than 
+    Nunjucks, you can create
+    and pass in your own FastAPI app.
+
+    **Middleware**
+
+    This class registers one middleware function to fill in the following
+    fields in `Request.state`:
+
+      - `user` a :class:`crossauch_backend.User` object which currently is always None
+      - `auth_type`: set to `cookie` or None (currently always None)
+      - `csrf_token`: a CSRF token that can be used in POST requests
+      - `session_id` a session ID if one is created with :meth:`create_anonymous_session`
+    """
 
     @property
     def app(self):
@@ -178,7 +204,24 @@ class FastApiSessionServer(FastApiSessionAdapter):
     def enable_csrf_protection(self):
         return self._enable_csrf_protection
     
-    def __init__(self, app: FastAPI, key_storage: KeyStorage, authenticators: Mapping[str, Authenticator], options: FastApiSessionServerOptions = {}):
+    def __init__(self, app: FastAPI, 
+                 key_storage: KeyStorage, 
+                 authenticators: Mapping[str, Authenticator], 
+                 options: FastApiSessionServerOptions = {}):
+        """
+        Constructor
+
+        :param FastAPI app you can pass in your own FastAPI app instance or
+               set this to None for one to be created
+        :param :class:`crossauth_backend.KeyStorage` key_storage: where to
+               put session IDs that are created
+        :param Mapping[str, :class:`Authenticator`] authenticators, keyed
+               on the name that appears in a :class:`crossauth_backend.User`'s `factor1` or
+               `factor2`.  Currently user authentication is not implemented,
+               so just pass an empty dict.
+        :param FastApiSessionServerOptions options: see :class:`FastApiSessionServerOptions`
+
+        """
         self._app = app
         self._error_page = "error.jinja2"
         self._session_manager = SessionManager(key_storage, authenticators, options)
@@ -196,8 +239,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
             request.state.user= None
             request.state.csrf_token  = None
             request.state.session_id = None
-            request.state.authType = None
-            request.state.id_token_payload = None
+            request.state.auth_type = None
             add_cookies : Dict[str, Tuple[str, CookieOptions]] = {}
             delete_cookies : Set[str] = set()
             headers : Dict[str, str] = {}
@@ -284,7 +326,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 except Exception as e:
                     CrossauthLogger.logger().warn(j({
                         "msg": "Invalid session cookie received",
-                        "hashOfSessionId": self.get_hash_of_session_id(request)
+                        "hash_of_session_id": self.get_hash_of_session_id(request)
                     }))
                     #response.delete_cookie(self.session_manager.session_cookie_name)
                     if (self.session_manager.session_cookie_name in add_cookies):
@@ -304,6 +346,19 @@ class FastApiSessionServer(FastApiSessionAdapter):
 
 
     async def create_anonymous_session(self, request: Request, response: Response, data: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Creates and persists an anonymous session.
+
+        An anonymous session is one which is not associated with a user.  This
+        is needed when you need to save session state, despite a user not being
+        logged in.
+
+        :param Request request the FastAPI Request object
+        :param Response request the FastAPI Response object
+        :param Dict[str, Any] data optionally, data to store in the session.
+           The top level keys should not conflict with anything that FastAPI
+           itself stores
+        """
         CrossauthLogger.logger().debug(j({"msg": "Creating session ID"}))
         extra_fields : Mapping[str, str|int|float|datetime|None] = {}
         if self.__add_to_session: 
@@ -326,6 +381,11 @@ class FastApiSessionServer(FastApiSessionAdapter):
         return session_cookie["value"]
 
     def handle_error(self, e: Exception, request: Request, response: Response, error_fn: Callable[[Response, CrossauthError], None], password_invalid_ok: bool = False):
+        """
+        Calls your defined `error_fn`, first sanitising by changing 
+        `UserNotExist` and `UsernameOrPasswordInvalid` messages to `UsernameOrPasswordInvalid`.
+        Also logs the error
+        """
         try:
             ce = CrossauthError.as_crossauth_error(e)
             if not password_invalid_ok:
@@ -334,7 +394,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
             CrossauthLogger.logger().debug(j({"err": ce}))
             CrossauthLogger.logger().error(j({
                 "cerr": ce,
-                "hashOfSessionId": self.get_hash_of_session_id(request),
+                "hash_of_session_id": self.get_hash_of_session_id(request),
                 "user": request.state.user.username if request.state.user else None
             }))
             return error_fn(response, ce)
@@ -343,11 +403,23 @@ class FastApiSessionServer(FastApiSessionAdapter):
             return error_fn(response, CrossauthError(ErrorCode.UnknownError))
 
     def get_session_cookie_value(self, request: Request) -> Optional[str]:
+        """
+        Returns the session cookie value or None if there isn't one
+
+        :param Request request: the FastAPI Request
+
+        """
         if request.cookies and self.session_manager.session_cookie_name in request.cookies:
             return request.cookies[self.session_manager.session_cookie_name]
         return None
 
     def get_csrf_cookie_value(self, request: Request) -> Optional[str]:
+        """
+        Returns the CSRF cookie value or None if there isn't one
+
+        :param Request request: the FastAPI Request
+        
+        """
         if request.cookies and self.session_manager.csrf_cookie_name in request.cookies:
             return request.cookies[self.session_manager.csrf_cookie_name]
         return None
@@ -370,10 +442,28 @@ class FastApiSessionServer(FastApiSessionAdapter):
             return ""
 
     def validate_csrf_token(self, request: Request) -> Optional[str]:
+        """
+        Validates the CSRF token in the `Request.state` and cookie value.
+
+        :param Request request: the FastAPI Request
+
+        :return: the CSRF cookie value if there is one
+
+        :raises: :class:`crossauth_backend.CrossauthError` with
+           :class:`crossauth_backend.ErrorCode` of `InvalidCsrf
+        """
         self.session_manager.validate_double_submit_csrf_token(self.get_csrf_cookie_value(request) or "", request.state.csrf_token)
         return self.get_csrf_cookie_value(request)
 
     async def csrf_token(self, request: Request, headers: Dict[str,str]|None=None, add_cookies : Dict[str, Tuple[str, CookieOptions]]|None=None, delete_cookies : Set[str]|None=None, response : Response|None = None) -> Optional[str]:
+        """
+        Validates the CSRF token in the header or `csrf_token` form or JSON field
+        and cookie value.
+
+        If it is then `request.state.csrf_token` is set.  If not it is cleared.
+
+        Does not raise an exception
+        """
         token : str|None = None
         header1 = self.session_manager.csrf_header_name
         if request.headers and header1.lower() in request.headers:
@@ -416,6 +506,9 @@ class FastApiSessionServer(FastApiSessionAdapter):
         return token
 
     def send_json_error(self, response: Response, status: int, error: Optional[str] = None, e: Optional[Exception] = None) -> Response:
+        """
+        Returns an error as a FastAPI JSONResponse object, also logging it.
+        """
         if not error or not e:
             error = "Unknown error"
         ce = CrossauthError.as_crossauth_error(e) if e else None
@@ -439,35 +532,64 @@ class FastApiSessionServer(FastApiSessionAdapter):
         )
 
     def error_status(self, e: Exception) -> int:
+        """
+        Helper function that returns the `http_status` field of an Exception,
+        first casting it to a :class:`crossauth_backend.CrossauthError` (if
+        it wasn't already a CrossauthError, the status will be 500).
+        """
         ce = CrossauthError.as_crossauth_error(e)
         return ce.http_status
 
+    ############################################################
+    # These methods come from FastApiSessionAdapter
+
     def csrf_protection_enabled(self) -> bool:
+        """
+        See :meth:`FastApiSessionAdapter.csrf_protection_enabled
+        """
         return self.enable_csrf_protection
 
     def get_csrf_token(self, request: Request) -> Optional[str]:
+        """
+        See :meth:`FastApiSessionAdapter.get_csrf_token
+        """
         return request.state.csrf_token
 
     def get_user(self, request: Request) -> Optional[User]:
+        """
+        See :meth:`FastApiSessionAdapter.get_user
+        """
         return request.state.user
 
     async def update_session_data(self, request: Request, name: str, value: Any):
+        """
+        See :meth:`FastApiSessionAdapter.update_session_data
+        """
         if not request.state.session_id:
             raise CrossauthError(ErrorCode.Unauthorized, "User is not logged in")
         await self.session_manager.update_session_data(request.state.session_id, name, value)
 
     async def update_many_session_data(self, request: Request, data_array: List[KeyDataEntry]):
+        """
+        See :meth:`FastApiSessionAdapter.update_many_session_data
+        """
         if not request.state.session_id:
             raise CrossauthError(ErrorCode.Unauthorized, "No session present")
         await self.session_manager.update_many_session_data(request.state.session_id, data_array)
 
     async def delete_session_data(self, request: Request, name: str):
+        """
+        See :meth:`FastApiSessionAdapter.delete_session_data
+        """
         if not request.state.session_id:
             CrossauthLogger.logger().warn(j({"msg": "Attempt to delete session data when there is no session"}))
         else:
             await self.session_manager.delete_session_data(request.state.session_id, name)
 
     async def get_session_data(self, request: Request, name: str) -> Optional[Dict[str, Any]]:
+        """
+        See :meth:`FastApiSessionAdapter.get_session_data
+        """
         try:
             data = await self.session_manager.data_for_session_id(request.state.session_id) if request.state.session_id else None
             if data and name in data:

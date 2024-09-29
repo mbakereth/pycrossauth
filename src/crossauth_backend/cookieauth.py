@@ -86,6 +86,7 @@ class DoubleSubmitCsrfToken:
         Constructor
 
         :param DoubleSubmitCsrfTokenOptions options: See :class:`DoubleSubmitCsrfTokenOptions`
+
         """
 
         self._header_name = "X-CROSSAUTH-CSRF"
@@ -112,6 +113,7 @@ class DoubleSubmitCsrfToken:
         Returns a :class:`Cookie` object with the given session key.
         
         :param str token: the value of the csrf token, with signature
+
         :return a :class:`Cookie` object,
         """
         cookie_value = Crypto.sign_secure_token(token, self.__secret)
@@ -135,6 +137,7 @@ class DoubleSubmitCsrfToken:
         Takes a session ID and creates a string representation of the cookie (value of the HTTP `Cookie` header).
          
         :param str cookie_value the value to put in the cookie
+
         :return: a string representation of the cookie and options.
         """
 
@@ -172,7 +175,8 @@ class DoubleSubmitCsrfToken:
         
         :param str cookie_value: the CSRF cookie value to validate.
         :param str form_or_header_name the value from the csrf_token form header or the X-CROSSAUTH-CSRF header.
-        :raises :class:`CrossauthError` with :class:`ErrorCode` of `InvalidKey`
+
+        :raises :class:`crossauth_backend.CrossauthError` with :class:`ErrorCode` of `InvalidKey`
         """
         form_or_header_token = self.unmask_csrf_token(form_or_header_name)
         try:
@@ -182,7 +186,6 @@ class DoubleSubmitCsrfToken:
             raise CrossauthError(ErrorCode.InvalidCsrf, "Invalid CSRF cookie")
 
         if cookie_token != form_or_header_token:
-            print("CSRF", cookie_token, form_or_header_token, cookie_value)
             CrossauthLogger.logger().warn(j({"msg": "Invalid CSRF token received - form/header value does not match", 
                                           "csrfCookieHash": Crypto.hash(cookie_value)}))
             raise CrossauthError(ErrorCode.InvalidCsrf)
@@ -196,7 +199,8 @@ class DoubleSubmitCsrfToken:
             - The token in the cookie must matched the value in the form or header after unmasking
         
         :param str cookie_value: the CSRF cookie value to validate.
-        :raises :class:`CrossauthError` with :class:`ErrorCode` of `InvalidKey`
+
+        :raises :class:`crossauth_backend.CrossauthError` with :class:`ErrorCode` of `InvalidKey`
         """
         try:
             return Crypto.unsign_secure_token(cookie_value, self.__secret)
@@ -289,7 +293,8 @@ class SessionCookie:
         """
         Constructor
 
-        :param KeyStorage key_storage: where to store session keys
+        :param crossauth_backend.KeyStorage key_storage: where to store session keys
+
         """
         self.__persist : bool = True
         self._idle_timeout : int = 0
@@ -337,6 +342,7 @@ class SessionCookie:
         Returns a hash of a session ID, with the session ID prefix for storing
         in the storage table.
         :param str session_id the session ID to hash
+
         :return: a base64-url-encoded string that can go into the storage
         """
         return KeyPrefix.session + Crypto.hash(session_id)
@@ -353,8 +359,10 @@ class SessionCookie:
         :param str | int | None userid: the user ID to store with the session key.
         :param Dict[str, Any]|None extra_fields: Any fields in here will also be added to the session
                record
+
         :return: the new session key
-        :raises :class:`CrossauthError`: with 
+
+        :raises :class:`crossauth_backend.CrossauthError`: with 
                 :class:`ErrorCode` `KeyExists` if maximum
                  attempts exceeded trying to create a unique session id
         """
@@ -399,9 +407,11 @@ class SessionCookie:
         
         This class is compatible, for example, with Express.
         
-        :param Key session_key: the value of the session key
+        :param crossauth_backend.Key session_key: the value of the session key
         :param bool|None persist: if passed, overrides the persistSessionId setting
+
         :return: a :class:`Cookie` object,
+
         """
         signed_value = Crypto.sign_secure_token( session_key['value'], self.__secret)
         options : CookieOptions = {}
@@ -430,6 +440,7 @@ class SessionCookie:
         (value of the HTTP `Cookie` header).
         
         :param Cookie cookie: the cookie vlaues to make a string from
+
         :return: a string representation of the cookie and options.
         """
         cookie_string = f"{cookie['name']}={cookie['value']}"
@@ -451,10 +462,11 @@ class SessionCookie:
     async def update_session_key(self, session_key: PartialKey) -> None:
         """
         Updates a session record in storage
-        :param PartialKey session_key: the fields to update.  `value` must be set, and
-               will not be updated.  All other defined fields will be updated.
-        :raises :class:`CrossauthError`: if the session does
-                not exist. 
+        :param crossauth_backend.PartialKey session_key: the fields to update.  `value` must be set, and
+        will not be updated.  All other defined fields will be updated.
+
+        :raises :class:`crossauth_backend.CrossauthError`: if the session does
+        not exist. 
         """
         if 'value' not in session_key:
             raise CrossauthError(ErrorCode.InvalidKey, "No session when updating activity")
@@ -465,9 +477,11 @@ class SessionCookie:
         """
         Unsigns a cookie and returns the original value.
         :param str cookie_value: the signed cookie value
+
         :return: the unsigned value
-        :raises :class:`CrossauthError`: if the signature
-                is invalid. 
+
+        :raises :class:`crossauth_backend.CrossauthError`: if the signature
+        is invalid. 
         """
         return Crypto.unsign_secure_token(cookie_value, self.__secret)
 
@@ -475,15 +489,17 @@ class SessionCookie:
         """
         Returns the user matching the given session key in session storage, or throws an exception.
         
-        Looks the user up in the {@link UserStorage} instance passed to the constructor.
+        Looks the user up in the :class:`crossauth_backend.UserStorage` instance passed to the constructor.
         
         Undefined will also fail is CookieAuthOptions.filterFunction is defined and returns false,
         
         :param str session_id: the value in the session cookie
-        :param UserStorageGetOptions options: See :class:`UserStorageGetOptions`
-        :return: a :class:`User` object, with the password hash removed, and the:class:`Key` with the unhashed
-                 session_id
-        :raises :class:`CrossauthError`: with :class:`ErrorCode` set to `InvalidSessionId` or `Expired`.
+        :param crossauth_backend.UserStorageGetOptions options: See :class:`crossauth_backend.UserStorageGetOptions`
+
+        :return: a :class:`crossauth_backend.User` object, with the password hash removed, and the:class:`crossauth_backend.Key` with the unhashed
+         session_id
+
+        :raises :class:`crossauth_backend.CrossauthError`: with :class:`ErrorCode` set to `InvalidSessionId` or `Expired`.
         """
         key = await self.get_session_key(session_id)
         if not self.__user_storage:
@@ -503,10 +519,12 @@ class SessionCookie:
         Undefined will also fail is CookieAuthOptions.filterFunction is defined and returns false,
         
         :param str session_id: the unsigned value of the session cookie
-        :return: a :class:`User` object, with the password hash removed.
-        :raises :class:`CrossauthError`: with 
-                :class:`ErrorCode` set to `InvalidSessionId`,
-                `Expired` or `UserNotExist`.
+
+        :return: a :class:`crossauth_backend.User` object, with the password hash removed.
+
+        :raises :class:`crossauth_backend.CrossauthError`: with 
+        :class:`ErrorCode` set to `InvalidSessionId`,
+        `Expired` or `UserNotExist`.
         """
         now = datetime.now()
         hashed_session_id = self.hash_session_id(session_id)
@@ -530,6 +548,7 @@ class SessionCookie:
         Deletes all keys for the given user
         :param str|int userid: the user to delete keys for
         :param str|None except_key: if defined, don't delete this key
+
         """
         if except_key:
             except_key = self.hash_session_id(except_key)

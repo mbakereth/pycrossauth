@@ -47,7 +47,7 @@ class PasswordHash(TypedDict):
 
 class HashOptions(TypedDict, total=False):
     """
-    Option parameters for {@link Crypto.passwordHash}
+    Option parameters for :class:`Crypto.passwordHash`
     """
     
     salt : str
@@ -79,6 +79,7 @@ class Crypto:
         :param str plaintext: the plaintext password
         :param str encoded_hash: the previously-hashed version 
         :param str|None secret: if `useHash`in `encodedHash` is true, uses as a pepper for the hasher
+
         :return: true if they are equal, false otherwise
         """
         hash = Crypto.decode_password_hash(encoded_hash)
@@ -102,6 +103,7 @@ class Crypto:
         """
         Decodes a string from base64 to UTF-8
         :param str encoded: base64-encoded text
+
         :return: URF-8 text
         """
         return base64.urlsafe_b64decode(Crypto.base64_pad(encoded)).decode('utf-8')
@@ -111,6 +113,7 @@ class Crypto:
         """
         Base64-encodes UTF-8 text
         :param str: text UTF-8 text
+
         :return: Base64 text
         """
         return base64.urlsafe_b64encode(text.encode('utf-8')).decode('utf-8')
@@ -118,7 +121,7 @@ class Crypto:
     @staticmethod
     def decode_password_hash(hash: str) -> PasswordHash:
         """
-        Splits a hashed password into its component parts.  Return it as a {@link PasswordHash }.
+        Splits a hashed password into its component parts.  Return it as a :class:`PasswordHash`.
         
         The format of the hash should be
         ```
@@ -126,6 +129,7 @@ class Crypto:
         ```
         The hashed password part is the Base64 encoding of the PBKDF2 password.
         :param str hash: the hassed password to decode.  See above for format
+
         :return: :class:`PasswordHash` object containing the deecoded hash components
         """
         parts = hash.split(':')
@@ -159,6 +163,7 @@ class Crypto:
         :param int iterations: the number of PBKDF2 iterations
         :param int key_len: the key length PBKDF2 parameter - results in a hashed password this length, before Base64,
         :param str digest: The digest algorithm, eg `pbkdf2`
+
         :return: a string encode the above parameters.
         """
         return f"pbkdf2:{digest}:{key_len}:{iterations}:{1 if use_secret else 0}:{salt}:{hashed_password}"
@@ -167,6 +172,7 @@ class Crypto:
     def random_salt() -> str:
         """
         Creates a random salt
+
         :return: random salt as a base64 encoded string
         """
         return Crypto.random_value(PBKDF2_SALTLENGTH)
@@ -176,6 +182,7 @@ class Crypto:
         """
         Creates a random string encoded as in base64url
         :param int length: length of the string to create
+
         :return: the random value as a string.  Number of bytes will be greater as it is base64 encoded.
         """
         return base64.urlsafe_b64encode(secrets.token_bytes(length)).decode('utf-8').replace("=", "")
@@ -187,6 +194,7 @@ class Crypto:
         """
         Creates a random base-23 string
         :param int length: length of the string to create
+
         :return: the random value as a string.  Number of bytes will be greater as it is base64 encoded.
         """
         bytes = secrets.token_bytes(length)
@@ -206,6 +214,7 @@ class Crypto:
         Standard hash using SHA256 (not PBKDF2 or HMAC)
         
         :param :str plaintext: text to hash
+
         :return: the string containing the hash 
         """
         return Crypto.sha256(plaintext)
@@ -271,6 +280,7 @@ class Crypto:
                - `salt`: salt to use.  Make a random one if not passed
                - `secret`: optional application secret password to apply as a pepper
                - `encode`: if true, returns the full string as it should be stored in the database.
+
         :returns: the string containing the hash and the values to decode it
         """
         salt = MapGetter[str].get_or_none(options, "salt") or Crypto.random_salt()
@@ -296,6 +306,7 @@ class Crypto:
         :param Dict[str, Any]: payload the payload to hash
         :param str|None salt: optional salt (use if the payload is small)
         :param int|None timestamp: time the token will expire
+
         :return: a Base64-URL-encoded string that can be hashed.
         """
         if salt is None:
@@ -314,6 +325,7 @@ class Crypto:
         :param str secret: secret key, which must be a string
         :param str|None salt: optionally, a salt to concatenate with the payload (must be a string)
         :paramint|None timestamp: optionally, a timestamp to include in the signed date as a Unix date
+
         :return: Base64-url encoded hash
         """
         payloadStr = Crypto.signable_token(payload, salt, timestamp)
@@ -329,6 +341,7 @@ class Crypto:
         
         :param str payload: string to sign 
         :param str secret: the secret to sign with
+
         :return: Base64-url encoded hash
         """
         hmac_signature = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
@@ -341,8 +354,10 @@ class Crypto:
         :param str signed_message: signed message (base64-url encoded)
         :param str secret: secret key, which must be a string
         :param int|None expiry: if set, validation will fail if the timestamp in the payload is after this date
+
         :return: if signature is valid, the payload as an object
-        :raises :class:`CrossauthError`: with 
+
+        :raises :class:`crossauth_backend.CrossauthError`: with 
                 :class:`ErrorCode` of `InvalidKey` if signature
                 is invalid or has expired.  
         """
@@ -368,8 +383,10 @@ class Crypto:
         return the unstringified payload
         :param str signed_message: signed message (base64-url encoded)
         :param str secret: secret key, which must be a string
+
         :return: if signature is valid, the payload as a string
-        :raises :class:`CrossauthError`: with 
+
+        :raises :class:`crossauth_backend.CrossauthError`: with 
                 {:class:`ErrorCode` of `InvalidKey` if signature
                 is invalid or has expired.  
         """
@@ -390,6 +407,7 @@ class Crypto:
         XOR's two arrays of base64url-encoded strings
         :param str value: to XOR
         :param str mask: mask to XOR it with
+
         :return: an XOR'r string
         """
         value_array = base64.urlsafe_b64decode(Crypto.base64_pad(value))
@@ -406,6 +424,7 @@ class Crypto:
         :param str plaintext: Text to encrypt
         :param str key_string: the symmetric key
         :param iv bytes|None: the iv value.  In None, a random one is created
+
         :return: Encrypted text Base64-url encoded.
         """
         if (iv is None): iv = secrets.token_bytes(16)
@@ -424,6 +443,7 @@ class Crypto:
         
         :param str ciphertext: Base64-url encoded ciphertext
         :param str key_string: the symmetric key
+
         :return: Decrypted text
         """
         key = base64.urlsafe_b64decode(Crypto.base64_pad(key_string))

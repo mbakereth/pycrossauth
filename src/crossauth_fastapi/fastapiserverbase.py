@@ -14,7 +14,11 @@ type FastApiErrorFn = Callable[[FastApiServerBase,
     CrossauthError], Awaitable[Response]]
 
 class FastApiServerBase(ABC):
-
+    """
+    This is an abstract base class for the :class:`FastApiServer` which only
+    exists to avoid cyclic references.  You should not have to use it
+    """
+    
     @abstractmethod
     async def error_if_csrf_invalid(self, request: Request,
         response: Response,

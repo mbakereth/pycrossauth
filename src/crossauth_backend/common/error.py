@@ -5,7 +5,7 @@ from typing import Any
 
 class ErrorCode(Enum):
     """
-        Indicates the type of error reported by :class:`CrossauthError`
+        Indicates the type of error reported by :class:`crossauth_backend.CrossauthError`
     """
 
     UserNotExist = auto()
@@ -412,7 +412,8 @@ class CrossauthError(Exception):
                :class:`ErrorCode`).
         :param str error_description as returned by an OAuth call (put in the 
                `message`)
-        :return a `CrossauthError` instance.
+
+        :return a `crossauth_backend.CrossauthError` instance.
         """
         code = ErrorCode.UnknownError
         
@@ -458,16 +459,17 @@ class CrossauthError(Exception):
     @staticmethod
     def as_crossauth_error(e : Any, default_message : str | None= None) -> CrossauthError:
         """
-        If the passed object is a `CrossauthError` instance, simply returns
+        If the passed object is a `crossauth_backend.CrossauthError` instance, simply returns
         it.  
         If not and it is an object with `errorCode` in it, creates a 
         CrossauthError from that and `errorMessage`, if present.
-        Otherwise creates a `CrossauthError` object with :class:`ErrorCode`
+        Otherwise creates a `crossauth_backend.CrossauthError` object with :class:`ErrorCode`
         of `Unknown` from it, setting the `message` if possible.
         
         :param Any e: the error to convert.
         :param str|None default_message: message to use if there was none in the original exception.
-        :return:  a :class:`CrossauthError` instance.
+
+        :return:  a :class:`crossauth_backend.CrossauthError` instance.
         """
         if isinstance(e, CrossauthError):
             return e

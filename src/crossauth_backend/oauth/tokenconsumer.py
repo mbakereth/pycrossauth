@@ -27,7 +27,7 @@ class Keys(TypedDict, total=True):
 
 class OAuthTokenConsumerOptions(TypedDict, total=False):
     """
-    Options that can be passed to:@link OAuthTokenConsumerBase}.
+    Options that can be passed to: :class:`OAuthTokenConsumerBase`.
     """
 
     jwt_key_type : str
@@ -286,7 +286,7 @@ class OAuthTokenConsumer:
         authorization server (using the URL in the OIDC configuration).
         :param Dict[str, Any]|None jwks: the keys to load, or undefined to fetch them from
                the authorization server.
-        :raises :class:`CrossauthError`: object with :class:`ErrorCode` of
+        :raises :class:`crossauth_backend.CrossauthError`: object with :class:`ErrorCode` of
           - `Connection` if the fetch to the authorization server failed,
             the OIDC configuration wasn't set or the keys could not be parsed.
         """

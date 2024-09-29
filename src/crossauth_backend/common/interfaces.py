@@ -48,7 +48,7 @@ class Key(TypedDict):
 
 class PartialKey(TypedDict, total = False):
     """
-    Same as :class:`Key` but all fields are NotRequired
+    Same as :class:`crossauth_backend.Key` but all fields are NotRequired
     """
 
     value : str
@@ -72,7 +72,8 @@ def get_json_data(key: Key) -> Dict[str, Any]:
     """
     Parses the data field in the key as a JSON object
 
-    :param Key key: the key to extract the data field from
+    :param crossauth_backend.Key key: the key to extract the data field from
+
     :return: the data as dict
     """
     if ("data" not in key):
@@ -106,7 +107,7 @@ class UserInputFields(TypedDict):
     state : str
     """
     You are free to define your own states.  The ones Crossauth recognises
-    are defined in {@link UserState}.
+    are defined in :class:`UserState`.
     """
 
     email : NotRequired[str]
@@ -157,7 +158,7 @@ class PartialUser(PartialUserInputFields, total=False):
 
 class User(UserInputFields):
     """
-    This adds ID to {@link UserInputFields}.  
+    This adds ID to :class:`UserInputFields`.  
 
     If your `username` field is
     unique and immutable, you can omit ID (passing username anywhere an ID)
@@ -193,7 +194,7 @@ class PartialUserSecrets(UserSecretsInputFields, total=False):
 
 class UserSecrets(UserSecretsInputFields):
     """
-    This adds the user ID toi {@link UserSecretsInputFields}.
+    This adds the user ID toi :class:`UserSecretsInputFields`.
     """
 
     userid : str|int
@@ -238,7 +239,7 @@ class OAuthClient(TypedDict):
     """
     An array of OAuth flows allowed for this client.  
     
-    See {@link @crossauth/common!OAuthFlows}.
+    See :class:`OAuthFlows`.
     """
 
 
@@ -257,7 +258,7 @@ class OAuthClient(TypedDict):
 
 class UserState:
     """
-    These are used valiues for `state` in a :class:`User` object
+    These are used valiues for `state` in a :class:`crossauth_backend.User` object
     """
 
     active = "active"

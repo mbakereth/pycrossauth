@@ -39,7 +39,7 @@ class BffEndpoint(NamedTuple):
 
 class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     """
-    Options for {@link FastApiOAuthClient}.
+    Options for :class:`FastApiOAuthClient`.
     """
 
     siteUrl: str
@@ -132,7 +132,7 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
 
     authorized_url : str
     """
-    If the {@link FastApiOAuthClientOptions.token_response_type} is
+    If the :meth:`FastApiOAuthClientOptions.token_response_type` is
     `save_in_session_and_redirect`, this is the relative URL that the usder
     will be redirected to after authorization is complete.
     """
@@ -184,7 +184,7 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     error_fn : FastApiErrorFn
     """
     The function to call when there is an OAuth error and
-    {@link FastApiOAuthClientOptions.error_response_type}
+    :attr:`FastApiOAuthClientOptions.error_response_type`
     is `custom`.
     See :class:`FastApiErrorFn`.
     """
@@ -226,14 +226,14 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     """
     Base URL for resource server endpoints called through the BFF
     mechanism.
-    See {@link FastApiOAuthClient} class documentation for full description.
+    See :class:`FastApiOAuthClient` class documentation for full description.
     """
 
     token_endpoints : List[Literal["access_token", "refresh_token", "id_token",
         "have_access_token", "have_refresh_token", "have_id_token"]]
     """
     Endpoints to provide to acces tokens through the BFF mechanism,
-    See {@link FastApiOAuthClient} class documentation for full description.
+    See :class:`FastApiOAuthClient` class documentation for full description.
     """
 
     """
@@ -257,6 +257,115 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
 ## Class
 
 class FastApiOAuthClient(OAuthClient):
+    """
+    The FastAPI implementation of the OAuth client.
+    
+    Makes requests to an authorization server, using a configurable set
+    of flows, which sends back errors or tokens,
+    
+    You cannot construct this class directly.  It must be created through
+    a :class:`FastApiServer` instance.
+    
+    **:attr:`FastApiOAuthClientOptions.token_response_type`**
+    
+      - `send_json` the token response is sent as-is in the reply to the FastApi 
+         request.  In addition to the `token` endpoint response fields,
+         `ok: true` and `id_payload` with the decoded 
+         payload of the ID token are retruned.
+      - `save_in_session_and_load` the response fields are saved in the `data`
+         field of the session ID in key storage.  In addition, `expires_at` is 
+         set to the number of seconds since Epoch that the access token expires
+         at.  After saving, page defined in `authorized_page` is displayed.
+         A consequence is the query parameters passed to the 
+         redirect Uri are displayed in the address bar, as the response
+         is to the redirect to the redirect Uri.
+       - save_in_session_and_redirect` same as `save_in_session_and_load` except that 
+         a redirect is done to the `authorized_url` rather than displaying
+         `authorized_page` template.
+       - `send_in_page` the `token` endpoint response is not saved in the session
+         but just sent as template arguments when rendering the
+         template in `authorized_page`.  The JSON response fields are sent
+         verbatim, with the additional fild of `id_payload` which is the
+         decoded payload from the ID token, if present.
+       - `custom` the function in 
+          :attr:`FastApiOAuthClientOptions.receiveTokenFn` is called.
+         
+    **:attr:`FastApiOAuthClientOptions.errorResponseType`**
+    
+       - `json_error` a JSON response is sent with fields
+          `status`, `error_message`,
+         `error_messages` and `error_code_name`.
+       - `page_error` the template in :attr:FastApiOAuthClientOptions.error_page`
+         is displayed with template parameters `status`, `error_message`,
+         `error_messages` and `error_code_name`.
+       - `custom` :class:`FastApiOAuthClientOptions.error_fn` is called.
+    
+    **Backend-for-Frontend (BFF)**
+    
+    This class supports the backend-for-frontend (BFF) model.  You create an
+    endpoint for every resource server endpoint you want to be able to call, by
+    setting them in :class:`FastApiOAuthClientOptions.bffEbdpoints`.  You set the
+    :attr:`FastApiOAuthClientOptions.token_response_type` to `save_in_session_and_load`
+    or `save_in_session_and_redirect` so that tokens are saved in the session.  
+    You also set `bffBaseUrl` to the base URL of the resource server.
+    When you want to call a resource server endpoint, you call
+    `site_url` + `prefix` + `bff_endpoint_name` + *`url`*. The client will
+    pull the access token from the session, put it in the `Authorization` header
+    and called `bff_base_url` + *`url`* using fetch, and return the
+    response verbatim.  
+    
+    This pattern avoids you having to store the access token in the frontend.
+    
+    **Middleware**
+
+    This class provides middleware that works with the BFF method.
+
+    If an ID token is saved in the session and it is valid, the following
+    state attributes are set in the request object:
+
+      - `id_payload` the payload from the ID token
+      - `user` a :class:`crossauth_backend.User` object created from the ID
+         token
+      - `auth_type` set to `oidc`
+
+    **Endpoints provided by this class**
+    
+    In addition to the BFF endpoints above, this class provides the following 
+    endpoints. The ENDPOINT column values can be overridden in 
+    :class:`FastApiOAuthClientOptions`. 
+    All POST endpoints also require `csrf_token`.
+    The Flow endpoints are only enabled if the corresponding flow is set
+    in :attr:`FastApiOAuthClientOptions.valid_flows`. 
+    Token endpoints are only enabled if the corresponding endpoint is set
+    in :attr:`FastApiOAuthClientOptions.token_endpoints`. 
+    
+    | METHOD | ENDPOINT            |Description                                                   | GET/BODY PARAMS                                     | VARIABLES PASSED/RESPONSE                                 | FILE                     |
+    | ------ | --------------------| ------------------------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------- | ------------------------ |
+    | GET    | `authzcode`         | Redirect URI for receiving authz code                        | *See OAuth authorization code flow spec*            | *See docs for`tokenResponseType`*                         |                          | 
+    | GET    | `passwordflow`      | Displays page to request username/password for password flow | scope                                               | user, scope                                               | passwordFlowPage         | 
+    | POST   | `passwordflow`      | Initiates the password flow                                  | *See OAuth password flow spec*                      | *See docs for`tokenResponseType`*                         |                          | 
+    |        |                     | Requests an OTP from the user for the Password MFA OTP flow  | `mfa_token`, `scope`, `otp`                         | `mfa_token`, `scope`, `error`, `error_message`             | mfaOtpPage               | 
+    |        |                     | Requests an OOB from the user for the Password MFA OOB flow  | `mfa_token`, `oob_code`, `scope`, `oob`             | `mfa_token`, `oob_code`, `scope`, `error`, `error_message` | mfaOobPage               | 
+    | POST   | `passwordotp`       | Token request with the MFA OTP                               | *See Password MFA flow spec*                        | *See docs for`tokenResponseType`*                         |                          | 
+    | POST   | `passwordoob`       | Token request with the MFA OOB                               | *See Password MFA flow spec*                        | *See docs for`tokenResponseType`*                         |                          | 
+    | POST   | `authzcodeflow`     | Initiates the authorization code flow                        | *See OAuth authorization code flow spec*            | *See docs for`tokenResponseType`*                         |                          | 
+    | POST   | `authzcodeflowpkce` | Initiates the authorization code flow with PKCE              | *See OAuth authorization code flow with PKCE spec*  | *See docs for`tokenResponseType`*                         |                          | 
+    | POST   | `clientcredflow`    | Initiates the client credentials flow                        | *See OAuth client credentials flow spec*            | *See docs for`tokenResponseType`*                         |                          | 
+    | POST   | `refreshtokenflow`  | Initiates the refresh token flow                             | *See OAuth refresh token flow spec*                 | *See docs for`tokenResponseType`*                         |                          | 
+    | POST   | `devicecodeflow`    | Initiates the device code flow                               | See :class:`DeviceCodeBodyType`                      | See :class:`DeviceCodeFlowResponse`                        | `deviceCodeFlowPage`     | 
+    | POST   | `api/devicecodeflow` | Initiates the device code flow                              | See :class:`DeviceCodeBodyType`                      | See :class:`DeviceCodeFlowResponse`                        |                          | 
+    | POST   | `devicecodepoll`     | Initiates the device code flow                              | See :class:`DeviceCodePollBodyType`                  | Authorization complete: See docs for`tokenResponseType`.  Other cases, :class:`OAuthTokenResponse` |                          | 
+    | POST   | `api/devicecodepoll` | Initiates the device code flow                              | See :class:`DeviceCodePollBodyType`                  | :class:`OAuthTokenResponse`              |                          | 
+    | POST   | `access_token`      | For BFF mode, returns the saved access token                 | `decode`, default `true`                            | *Access token payload*                                    |                          | 
+    | POST   | `refresh_token`     | For BFF mode, returns the saved refresh token                | `decode`, default `true`                            | `token` containing the refresh token                      |                          | 
+    | POST   | `id_token     `     | For BFF mode, returns the saved ID token                     | `decode`, default `true`                            | *ID token payload*                                        |                          | 
+    | POST   | `have_access_token` | For BFF mode, returns whether an acccess token is saved      |                                                     | `ok`                                                      |                          | 
+    | POST   | `have_refresh_token`| For BFF mode, returns whether a refresh token is saved       |                                                     | `ok`                                                      |                          | 
+    | POST   | `have_id_token`     | For BFF mode, returns whether an ID token is saved           |                                                     | `ok`                                                      |                          | 
+    | POST   | `tokens`            | For BFF mode, returns all the saved tokens                   | `decode`, default `true`                            | *Token payloads                                         |                          | 
+    | POST   | `deletetokens`      | Deletes all BFF tokens and displays a page                   | None                                                | `ok`                                                      | `deleteTokensPage`       | 
+    | POST   | `api/deletetokens`  | Delertes all tokens and returns JSON                         | None                                                | `ok`                                                      |                          | 
+    """
 
     @property
     def server(self):  return self._server
@@ -305,6 +414,20 @@ class FastApiOAuthClient(OAuthClient):
 
     def __init__(self, server: FastApiServerBase, auth_server_base_url: str, options: FastApiOAuthClientOptions = {}):
 
+        """
+        Constructor
+
+        Do not try to construct this independently.  Construct a 
+        :class:`FastApiServer` instance instead.
+
+        :param FastApiServerBase server: This class does not work without a 
+               parent server being instantiated.  It is passed here,
+        :param str auth_server_base_url: The base URL for for calling the
+               authorization server.  Eg `.well-known` will be appended to
+               this URL.
+        :param FastApiOAuthClientOptions options: See :class:`FastApiOAuthClientOptions`
+
+        """
         super().__init__(auth_server_base_url, options)
         self._server = server
         self.__site_url = "/"
@@ -1340,7 +1463,7 @@ class FastApiOAuthClient(OAuthClient):
                 'scope': body.getAsStr("scope"),
                 'mfa_token': body.getAsBool("mfa_token"),
                 'challenge_type': body.getAsStr("challenge_type"),
-                'errorMessage': ce.message,
+                'error_message': ce.message,
                 'error_code': ce.code,
                 'error_code_name': ce.code_name,
                 'csrf_token': request.state.csrf_token

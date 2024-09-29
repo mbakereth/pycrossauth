@@ -68,6 +68,7 @@ class OAuthFlows:
 
         The value returned is the one in `flow_name`.
         :param List[str] flows: the flows to return the names of
+
         :return: a dictionary of strs
         """
 
@@ -78,6 +79,7 @@ class OAuthFlows:
         """
         Returns true if the given str is a valid flow name.
         :param str flow: the flow to check
+
         :return: true or false.
         """
 
@@ -88,6 +90,7 @@ class OAuthFlows:
         """
         Returns true only if all given strs are valid flows
         :param List[str] flows: the flows to check
+
         :return: true or false.
         """
 
@@ -114,6 +117,7 @@ class OAuthFlows:
         Returns the OAuth grant types that are valid for a given flow, or
         `None` if it is not a valid flow.
         :param str oauthFlow: the flow to get the grant type for.
+
         :return: a list of grant type strs or None
         """
 
@@ -270,7 +274,8 @@ class OAuthClient:
         :param str auth_server_base_url: bsae URL for the authorization server
               expected to issue access tokens.  If the `iss` field in a JWT
               does not match this, it is rejected.
-        :param OAuthClientOptions options: see :class: OAuthClientOptions
+        :param crossauth_backend.OAuthClientOptions options: see :class: OAuthClientOptions
+
         """
 
         self._verifier_length = 32
@@ -379,6 +384,7 @@ class OAuthClient:
 
         :param str|None scope:, which can be None
         :param bool pkce: if True, start the flow with PKCE (for public clients). Default False
+
         """
 
         CrossauthLogger.logger().debug(j({"msg": "Starting authorization code flow"}))
@@ -429,6 +435,7 @@ class OAuthClient:
         :param str|None the state, if one is used by the authorization server
         :param str|None any error: error message returned by the authorization server.  It is passed through in the returned value
         :param str|None any error_description: error description returned by the authorization server.  It is passed through in the returned value
+
         :return: an OAuth token endpoint response
         """
 
@@ -486,6 +493,7 @@ class OAuthClient:
         Start the client credentials flow
 
         :param str|None scope:, which can be None
+
         :return: an OAuth token endpoint response
         """
 
@@ -532,6 +540,7 @@ class OAuthClient:
         :param str username:, user's username
         :param str password:, user's plaintext password
         :param str|None scope:, which can be None
+
         :return: an OAuth token endpoint response
         """
 
@@ -583,6 +592,7 @@ class OAuthClient:
         See Auth0's documentation for the password MFA flow.
 
         :param str mfa_token:, The MFA token returned when the flow was initiated
+
         :return: See :class:`OAuthMfaAuthenticatorsResponse`
         """
 
@@ -674,6 +684,7 @@ class OAuthClient:
         :param str mfa_token: the MFA token that was returned by the authorization
                server in the response from the Password Flow.
         :param str otp: the OTP entered by the user
+
         :return: an object with some of the following fields, depending on
                  authorization server configuration and whether there were
                  errors:
@@ -736,6 +747,7 @@ class OAuthClient:
                server in the response from the Password Flow.
         :param str authenticator_id: the authenticator ID, as returned in the response
         from the :func:`mfa_authenticators` request.
+
         :return: an object with one or more of the following defined:
           - `challenge_type` as per the Auth0 MFA documentation
           - `oob_code` as per the Auth0 MFA documentation
@@ -788,6 +800,7 @@ class OAuthClient:
         :param str mfa_token: the MFA token that was returned by the authorization
                server in the response from the Password Flow.
         :param oob_code: the code entered by the user
+
         :return: an :class:`OAuthTokenResponse` object, which may contain
                  an error instead of the response fields.
         """
@@ -838,6 +851,7 @@ class OAuthClient:
         Starts the refresh token flow
 
         :param str refresh_token: the refresh token to exchange
+
         :return: a :class:`OAuthTokenResponse?  response
         """
 
@@ -887,6 +901,7 @@ class OAuthClient:
         Starts the Device Code Flow on the primary device (the one wanting an access token)
         :param str url: The URl for the device_authorization endpoint, as it is not defined in the OIDC configuration
         :param str|None scope: optional scope to request authorization for
+
         :return: See :class:`OAuthDeviceAuthorizationResponse`
         """
 
@@ -929,6 +944,7 @@ class OAuthClient:
         authorized by the user.
         
         :param str device_code: the device code to poll
+
         :return: See :class:`OAuthDeviceResponse`
         """
 

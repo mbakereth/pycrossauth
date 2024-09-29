@@ -1,6 +1,6 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from .fastapiserverbase import FastApiServerBase, FastApiErrorFn
-from .fastapiserver import FastApiServer, FastApiServerOptions
+from .fastapiserver import FastApiServer, FastApiServerOptions, FastApiSessionServerParams, FastApiOAuthClientParams, FastApiOAuthResServerParams, FastApiServerParams
 from .fastapisession import FastApiSessionServerOptions, FastApiSessionServer
 from .fastapisessionadapter import FastApiSessionAdapter
 from .fastapioauthclient import FastApiOAuthClient, FastApiOAuthClientOptions
@@ -14,6 +14,7 @@ __all__ = (
     "FastApiServerBase", "FastApiErrorFn",
     "FastApiServer", "FastApiServerOptions",
     "FastApiOAuthClient", "FastApiOAuthClientOptions",
-    "FastApiOAuthResourceServer", "FastApiOAuthResourceServerOptions", "ProtectedEndpoint"
+    "FastApiOAuthResourceServer", "FastApiOAuthResourceServerOptions", "ProtectedEndpoint",
+    "FastApiSessionServerParams", "FastApiOAuthClientParams", "FastApiOAuthResServerParams", "FastApiOAuthResServerParams", "FastApiServerParams", 
 )
 

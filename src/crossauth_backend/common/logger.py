@@ -57,7 +57,7 @@ class CrossauthLogger(CrossauthLoggerInterface):
     
     - `msg` : main contents of the log
     - `err` : an error object.  If a subclass of Error, it wil contain at least `message` and
-                a stack trace in `stack`.  If the error is of type :class:`CrossauthError` 
+                a stack trace in `stack`.  If the error is of type :class:`crossauth_backend.CrossauthError` 
                 it also will also contain `code` and `http_status`.
     - `hashedSessionCookie` : for security reasons, session cookies are not included in logs.
                                 However, so that errors can be correlated with each other, a hash
@@ -102,6 +102,7 @@ class CrossauthLogger(CrossauthLoggerInterface):
         Constructor
 
         :param int|None level the level to report to
+
         """
         if level is not None:
             self.level = level

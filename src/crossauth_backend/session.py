@@ -109,9 +109,10 @@ class SessionManager:
     def __init__(self, key_storage : KeyStorage, authenticators : Mapping[str, Authenticator] , options : SessionManagerOptions = {}):
         """
         Constructor
-        :param KeyStorage key_storage:  the {@link KeyStorage} instance to use, eg {@link PrismaKeyStorage}.
-        :param Mapping[str, Authenticator] authenticators: authenticators used to validate users, eg {@link LocalPasswordAuthenticatorOptions }.
-        :param SessionManagerOptions options: optional parameters for authentication. See {@link SessionManagerOptions }.
+        :param crossauth_backend.KeyStorage key_storage:  the :class:`KeyStorage` instance to use, eg :class:`PrismaKeyStorage`.
+        :param Mapping[str, Authenticator] authenticators: authenticators used to validate users, eg :class:`LocalPasswordAuthenticatorOptions`.
+        :param SessionManagerOptions options: optional parameters for authentication. See :class:`SessionManagerOptions`.
+
         """
         self._user_storage = options.get('userStorage', None)
         self._key_storage = key_storage
@@ -168,8 +169,10 @@ class SessionManager:
         If the user is undefined, or the key has expired, returns undefined.
         
         :param str session_id: the session id to look up in session storage
+
         :return: a string from the data field
-        :raise :class:`CrossauthError`: with 
+
+        :raise :class:`crossauth_backend.CrossauthError`: with 
             :class:`ErrorCode` of `Connection`,  `InvalidSessionId`
             `UserNotExist` or `Expired`.
         """
@@ -189,8 +192,10 @@ class SessionManager:
         If the user is undefined, or the key has expired, returns undefined.
         
         :param str session_id: the session key to look up in session storage
+
         :return: a string from the data field
-        :raise :class:`CrossauthError`: with 
+
+        :raise :class:`crossauth_backend.CrossauthError`: with 
             :class:`ErrorCode` of `Connection`,  `InvalidSessionId`
             `UserNotExist` or `Expired`.
         """
@@ -202,6 +207,7 @@ class SessionManager:
     async def create_csrf_token(self) -> Csrf:
         """
         Creates and returns a signed CSRF token based on the session ID
+
         :return: a CSRF cookie and value to put in the form or CSRF header
         """
         csrf_token = self._csrf_tokens.create_csrf_token()
@@ -215,6 +221,7 @@ class SessionManager:
         value that can be put in the form or CSRF header value.
         
         :param str csrf_cookie_value: the value from the CSRF cookie
+
         :return: the value to put in the form or CSRF header
         """
         csrf_token = self._csrf_tokens.unsign_cookie(csrf_cookie_value)
@@ -225,15 +232,17 @@ class SessionManager:
         Returns the session ID from the signed session cookie value
         
         :param str session_cookie_value: value from the session ID cookie
+
         :return: the usigned cookie value.
-        :raises :class:`CrossauthError` with `InvalidKey`
+
+        :raises :class:`crossauth_backend.CrossauthError` with `InvalidKey`
             if the signature is invalid.
         """
         return self._session.unsign_cookie(session_cookie_value)
 
     def validate_double_submit_csrf_token(self, csrf_cookie_value : str, csrf_form_or_header_value: str):
         """
-        Throws {@link @crossauth/common!CrossauthError} with 
+        Throws :class:`crossauth_backend.CrossauthError` with 
         `InvalidKey` if the passed CSRF token is not valid for the given
         session ID.  Otherwise returns without error
         
@@ -247,9 +256,10 @@ class SessionManager:
 
     def validate_csrf_cookie(self, csrf_cookie_value : str):
         """
-        Throws :class:`CrossauthError` with `InvalidKey` if 
+        Throws :class:`crossauth_backend.CrossauthError` with `InvalidKey` if 
         the passed CSRF cookie value is not valid (ie invalid signature)
         :param str csrf_cookie_value: the CSRF cookie value 
+
         """
         self._csrf_tokens.validate_csrf_cookie(csrf_cookie_value)
 
@@ -259,6 +269,7 @@ class SessionManager:
         storage to current time.
         
         :param str session_id: the session Id to update.
+
         """
         key_data = await self._session.get_session_key(session_id)
         if self._session.idle_timeout > 0:
@@ -276,6 +287,7 @@ class SessionManager:
         :param str session_id: the session Id to update.
         :param str name: of the field.
         :param Mapping[str, Any] value: new value to store
+
         """
         hashed_session_key = self._session.hash_session_id(session_id)
         CrossauthLogger.logger().debug(j({"msg": f"Updating session data value{name}", "hashedSessionCookie": Crypto.hash(session_id)}))
@@ -288,7 +300,8 @@ class SessionManager:
         The `data` field in the session entry is assumed to be a JSON string.
         The field with the given name is updated or set if not already set.
         :param str session_id: the session Id to update.
-        :param  List[KeyDataEntry] data_array: names and values.
+        :param  List[crossauth_backend.KeyDataEntry] data_array: names and values.
+
         """
         hashed_session_key = self._session.hash_session_id(session_id)
         CrossauthLogger.logger().debug(j({"msg": f"Updating session data", "hashedSessionCookie": Crypto.hash(session_id)}))
@@ -301,6 +314,7 @@ class SessionManager:
         The `data` field in the session entry is assumed to be a JSON string.
         The field with the given name is updated or set if not already set.
         :param str session_id; the session Id to update.
+
         """
         hashed_session_key = self._session.hash_session_id(session_id)
         CrossauthLogger.logger().debug(j({"msg": f"Updating session data value{name}", "hashedSessionCookie": Crypto.hash(session_id)}))
@@ -311,6 +325,7 @@ class SessionManager:
         Deletes the given session ID from the key storage (not the cookie)
         
         :param str session_id: the session Id to delete
+
         """
         return await self._key_storage.delete_key(self._session.hash_session_id(session_id))
 

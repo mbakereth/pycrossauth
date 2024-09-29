@@ -98,6 +98,7 @@ class UserStorage(ABC):
         Constructor
 
         :param UserStorageOptions options: See :class:`UserStorageOptions`
+
         """
 
         self._user_editable_fields: List[str] = []
@@ -120,7 +121,7 @@ class UserStorage(ABC):
 
         :param str username: the username to return the user of
         :param UserStorageGetOptions options: optionally turn off checks. Used internally
-        :raises :class:`CrossauthError`: with :class:`ErrorCode` either UserNotExist or Connection
+        :raises :class:`crossauth_backend.CrossauthError`: with :class:`ErrorCode` either UserNotExist or Connection
         """
         pass
 
@@ -134,7 +135,7 @@ class UserStorage(ABC):
 
         :param str|int id: the user id to return the user of
         :param UserStorageGetOptions options: optionally turn off checks. Used internally
-        :raises :class:`CrossauthError` with :class:`ErrorCode` either UserNotExist or Connection
+        :raises :class:`crossauth_backend.CrossauthError` with :class:`ErrorCode` either UserNotExist or Connection
         """
         pass
 
@@ -148,7 +149,7 @@ class UserStorage(ABC):
 
         :param email: the email address to return the user of
         :param options: optionally turn off checks. Used internally
-        :raises CrossauthError: with ErrorCode either UserNotExist or Connection
+        :raises crossauth_backend.CrossauthError: with ErrorCode either UserNotExist or Connection
         """
         pass
 
@@ -156,10 +157,12 @@ class UserStorage(ABC):
         """
         Creates a user with the given details and secrets.
 
-        :param UserInputFields user: will be put in the User table
-        :param UserSecretsInputFields|None secrets: will be put in the UserSecrets table
+        :param crossauth_backend.UserInputFields user: will be put in the User table
+        :param crossauth_backend.UserSecretsInputFields|None secrets: will be put in the UserSecrets table
+
         :return: the new user as a User object
-        :raises :class:`CrossauthError` with :class:`ErrorCode` Configuration
+
+        :raises :class:`crossauth_backend.CrossauthError` with :class:`ErrorCode` Configuration
         """
         raise CrossauthError(ErrorCode.Configuration)
 
@@ -171,11 +174,12 @@ class UserStorage(ABC):
         If the given user exists in the database, update it with the passed values.
         If it doesn't exist, throw a CrossauthError with ErrorCode InvalidKey.
 
-        :param PartialUser user: The 'id' field must be set, but all others are optional.
+        :param crossauth_backend.PartialUser user: The 'id' field must be set, but all others are optional.
                      Any parameter not set (or None) will not be updated.
                      If you want to set something to None in the database, pass
                      the value as None, not undefined.
-        :param PartialUserSecrets|None secrets: Optional secrets to update
+        :param crossauth_backend.PartialUserSecrets|None secrets: Optional secrets to update
+
         """
         pass
 
@@ -185,6 +189,7 @@ class UserStorage(ABC):
         If the storage supports this, delete the named user from storage.
 
         :param str username: username to delete
+
         """
         pass
 
@@ -194,6 +199,7 @@ class UserStorage(ABC):
         If the storage supports this, delete the user with the given ID from storage.
 
         :param str|int id: id of user to delete
+
         """
         pass
 
@@ -205,6 +211,7 @@ class UserStorage(ABC):
 
         :param int|None skip: skip this number of records from the start of the set
         :param int|None take: only return at most this number of records
+
         :return: an array of User objects
         """
         pass
@@ -216,6 +223,7 @@ class UserStorage(ABC):
         This function returns that normalization.
 
         :param str string: the string to normalize
+
         :return: the normalized string, in lowercase with diacritics removed
         """
         import unicodedata
@@ -266,6 +274,7 @@ class KeyStorage(ABC):
         :padam str|None data: An optional value, specific to the type of key, e.g., new 
                 email for email change tokens
         :param Mapping[str, Any]|None extra_fields: These will also be saved in the key record
+
         """
         pass
 
@@ -276,7 +285,7 @@ class KeyStorage(ABC):
         passed values. If it doesn't exist, raise a CrossauthError with 
         ErrorCode 'InvalidKey'.
 
-        :param PartialKey key: The fields defined in this will be updated. 'id' must
+        :param crossauth_backend.PartialKey key: The fields defined in this will be updated. 'id' must
                 be present and it will not be updated.
         """
         pass
@@ -287,6 +296,7 @@ class KeyStorage(ABC):
         Deletes a key from storage (e.g., the database).
 
         :param str value: The key to delete
+
         """
         pass
 
@@ -299,6 +309,7 @@ class KeyStorage(ABC):
         :param int|str|None userid: User ID to delete keys for
         :param str prefix: Only keys starting with this prefix will be deleted
         :param str|None except_key: If defined, the key with this value will not be deleted
+
         """
         pass
 
@@ -307,7 +318,7 @@ class KeyStorage(ABC):
         """
         Deletes all matching the given specs
 
-        :param PartialKey key: Any key matching all defined values in this object will
+        :param crossauth_backend.PartialKey key: Any key matching all defined values in this object will
             be deleted
         """
         pass
@@ -333,6 +344,7 @@ class KeyStorage(ABC):
         :param str data_name: The field name to update. This can contain dots, e.g.,
                     'part1.part2', which means 'part2' within 'part1' is updated.
         :param Any|None value: The new value.
+
         """
         pass
 
@@ -345,7 +357,8 @@ class KeyStorage(ABC):
         Ensure it is done as a single transaction.
 
         :param str key_name: The key to update
-        :param List[KeyDataEntry data_array: dataName and value pairs
+        :param List[crossauth_backend.KeyDataEntry data_array: dataName and value pairs
+
         """
         pass
 
@@ -458,7 +471,8 @@ class OAuthClientStorage(ABC):
         """
         Constructor
 
-        :param OAuthClientStorageOptions options: see OAuthClientStorageOptions
+        :param crossauth_backend.OAuthClientStorageOptions options: see OAuthClientStorageOptions
+
         """
         pass
 
@@ -487,7 +501,7 @@ class OAuthClientStorage(ABC):
 
         :return: A list of OAuthClient objects.
 
-        :raises :class:`CrossauthError`: with :class:`ErrorCode` of 'InvalidSessionId' if a match was not found in session storage.
+        :raises :class:`crossauth_backend.CrossauthError`: with :class:`ErrorCode` of 'InvalidSessionId' if a match was not found in session storage.
         """
         pass
 
@@ -513,7 +527,7 @@ class OAuthClientStorage(ABC):
 
         Saves in the database.
 
-        :param OAuthClient client: the client to save.
+        :param crossauth_backend.OAuthClient client: the client to save.
 
         :return: The new client.
         """
@@ -526,9 +540,9 @@ class OAuthClientStorage(ABC):
         passed values. If it doesn't exist, throw a CrossauthError with
         'InvalidClient'.
 
-        :param OAuthClient client: all fields to update (client_id must be set but will not be updated)
+        :param crossauth_backend.OAuthClient client: all fields to update (client_id must be set but will not be updated)
 
-        :raises :class:`CrossauthError`: with 'InvalidClient' if the client doesn't exist.
+        :raises :class:`crossauth_backend.CrossauthError`: with 'InvalidClient' if the client doesn't exist.
         """
         pass
 
@@ -538,6 +552,7 @@ class OAuthClientStorage(ABC):
         Deletes a key from storage.
 
         :param str client_id: the client to delete
+
         """
         pass
 
@@ -565,6 +580,7 @@ class OAuthAuthorizationStorage(ABC):
         Constructor
 
         :param OAuthAuthorizationStorageOptions options: see :class:`OAuthAuthorizationStorageOptions`
+
         """
         pass
 
@@ -590,5 +606,6 @@ class OAuthAuthorizationStorage(ABC):
         :param str client_id: the client_id to look up
         :param str|int|None userid: the userid to look up, None for a client authorization not user authorization
         :param List[str|None]authorizations: new set of authorized scopes, which may be empty
+
         """
         pass
