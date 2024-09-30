@@ -1,4 +1,4 @@
-nulltype==2.3.1
+nulltype>=2.3.1
 requests
 aiohttp
 pycryptodome

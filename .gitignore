@@ -22,4 +22,6 @@
 **/*.pyi
 docs/crossauth_backend*.rst
 docs/_build
+src/pycrossauth.egg-info/
+dist
 

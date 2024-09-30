@@ -31,6 +31,9 @@ from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeySt
 from .cookieauth import DoubleSubmitCsrfToken, DoubleSubmitCsrfTokenOptions, SessionCookie, SessionCookieOptions
 from .session import SessionManager, SessionManagerOptions
 
+# Version of realpython-reader package
+__version__ = "0.0.1"
+
 __all__ = (
     "ErrorCode", "CrossauthError",
     "CrossauthLogger", "j",

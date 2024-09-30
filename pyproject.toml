@@ -1,0 +1,72 @@
+[build-system]
+requires      = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pycrossauth"
+version = "0.0.1"
+description = "Cross platform web authentication and OAuth framework"
+readme = "README.md"
+authors = [{ name = "Matthew Baker", email = "matt@mattbaker.ch" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "OSI Approved :: Apache Software License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+keywords = ["feed", "reader", "tutorial"]
+dependencies = [
+        "bumpver",
+        "nulltype>=2.3.1",
+        "requests",
+        "aiohttp",
+        "pycryptodome",
+        "psycopg",
+        "psycopg_pool",
+        "sqlalchemy[asyncio]",
+        "jwt",
+        "Jinja2",
+        "qrcode[pil]"
+    ]
+requires-python = ">=3.12"
+
+    [project.optional-dependencies]
+    build = ["build", "twine"]
+    dev = [
+        "dotenv-cli",
+        "sphinx",
+        "sphinx_rtd_theme",
+        "myst-parser",
+        "aioresponses",
+        "bumpver",
+        "build",
+        "twine"
+    ]
+    optional = [
+        "asyncpg",
+        "fastapi[standard]"
+    ]
+
+    [project.scripts]
+
+    [project.urls]
+    repository    = "https://github.com/mbakereth/crossauthjs"
+    documentation = "https://mattbaker.ch/pycrossauth/"
+
+
+[tool.bumpver]
+current_version = "0.0.1"
+version_pattern = "MAJOR.MINOR.PATCH"
+commit_message  = "bump version {old_version} -> {new_version}"
+commit          = true
+tag             = true
+push            = false
+
+    [tool.bumpver.file_patterns]
+    "pyproject.toml" = [
+        'current_version = "{version}"',
+        'version = "{version}"',
+    ]
+    "src/crossauth_backend/__init__.py" = ["{version}"]
+    "src/crossauth_fastapi/__init__.py" = ["{version}"]
+
