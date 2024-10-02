@@ -1,0 +1,36 @@
+body {
+    background-color: #27272a;
+    color: #e4e4e7;
+    margin: 20px;
+    font-family: sans-serif;
+    
+}
+
+.error {
+    color: #b91c1c;
+}
+
+ul.error {
+    list-style-type: none; 
+    margin: 0;
+    padding: 0;
+}
+.success {
+    color: #4d7c0f;
+}
+
+a,
+a:visited {
+    color: #0369a1;
+    text-decoration: none;
+}
+table {
+    border: 0px;
+}
+
+th, td {
+    padding-bottom: 10px;
+    padding-right: 20px;
+    padding-top: 10px;
+}
+  

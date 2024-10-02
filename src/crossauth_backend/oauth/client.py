@@ -299,7 +299,7 @@ class OAuthClient:
         set_parameter("client_secret", ParamType.String, self, options, "OAUTH_CLIENT_SECRET", protected=True)
         set_parameter("redirect_uri", ParamType.String, self, options, "OAUTH_REDIRECT_URI", protected=True)
 
-        self._token_consumer = OAuthTokenConsumer(self._client_id, options)
+        self._token_consumer = OAuthTokenConsumer(self._client_id, {"auth_server_base_url": auth_server_base_url, **options})
         set_parameter("state_length", ParamType.String, self, options, "OAUTH_STATE_LENGTH", protected=True)
         set_parameter("verifier_length", ParamType.String, self, options, "OAUTH_VERIFIER_LENGTH", protected=True)
         set_parameter("client_secret", ParamType.String, self, options, "OAUTH_CLIENT_SECRET", protected=True)

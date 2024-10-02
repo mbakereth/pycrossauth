@@ -493,7 +493,7 @@ class FastApiOAuthClient(OAuthClient):
         set_parameter("bff_endpoint_name", ParamType.String, self, options, "OAUTH_BFF_ENDPOINT_NAME", protected=True)
         set_parameter("bff_base_url", ParamType.String, self, options, "OAUTH_BFF_BASEURL", protected=True)
         set_parameter("valid_flows", ParamType.JsonArray, self, options, "OAUTH_VALIFGLOWS")
-        set_parameter("template_dir", ParamType.JsonArray, self, options, "TEMPLATE_DIR")
+        set_parameter("template_dir", ParamType.String, self, options, "TEMPLATE_DIR")
         set_parameter("jwt_tokens", ParamType.JsonArray, self, options, "OAUTH_JWT_TOKENS", protected=True)
 
         if (len(self.__valid_flows) == 1 and self.__valid_flows[0] == OAuthFlows.All):

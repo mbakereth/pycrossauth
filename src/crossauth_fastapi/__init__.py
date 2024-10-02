@@ -3,7 +3,7 @@ from .fastapiserverbase import FastApiServerBase, FastApiErrorFn
 from .fastapiserver import FastApiServer, FastApiServerOptions, FastApiSessionServerParams, FastApiOAuthClientParams, FastApiOAuthResServerParams, FastApiServerParams
 from .fastapisession import FastApiSessionServerOptions, FastApiSessionServer
 from .fastapisessionadapter import FastApiSessionAdapter
-from .fastapioauthclient import FastApiOAuthClient, FastApiOAuthClientOptions
+from .fastapioauthclient import FastApiOAuthClient, FastApiOAuthClientOptions, BffEndpoint
 from .fastapiresserver import FastApiOAuthResourceServer, FastApiOAuthResourceServerOptions, ProtectedEndpoint
 
 from .fastapiserver import FastApiServer, FastApiErrorFn
@@ -15,7 +15,7 @@ __all__ = (
     "FastApiSessionServerOptions", "FastApiSessionServer",
     "FastApiSessionAdapter",
     "FastApiServerBase", "FastApiErrorFn",
-    "FastApiServer", "FastApiServerOptions",
+    "FastApiServer", "FastApiServerOptions", "BffEndpoint",
     "FastApiOAuthClient", "FastApiOAuthClientOptions",
     "FastApiOAuthResourceServer", "FastApiOAuthResourceServerOptions", "ProtectedEndpoint",
     "FastApiSessionServerParams", "FastApiOAuthClientParams", "FastApiOAuthResServerParams", "FastApiOAuthResServerParams", "FastApiServerParams", 

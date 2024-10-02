@@ -1,6 +1,6 @@
 # Crossauth.js
 
-Crossauth is a package for authentication and authorization using username/password, LDAP and OAuth2.  It has two components, each can be used without the other: server for the backend and client for the frontend.  IT is still under development and currently only the OAuth
+Crossauth is a package for authentication and authorization using username/password, LDAP and OAuth2.  It has two components, each can be used without the other: server for the backend and client for the frontend.  It is still under development and currently only the OAuth
 client part is implemented.  Enough of the session manager exists to support the
 OAuth client, but without user login functionality (ie just anonymous sessions).
 
