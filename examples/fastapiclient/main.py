@@ -55,7 +55,7 @@ async def root(request : Request):
     return templates.TemplateResponse(
         request=request,
         name="index.jinja2",
-        context={"csrf_token": request.state.csrf_token}
+        context={"csrfToken": request.state.csrf_token}
     )
 
 @app.get("/authzcodeex")
@@ -63,7 +63,7 @@ async def authzcodeex(request : Request):
     return templates.TemplateResponse(
         request=request,
         name="authzcodeex.jinja2",
-        context={"csrf_token": request.state.csrf_token}
+        context={"csrfTtoken": request.state.csrf_token}
     )
 
 @app.get("/authorized")
@@ -71,5 +71,22 @@ async def authorized(request : Request):
     return templates.TemplateResponse(
         request=request,
         name="authorized.jinja2",
-        context={"csrf_token": request.state.csrf_token}
+        context={"csrfToken": request.state.csrf_token}
     )
+
+@app.get("/clientcredentialsex")
+async def clientcredentialsex(request : Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="clientcredentialsex.jinja2",
+        context={"csrfToken": request.state.csrf_token}
+    )
+
+@app.get("/passwordex")
+async def passwordex(request : Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="passwordex.jinja2",
+        context={"csrfToken": request.state.csrf_token}
+    )
+

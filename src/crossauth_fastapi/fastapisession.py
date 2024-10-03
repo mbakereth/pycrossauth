@@ -6,6 +6,7 @@ import json
 from fastapi import Request, FastAPI, Response
 from fastapi.responses import JSONResponse
 from starlette.datastructures import FormData
+from starlette.types import Message
 from crossauth_backend.session import SessionManagerOptions
 from crossauth_backend.cookieauth import  CookieOptions
 from crossauth_backend.common.interfaces import User, Key
@@ -49,12 +50,19 @@ class JsonOrFormData:
         self.__form : FormData | None = None
         self.__json : Dict[str, Any] = {}
 
+
     async def load(self, request : Request):
-        content_type = request.headers['content-type']
-        if (content_type == "application/x-www-form-urlencoded" or content_type == "multipart/form-data"):
-            self.__form = await request.form()
-        else:
-            self.__json = await request.json()
+        content_type = request.headers['content-type'] if 'content-type' in request.headers else "text/plain"
+        body = await request.body()
+        async def receive() -> Message:
+            return {"type": "http.request", "body": body}
+        request._receive = receive # type: ignore
+        try:
+            if (content_type == "application/x-www-form-urlencoded" or content_type == "multipart/form-data"):
+                self.__form = await request.form()
+            else:
+                self.__json = await request.json()
+        except: pass
 
     def get(self, name : str, default: Any|None = None):
         if (self.__form): 
@@ -484,7 +492,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
 
     async def csrf_token(self, request: Request, headers: Dict[str,str]|None=None, add_cookies : Dict[str, Tuple[str, CookieOptions]]|None=None, delete_cookies : Set[str]|None=None, response : Response|None = None) -> Optional[str]:
         """
-        Validates the CSRF token in the header or `csrf_token` form or JSON field
+        Validates the CSRF token in the header or `csrfToken` form or JSON field
         and cookie value.
 
         If it is then `request.state.csrf_token` is set.  If not it is cleared.
@@ -503,7 +511,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
         if token is None:
             data = JsonOrFormData()
             await data.load(request)
-            token = data.getAsStr("csrf_token")
+            token = data.getAsStr("csrfToken")
 
         if token:
             try:
