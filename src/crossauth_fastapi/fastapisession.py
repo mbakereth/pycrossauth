@@ -223,6 +223,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
 
         """
         self._app = app
+        self.__prefix : str = "/"
         self._error_page = "error.jinja2"
         self._session_manager = SessionManager(key_storage, authenticators, options)
         self.__add_to_session = options['add_to_session'] if "add_to_session" in options else None
@@ -232,6 +233,8 @@ class FastApiSessionServer(FastApiSessionAdapter):
         self._session_manager = SessionManager(key_storage, authenticators, options)
 
         set_parameter("error_page", ParamType.String, self, options, "ERROR_PAGE", protected=True)
+        set_parameter("prefix", ParamType.String, self, options, "PREFIX")
+        if not self.__prefix.endswith("/"): self.__prefix += "/"
 
         @app.middleware("http")
         async def pre_handler(request: Request, call_next): # type: ignore
@@ -324,6 +327,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                         "user": None
                     }))
                 except Exception as e:
+                    CrossauthLogger.logger().debug(j({"err": e}))
                     CrossauthLogger.logger().warn(j({
                         "msg": "Invalid session cookie received",
                         "hash_of_session_id": self.get_hash_of_session_id(request)
@@ -343,6 +347,29 @@ class FastApiSessionServer(FastApiSessionAdapter):
             for header_name in headers:
                 response.headers[header_name] = headers[header_name]
             return response
+
+        #####
+        # Get CSRF Token
+        async def api_getcsrftoken_endpoint(request: Request, response: Response) -> Response:
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method":request.method,
+                "url": self.__prefix + 'api/getcsrftoken',
+                "ip": request.client.host if request.client is not None else None,
+                "user": request.state.user.username if request.state.user else None
+            }))
+            try:
+                return JSONResponse({
+                    "ok": True,
+                    "csrfToken": request.state.csrf_token
+                })
+            except:
+                return JSONResponse({
+                    "ok": False,
+                })
+
+        self.app.get(self.__prefix + 'api/getcsrftoken')(api_getcsrftoken_endpoint)
+        self.app.post(self.__prefix + 'api/getcsrftoken')(api_getcsrftoken_endpoint)
 
 
     async def create_anonymous_session(self, request: Request, response: Response, data: Optional[Dict[str, Any]] = None) -> str:

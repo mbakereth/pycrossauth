@@ -306,7 +306,7 @@ class FastApiServer(FastApiServerBase):
         if (client_params is not None):
             oauth_client_options : FastApiOAuthClientOptions = client_params["options"] if "options" in client_params else {}
             client_options : FastApiOAuthClientOptions = {**oauth_client_options, **options}
-            self._oauth_client = FastApiOAuthClient(self, client_params["auth_server_base_url"], client_options)
+            self._oauth_client = FastApiOAuthClient(self, client_params["auth_server_base_url"], client_options, session_server_params is not None)
 
         # Create multiple OAuth clients
         self._oauth_clients : List[FastApiOAuthClient]|None = None

@@ -220,4 +220,3 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
         client["fclient"].get('/passwordflow')
         self.assertEqual(client["client"]._test_request.state.user["username"], "bob") # type: ignore
         self.assertEqual(client["client"]._test_request.state.id_token_payload["sub"], "bob") # type: ignore
-        #print("State", client["client"]._test_request.state) # type: ignore

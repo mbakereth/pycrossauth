@@ -14,9 +14,6 @@
                 alert(msg);
             });
 
-            function authorize() {
-                window.location.href = '/authzcodeflow?scope=read+write';
-            }
             async function tokens() {
                 try {
                     const resp = await bffClient.getTokens();

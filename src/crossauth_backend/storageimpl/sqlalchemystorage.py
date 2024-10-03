@@ -68,22 +68,30 @@ class SqlAlchemyKeyStorage(KeyStorage):
             raise CrossauthError(ErrorCode.InvalidKey, "No value in key")
 
         if "created" in fields:
-            created = fields["created"]
+            # SQLite doesn't have datetime fields
+            if (type(fields["created"]) == str):
+                created = datetime.strptime(fields["created"], '%Y-%m-%d %H:%M:%S.%f')
+            else:
+                created = fields["created"]
         else:
             raise CrossauthError(ErrorCode.InvalidKey, "No creation date in key")
 
         if "expires" in fields:
-            expires = fields["expires"] or Null
+            # SQLite doesn't have datetime fields
+            if (type(fields["expires"]) == str):
+                expires = datetime.strptime(fields["expires"], '%Y-%m-%d %H:%M:%S.%f')
+            else:
+                expires = fields["expires"] or Null
 
         if "userid" not in fields:
             fields["userid"] = Null
 
         key = cast(Key, {
+            **fields,
             "value": value,
             "created": created,
             "expires": expires,
             "userid" : userid,
-            **fields,
         })
         return key
 

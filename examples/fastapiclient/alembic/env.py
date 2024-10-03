@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 dir = dirname(__file__)
 
 load_dotenv(dir + "/../.env" )
-print("DOTENV", dir + "/../.env")
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

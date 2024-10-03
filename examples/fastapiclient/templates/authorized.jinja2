@@ -1,0 +1,39 @@
+<html>
+    <head>
+        <title>Client</title>
+        <link rel="stylesheet" href="/public/style.css"/>
+
+        <script src="/public/crossauth_frontend.js"></script>
+        <script>
+            var bffClient = new crossauth_frontend.OAuthBffClient({
+                mode: "same-origin",
+                credentials: "same-origin",
+            });
+
+            async function getIdToken() {
+                try {
+                    let token = await bffClient.getIdToken();
+                    if (token == null) {
+                        document.getElementById("idtoken").innerHTML = "Error: There is no ID token";
+                    } else {
+                        document.getElementById("idtoken").innerHTML = "<pre>"+JSON.stringify(token, null, '\t')+"</pre>"
+                       
+                    }
+                } catch (e) {
+                    console.log(e);
+                    document.getElementById("idtoken").innerHTML = "<pre>Error: "+e.message+"</pre>";
+                }
+            }
+        </script>
+    </head>
+    <body>
+        <h1>Authorization</h1>
+
+        <p>Authorization was successful</p>
+
+        <p><button onclick="getIdToken()">ID Token</button></p>
+        <p id="idtoken"></p>
+
+        <p><a href="/">Home</a></p>
+    </body>
+</html>

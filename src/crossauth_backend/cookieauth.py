@@ -98,6 +98,20 @@ class DoubleSubmitCsrfToken:
         self._sameSite = options["sameSite"] if "sameSite" in options else "lax"
         self.__secret = options["secret"] if "secret" in options else ""
 
+        # header options
+        set_parameter("header_name", ParamType.String, self, options, "CSRF_HEADER_NAME", protected=True)
+
+        # cookie options
+        set_parameter("cookie_name", ParamType.String, self, options, "CSRF_COOKIE_NAME", protected=True)
+        set_parameter("domain", ParamType.String, self, options, "CSRF_COOKIE_DOMAIN", protected=True)
+        set_parameter("httpOnly", ParamType.Boolean, self, options, "CSRF_COOKIE_HTTPONLY", protected=True)
+        set_parameter("path", ParamType.String, self, options, "CSRF_COOKIE_PATH", protected=True)
+        set_parameter("secure", ParamType.Boolean, self, options, "CSRF_COOKIE_SECURE", protected=True)
+        set_parameter("sameSite", ParamType.String, self, options, "CSRF_COOKIE_SAMESITE", protected=True)
+
+        # hasher options
+        set_parameter("secret", ParamType.String, self, options, "SECRET", True)
+
     def create_csrf_token(self) -> str:
         """
         Creates a session key and saves in storage

@@ -14,6 +14,7 @@ import json
 import qrcode
 from datetime import datetime, timedelta
 from jwt import JWT
+import aiohttp
 
 class OAuthTokenResponseWithExpiry(OAuthTokenResponse, total=False):
     expires_at: int
@@ -35,7 +36,7 @@ def string_is_true(val : str) -> bool:
 class BffEndpoint(NamedTuple):
     url: str
     methods: List[Literal["GET", "POST", "PUT", "DELETE", "PATCH"]]
-    matchSubUrls: bool
+    match_sub_urls: bool
 
 class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     """
@@ -412,7 +413,7 @@ class FastApiOAuthClient(OAuthClient):
     @property
     def jwt_tokens(self): return self._jwt_tokens
 
-    def __init__(self, server: FastApiServerBase, auth_server_base_url: str, options: FastApiOAuthClientOptions = {}):
+    def __init__(self, server: FastApiServerBase, auth_server_base_url: str, options: FastApiOAuthClientOptions = {}, have_session_server: bool = False):
 
         """
         Constructor
@@ -521,7 +522,7 @@ class FastApiOAuthClient(OAuthClient):
         if self._bff_endpoint_name.endswith("/"):
             self._bff_endpoint_name = self._bff_endpoint_name[:-1]
         if "bff_endpoints" in options:
-            self.bff_endpoints = options["bff_endpoints"]
+            self._bff_endpoints = options["bff_endpoints"]
 
         if self._token_response_type == "custom" and "receive_token_fn" not in options:  # type: ignore
             raise CrossauthError(ErrorCode.Configuration, "Token response type of custom selected but receive_token_fn not defined")
@@ -593,7 +594,7 @@ class FastApiOAuthClient(OAuthClient):
                 "msg": "Authorization code flow: redirecting",
                 "url": ret["url"]
             })
-            return RedirectResponse(ret["url"])
+            return RedirectResponse(ret["url"], status_code=302, headers=response.headers)
 
         if OAuthFlows.AuthorizationCode in self.__valid_flows:
             self._server.app.get(self.__prefix + 'authzcodeflow')(authzcodeflow_endpoint)
@@ -612,7 +613,7 @@ class FastApiOAuthClient(OAuthClient):
             if "error" in ret or "url" not in ret:
                 ce = CrossauthError.from_oauth_error(ret["error"] or "server_error", ret["error_description"])
                 return await self.__error_fn(self.server, request, response, ce)
-            return RedirectResponse(ret["url"])
+            return RedirectResponse(ret["url"], status_code=302, headers=response.headers)
 
 
         if OAuthFlows.AuthorizationCodeWithPKCE in self.__valid_flows:
@@ -1068,6 +1069,30 @@ class FastApiOAuthClient(OAuthClient):
             self._server.app.post(self.__prefix + self.api_delete_tokens_post_url)(api_deletetokens_endpoint)
 
         #####
+        # Get CSRF Token
+        async def api_getcsrftoken_endpoint(request: Request, response: Response) -> Response:
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method":request.method,
+                "url": self.__prefix + 'api/getcsrftoken',
+                "ip": request.client.host if request.client is not None else None,
+                "user": request.state.user.username if request.state.user else None
+            }))
+            try:
+                return JSONResponse({
+                    "ok": True,
+                    "csrfToken": request.state.csrf_token
+                })
+            except:
+                return JSONResponse({
+                    "ok": False,
+                })
+
+        if (not have_session_server):
+            self.server.app.get(self.__prefix + 'api/getcsrftoken')(api_getcsrftoken_endpoint)
+            self.server.app.post(self.__prefix + 'api/getcsrftoken')(api_getcsrftoken_endpoint)
+
+        #####
         # Token endpoints
 
         def token_endpoint(token_type : str) -> Callable[[Request, Response], Awaitable[Response]]:
@@ -1170,6 +1195,109 @@ class FastApiOAuthClient(OAuthClient):
             return JSONResponse(status_code=200, content=tokens_returning)
 
         self._server.app.post(self.__prefix + "tokens")(tokens_endpoint)
+
+        async def bff_endpoint(request: Request, response : Response) -> Response:
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": request.method,
+                "url": f"{self.__prefix}{self._bff_endpoint_name}",
+                "ip": request.client.host if request.client else None,
+                "user": request.state.user.username if hasattr(request.state, 'user') and request.state.user else None
+            }))
+
+            # Implement logging logic here
+            url = request.url.path[len(self.__prefix) + len(self._bff_endpoint_name):]
+            # Implement debug logging here
+
+            csrf_required = request.method.upper() not in ["GET", "HEAD", "OPTIONS"]
+            if self._server.have_session_adapter and csrf_required:
+                resp = await self.server.error_if_csrf_invalid(request, response, self.__error_fn)
+                if resp.error:
+                    return resp.response
+
+            try:
+                if not self.server.have_session_adapter:
+                    raise CrossauthError(ErrorCode.Configuration, "Cannot get session data if sessions not enabled")
+
+                oauth_data = await self.server.get_session_data(request, self.session_data_name)
+                if not oauth_data:
+                    return JSONResponse(status_code=401, content={"ok": False})
+
+                access_token = oauth_data.get("access_token")
+                if oauth_data and oauth_data.get("access_token"):
+                    resp = await self._refresh(request, response, True, True, oauth_data.get("refresh_token"), oauth_data.get("expires_at"))
+                    if resp and not isinstance(resp, Response) and "access_token" in resp:
+                        access_token = resp["access_token"]
+
+                headers = {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                }
+                if access_token:
+                    headers["Authorization"] = f"Bearer {access_token}"
+                
+                try:
+                    body : str|None = None
+                    try:
+                        body = await request.json()
+                    except: pass
+                    async with aiohttp.ClientSession() as session:
+                        if (body is None):
+                            clientResponse = await session.request(
+                                request.method,
+                                f"{self._bff_base_url}{url}",
+                                headers=headers,
+                            )
+                        else:
+                            clientResponse = await session.request(
+                                request.method,
+                                f"{self._bff_base_url}{url}",
+                                headers=headers,
+                                json=await request.json(),
+                            )
+
+                        clientResponse.raise_for_status()
+                        return JSONResponse(await clientResponse.json(), 
+                                    status_code=clientResponse.status, 
+                                    headers=clientResponse.headers)
+                except Exception as e:
+                    CrossauthLogger.logger().error(j({"err": e}))
+                    return JSONResponse({}, status_code=500)
+
+                body = resp.json()
+                response.headers.update(resp.headers)
+                return JSONResponse(status_code=resp.status_code, content=body)
+
+            except Exception as e:
+                CrossauthLogger.logger().error(j({"err": e}))
+                return JSONResponse(status_code=500, content={})
+
+        if (self._bff_endpoint_name != ""):
+            if self._bff_base_url is None:
+                raise CrossauthError(ErrorCode.Configuration, "If enabling BFF endpoints, must also define bff_base_url")
+
+            if self._bff_base_url.endswith("/"):
+                self._bff_base_url = self._bff_base_url[:-1]
+
+            for endpoint in self._bff_endpoints:
+                url = endpoint.url
+                if "?" in url or "#" in url:
+                    raise CrossauthError(ErrorCode.Configuration, "BFF urls may not contain query parameters or page fragments")
+
+                if not url.startswith("/"):
+                    raise CrossauthError(ErrorCode.Configuration, "BFF urls must be absolute and without the HTTP method, hostname or port")
+
+                methods = endpoint.methods
+                match_sub_urls = endpoint.match_sub_urls
+
+                route = url
+                if match_sub_urls:
+                    if not route.endswith("/"):
+                        route += "/"
+                    route += "*"
+
+                self._server.app.add_api_route(f"{self.__prefix}{self._bff_endpoint_name}{route}", bff_endpoint, methods=cast(List[str], methods))
+
 
     #################################################
     # Private methods
@@ -1892,7 +2020,7 @@ async def save_in_session_and_redirect(oauth_response: OAuthTokenResponse|OAuthD
             if ("id_token" in oauth_response):
                 context["id_payload"] = oauth_response["id_token"]
 
-            return RedirectResponse(client.authorized_url)
+            return RedirectResponse(client.authorized_url, headers=response.headers, status_code=302)
     except Exception as e:
         ce = CrossauthError.as_crossauth_error(e)
         CrossauthLogger.logger().debug(j({"err": ce}))
