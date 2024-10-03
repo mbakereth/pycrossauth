@@ -59,7 +59,7 @@
 
         <form method="POST" action="/devicecodeflow" id="devicecodeflowform">
             <input type="hidden" name="scope" value="read write"/>
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+            <input type="hidden" name="csrfToken" value="{{ csrfToken }}"/>
         </form>
 
         <p><a href="authzcodeex">Authorization code flow</a></p>

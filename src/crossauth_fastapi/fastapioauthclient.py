@@ -345,8 +345,8 @@ class FastApiOAuthClient(OAuthClient):
     | GET    | `authzcode`         | Redirect URI for receiving authz code                        | *See OAuth authorization code flow spec*            | *See docs for`tokenResponseType`*                         |                          | 
     | GET    | `passwordflow`      | Displays page to request username/password for password flow | scope                                               | user, scope                                               | passwordFlowPage         | 
     | POST   | `passwordflow`      | Initiates the password flow                                  | *See OAuth password flow spec*                      | *See docs for`tokenResponseType`*                         |                          | 
-    |        |                     | Requests an OTP from the user for the Password MFA OTP flow  | `mfa_token`, `scope`, `otp`                         | `mfa_token`, `scope`, `error`, `error_message`             | mfaOtpPage               | 
-    |        |                     | Requests an OOB from the user for the Password MFA OOB flow  | `mfa_token`, `oob_code`, `scope`, `oob`             | `mfa_token`, `oob_code`, `scope`, `error`, `error_message` | mfaOobPage               | 
+    |        |                     | Requests an OTP from the user for the Password MFA OTP flow  | `mfa_token`, `scope`, `otp`                         | `mfa_token`, `scope`, `error`, `errorMessage`             | mfaOtpPage               | 
+    |        |                     | Requests an OOB from the user for the Password MFA OOB flow  | `mfa_token`, `oob_code`, `scope`, `oob`             | `mfa_token`, `oob_code`, `scope`, `error`, `errorMessage` | mfaOobPage               | 
     | POST   | `passwordotp`       | Token request with the MFA OTP                               | *See Password MFA flow spec*                        | *See docs for`tokenResponseType`*                         |                          | 
     | POST   | `passwordoob`       | Token request with the MFA OOB                               | *See Password MFA flow spec*                        | *See docs for`tokenResponseType`*                         |                          | 
     | POST   | `authzcodeflow`     | Initiates the authorization code flow                        | *See OAuth authorization code flow spec*            | *See docs for`tokenResponseType`*                         |                          | 
@@ -835,7 +835,7 @@ class FastApiOAuthClient(OAuthClient):
                     "request": request,
                     "user": request.state.user,
                     "scope": request.query_params.get("scope"),
-                    "csrf_token": request.state.csrf_token
+                    "csrfToken": request.state.csrf_token
                 }
             )
         if OAuthFlows.Password in self.__valid_flows or OAuthFlows.PasswordMfa in self.__valid_flows:
@@ -951,9 +951,9 @@ class FastApiOAuthClient(OAuthClient):
                     request=request,
                     name=self.error_page, 
                     context={
-                    'error_message': "Delete tokens endpoint not given",
-                    'error_code': ErrorCode.Configuration.value,
-                    'error_code_name': ErrorCode.Configuration.name,
+                    'errorMessage': "Delete tokens endpoint not given",
+                    'errorCode': ErrorCode.Configuration.value,
+                    'errorCodeName': ErrorCode.Configuration.name,
                     }
                 )
             CrossauthLogger.logger().info(j({
@@ -968,7 +968,7 @@ class FastApiOAuthClient(OAuthClient):
                 name=self.delete_tokens_page, 
                 context={
                 "user": getattr(request.state.user, 'username', None),
-                "csrf_token": request.state.csrf_token,
+                "csrfToken": request.state.csrf_token,
                 }
             )
         if (self.delete_tokens_get_url is not None):
@@ -980,9 +980,9 @@ class FastApiOAuthClient(OAuthClient):
                     request=request,
                     name=self.error_page, 
                     context={
-                    'error_message': "Delete tokens endpoint not given",
-                    'error_code': ErrorCode.Configuration.value,
-                    'error_code_name': ErrorCode.Configuration.name,
+                    'errorMessage': "Delete tokens endpoint not given",
+                    'errorCode': ErrorCode.Configuration.value,
+                    'errorCodeName': ErrorCode.Configuration.name,
                     }
                 )
             CrossauthLogger.logger().info(j({
@@ -1002,7 +1002,7 @@ class FastApiOAuthClient(OAuthClient):
                         "request": request,
                         "ok": True,
                         "user": request.state.user.username if request.state.user else None,
-                        "csrf_token": request.state.csrf_token(),
+                        "csrfToken": request.state.csrf_token(),
                     }
                 )
             except Exception as e:
@@ -1019,7 +1019,7 @@ class FastApiOAuthClient(OAuthClient):
                         "request": request,
                         "ok": False,
                         "user": request.state.user.username if request.state.user else None,
-                        "csrf_token": request.state.csrf_token,
+                        "csrfToken": request.state.csrf_token,
                         "error_message": ce.message,
                         "error_code": ce.code,
                         "error_code_name": ce.code_name,
@@ -1034,9 +1034,9 @@ class FastApiOAuthClient(OAuthClient):
                     request=request,
                     name=self.error_page, 
                     context={
-                    'error_message': "Delete tokens endpoint not given",
-                    'error_code': ErrorCode.Configuration.value,
-                    'error_code_name': ErrorCode.Configuration.name,
+                    'errorMessage': "Delete tokens endpoint not given",
+                    'errorCode': ErrorCode.Configuration.value,
+                    'errorCodeName': ErrorCode.Configuration.name,
                     }
                 )
             CrossauthLogger.logger().info(j({
@@ -1455,10 +1455,10 @@ class FastApiOAuthClient(OAuthClient):
                             'user': request.state.user,
                             'username': body.getAsStr("username"),
                             'scope': body.getAsStr("scope"),
-                            'error_message': ce.message,
-                            'error_code': ce.code,
-                            'error_code_name': ce.code_name,
-                            'csrf_token': request.state.csrf_token
+                            'errorMessage': ce.message,
+                            'errorCode': ce.code,
+                            'errorCodeName': ce.code_name,
+                            'csrfToken': request.state.csrf_token
                         })
                 return await self.__receive_token_fn(resp2, self, request, response)
 
@@ -1473,10 +1473,10 @@ class FastApiOAuthClient(OAuthClient):
                     'user': request.state.user,
                     'username': body.getAsStr("username"),
                     'scope': body.getAsStr("scope"),
-                    'error_message': ce.message,
-                    'error_code': ce.code,
-                    'error_code_name': ce.code_name,
-                    'csrf_token': request.state.csrf_token
+                    'errorMessage': ce.message,
+                    'errorCode': ce.code,
+                    'errorCodeName': ce.code_name,
+                    'csrfToken': request.state.csrf_token
                 })
             return await self.__receive_token_fn(resp, self, request, response)
         except Exception as e:
@@ -1496,10 +1496,10 @@ class FastApiOAuthClient(OAuthClient):
                 'user': request.state.user,
                 'username': body.getAsStr("username"),
                 'scope': body.getAsStr("scope"),
-                'error_message': ce.message,
-                'error_code': ce.code,
-                'error_code_name': ce.code_name,
-                'csrf_token': request.state.csrf_token
+                'errorMessage': ce.message,
+                'errorCode': ce.code,
+                'errorCodeName': ce.code_name,
+                'csrfToken': request.state.csrf_token
             })
 
     async def _password_mfa(self, is_api: bool, mfa_token: str, scope: str|None, request : Request, response : Response) -> OAuthMfaAuthenticatorsOrTokenResponse:
@@ -1591,10 +1591,10 @@ class FastApiOAuthClient(OAuthClient):
                 'scope': body.getAsStr("scope"),
                 'mfa_token': body.getAsBool("mfa_token"),
                 'challenge_type': body.getAsStr("challenge_type"),
-                'error_message': ce.message,
-                'error_code': ce.code,
-                'error_code_name': ce.code_name,
-                'csrf_token': request.state.csrf_token
+                'errorMessage': ce.message,
+                'errorCode': ce.code,
+                'errorCodeName': ce.code_name,
+                'csrfToken': request.state.csrf_token
             })
         return await self.__receive_token_fn(resp, self, request, response) or response
 
@@ -1631,10 +1631,10 @@ class FastApiOAuthClient(OAuthClient):
                 'name': body.getAsStr("name"),
                 'challenge_type': body.getAsStr("challenge_type"),
                 'mfa_token': body.getAsStr("mfa_token"),
-                'error_message': ce.message,
-                'error_code': ce.code,
-                'error_code_name': ce.code_name,
-                'csrf_token': request.state.csrf_token
+                'errorMessage': ce.message,
+                'errorCode': ce.code,
+                'errorCodeName': ce.code_name,
+                'csrfToken': request.state.csrf_token
             })
         return await self.__receive_token_fn(resp, self, request, response) or response
 
@@ -1668,7 +1668,7 @@ class FastApiOAuthClient(OAuthClient):
                     "error_message": ce.message,
                     "error_code": ce.code,
                     "error_code_name": ce.code_name,
-                    "csrf_token": request.state.csrf_token,
+                    "csrfToken": request.state.csrf_token,
                     "error": resp["error"],
                     "error_description": resp.get("error_description"),
                 }
@@ -1726,7 +1726,7 @@ class FastApiOAuthClient(OAuthClient):
                 name=self.device_code_flow_page, 
                 context={
                 "user": request.state.user,
-                "csrf_token": request.state.csrf_token,
+                "csrfToken": request.state.csrf_token,
                 "scope": body.getAsStr("scope"),
                 **data,
             })
