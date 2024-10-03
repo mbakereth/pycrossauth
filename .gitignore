@@ -16,7 +16,7 @@
 **/*.ipynb
 **/venv
 **/config.env
-**/.env
+#**/.env
 **/node_modules
 **/~*.xlsx
 **/*.pyi
