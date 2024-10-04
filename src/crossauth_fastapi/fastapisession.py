@@ -420,9 +420,17 @@ class FastApiSessionServer(FastApiSessionAdapter):
         if (not hasattr(request.state, "user")): return None
         if (request.state.user is None): return None
         if (type(request.state.user) is not dict): return None
-        if (not hasattr(request.state.user, "username")): return None # type: ignore
-        return cast(str, request.state.user.username) # type: ignore
-    
+        user : User = request.state.user # type: ignore
+        if (not "username" in user): return None # type: ignore
+        return user["username"]
+
+    @staticmethod
+    def user(request : Request) -> User|None:
+        if (not hasattr(request.state, "user")): return None
+        if (request.state.user is None): return None
+        if (type(request.state.user) is not dict): return None
+        return request.state.user # type: ignore
+
     def handle_error(self, e: Exception, request: Request, response: Response, error_fn: Callable[[Response, CrossauthError], None], password_invalid_ok: bool = False):
         """
         Calls your defined `error_fn`, first sanitising by changing 

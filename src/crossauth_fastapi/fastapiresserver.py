@@ -11,7 +11,7 @@ import re
 
 class ProtectedEndpoint(TypedDict, total=False):
     scope: List[str]
-    acceptSessionAuthorization: bool
+    accept_session_authorization: bool
 
 class FastApiOAuthResourceServerOptions(OAuthResourceServerOptions, total=False):
     """
@@ -118,8 +118,8 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                 auth_response = await self.authorized(request)
 
                 statedict = request.state.__dict__["_state"]
-                if not ("user" in statedict and statedict["user"] is not None and "auth_type" in statedict and statedict["authtype"] == "cookie" 
-                        and self._protected_endpoints[url_without_query].get('acceptSessionAuthorization') != True):
+                if not ("user" in statedict and statedict["user"] is not None and "auth_type" in statedict and statedict["auth_type"] == "cookie" 
+                        and self._protected_endpoints[url_without_query].get('accept_session_authorization') != True):
                     if not auth_response:
                         request.state.auth_error = "access_denied"
                         request.state.auth_error_description = "No access token"
@@ -137,11 +137,13 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                         if isinstance(auth_response['token_payload']['scope'], list):
                             request.state.scope = [token_scope for token_scope in auth_response['token_payload']['scope'] if isinstance(token_scope, str)]
                         elif isinstance(auth_response['token_payload']['scope'], str):
-                            request.scope = auth_response['token_payload']['scope'].split(" ")
+                            request.state.scope = auth_response['token_payload']['scope'].split(" ")
 
-                    if 'scope' in self._protected_endpoints[url_without_query]:
-                        for scope in self._protected_endpoints[url_without_query].get('scope', []):
-                            if not request.scope or (scope not in request.scope and self._protected_endpoints[url_without_query].get('acceptSessionAuthorization') != True):
+                    endpoint = self._protected_endpoints[url_without_query]
+                    if 'scope' in endpoint:
+                        scopes = endpoint["scope"]
+                        for scope in scopes:
+                            if not request.state.scope or (scope not in request.state.scope and self._protected_endpoints[url_without_query].get('accept_session_authorization') != True):
                                 request.state.scope = None
                                 request.state.access_token_payload = None
                                 request.state.user = None
