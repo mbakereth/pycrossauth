@@ -90,3 +90,11 @@ async def passwordex(request : Request):
         context={"csrfToken": request.state.csrf_token}
     )
 
+@app.get("/oidcex")
+async def oidcex(request : Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="oidcex.jinja2",
+        context={"csrfToken": request.state.csrf_token}
+    )
+

@@ -150,8 +150,7 @@ class OAuthClientManager:
                 valid_uri = urllib.parse.urlparse(uri, scheme="http")
                 valid = not valid_uri.fragment
             except Exception as e2:
-                ce = CrossauthError.as_crossauth_error(e2)
-                CrossauthLogger.logger().debug(j({"err": ce}))
+                CrossauthLogger.logger().debug(j({"err": e2}))
         
         if not valid:
             raise CrossauthError.from_oauth_error("invalid_request", 

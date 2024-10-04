@@ -1,0 +1,61 @@
+<html>
+    <head>
+        <title>Device Code Flow</title>
+        <link rel="stylesheet" href="/public/style.css"/>
+        <script src="/public/crossauth_frontend.js"></script>
+
+        <script>
+
+            crossauth_frontend.CrossauthLogger.logger.level = crossauth_frontend.CrossauthLogger.Debug;
+            const bffClient = new crossauth_frontend.OAuthBffClient({
+                deviceCodePollUrl: "/devicecodepoll",
+            });
+            bffClient.startDeviceCodePolling("{{ device_code }}", (status, pollError, location) => {
+                switch (status) {
+                    case "complete":
+                    case "completeAndRedirect":
+                        document.getElementById("devicecodebody").innerHTML = 
+                            "<p>Device was successfully authorized</p>";
+                        break;
+                        case "complete":
+                    case "expired_token":
+                        document.getElementById("devicecodebody").innerHTML = 
+                            "<p class='error'>The token has expired</p>";
+                        break;
+                    default:
+                        document.getElementById("devicecodebody").innerHTML = 
+                            "<p class='error'>An unknown error occurred</p>";
+                        break;
+                }
+        
+        });
+        </script>
+
+    </head>
+    <body>
+        <h1>Device Code Flow</h1>
+        {% if error %}
+        <p class="error">
+            There was an error starting the device code flow: {{ error_description }}
+        </p>
+        {% else %}
+
+            <div id="devicecodebody">
+            <p>Please visit the following URL on a device with a browser:
+            </p>
+            <pre>
+    {{ verification_uri }}
+            </pre>
+            <p>and enter the following code when prompted:</p>
+            <pre>
+    {{ user_code }}
+            </pre>
+
+            <p>Alternatively, scan the following QR code:</p>
+            <p><img src="{{ verification_uri_qrdata }}" alt="{{ verification_complete}}"></p>
+        {% endif %}
+            </div>
+
+        <p><a href="/">Home</a></p>
+    </body>
+</html>

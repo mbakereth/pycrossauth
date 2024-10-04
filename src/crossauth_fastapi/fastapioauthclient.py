@@ -7,6 +7,7 @@ from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.oauth.client import OAuthTokenResponse, OAuthDeviceResponse, OAuthClientOptions, OAuthClient, OAuthFlows, OAuthMfaAuthenticatorsOrTokenResponse
 from crossauth_backend.crypto import Crypto
 from crossauth_fastapi.fastapiserverbase import FastApiServerBase, FastApiErrorFn
+from crossauth_fastapi.fastapisession import FastApiSessionServer
 from crossauth_fastapi.fastapisession import JsonOrFormData
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -15,6 +16,8 @@ import qrcode
 from datetime import datetime, timedelta
 from jwt import JWT
 import aiohttp
+import io
+import base64
 
 class OAuthTokenResponseWithExpiry(OAuthTokenResponse, total=False):
     expires_at: int
@@ -584,7 +587,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method": 'GET',
                 "url": self.__prefix + 'authzcodeflow',
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
             ret = await self.start_authorization_code_flow(request.query_params.get("scope"))
             if "error" in ret or "url" not in ret:
@@ -607,7 +610,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method": 'GET',
                 "url": self.__prefix + 'authzcodeflowpkce',
                 "ip": request.client.host if request.client is not None else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
             ret = await self.start_authorization_code_flow(request.query_params.get("scope"), True)
             if "error" in ret or "url" not in ret:
@@ -627,7 +630,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method": 'GET',
                 "url": self.__prefix + 'authzcode',
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
             resp = await self.redirect_endpoint(request.query_params.get("code"), request.query_params.get("state"), request.query_params.get("error"), request.query_params.get("error_description"))
             try:
@@ -645,7 +648,7 @@ class FastApiOAuthClient(OAuthClient):
                 CrossauthLogger.logger().error(j({
                     "msg": "Error receiving token",
                     "cerr": ce,
-                    "user": request.state.user.username if request.state.user else None
+                    "user": FastApiSessionServer.username(request)
                 }))
                 CrossauthLogger.logger().debug({"err": e})
                 return await self.__error_fn(self.server, request, response, ce)
@@ -661,7 +664,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method": 'POST',
                 "url": self.__prefix + 'clientcredflow',
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
             if self._server.have_session_adapter:
                 resp1 = await self._server.error_if_csrf_invalid(request, response, self.__error_fn)
@@ -685,7 +688,7 @@ class FastApiOAuthClient(OAuthClient):
                 CrossauthLogger.logger().error(j({
                     "msg": "Error receiving token",
                     "cerr": ce,
-                    "user": request.state.user.username if request.state.user else None
+                    "user": FastApiSessionServer.username(request)
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
                 return await self.__error_fn(self.server, request, response, ce)
@@ -700,7 +703,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method": "POST",
                 "url": f"{self.__prefix}refreshtokenflow",
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
 
             # if sessions are enabled, require a csrf token
@@ -972,7 +975,7 @@ class FastApiOAuthClient(OAuthClient):
                 }
             )
         if (self.delete_tokens_get_url is not None):
-            self._server.app.post(self.__prefix + self.delete_tokens_get_url)(get_deletetokens_endpoint)
+            self._server.app.get(self.__prefix + self.delete_tokens_get_url)(get_deletetokens_endpoint)
 
         async def post_deletetokens_endpoint(request: Request, response: Response) -> Response:
             if (self.delete_tokens_post_url is None):
@@ -990,7 +993,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method": "POST",
                 "url": self.__prefix + self.delete_tokens_post_url,
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
 
             try:
@@ -1001,13 +1004,13 @@ class FastApiOAuthClient(OAuthClient):
                     context={
                         "request": request,
                         "ok": True,
-                        "user": request.state.user.username if request.state.user else None,
-                        "csrfToken": request.state.csrf_token(),
+                        "user": FastApiSessionServer.username(request),
+                        "csrfToken": request.state.csrf_token,
                     }
                 )
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().debug(j({"err": str(ce)}))
+                CrossauthLogger.logger().debug(j({"err": e}))
                 CrossauthLogger.logger().error(j({
                     "msg": "Couldn't delete oauth tokens",
                     "cerr": ce
@@ -1018,7 +1021,7 @@ class FastApiOAuthClient(OAuthClient):
                     context={
                         "request": request,
                         "ok": False,
-                        "user": request.state.user.username if request.state.user else None,
+                        "user": FastApiSessionServer.username(request),
                         "csrfToken": request.state.csrf_token,
                         "error_message": ce.message,
                         "error_code": ce.code,
@@ -1044,7 +1047,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method": "POST",
                 "url": self.__prefix + self.api_delete_tokens_post_url,
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
 
             try:
@@ -1076,7 +1079,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method":request.method,
                 "url": self.__prefix + 'api/getcsrftoken',
                 "ip": request.client.host if request.client is not None else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
             try:
                 return JSONResponse({
@@ -1118,7 +1121,8 @@ class FastApiOAuthClient(OAuthClient):
                     await data.load(request)
                     decode_token = data.getAsBool("decode") or True
 
-                if not request.headers.get("X-CSRF-Token"):
+                #if not request.headers.get("X-CSRF-Token"):
+                if (not hasattr(request.state, "csrf_token") or not request.state.csrf_token):
                     return JSONResponse(status_code=401, content={"ok": False, "msg": "No csrf token given"})
 
                 if self._server.have_session_adapter:
@@ -1153,13 +1157,13 @@ class FastApiOAuthClient(OAuthClient):
                 "method": "POST",
                 "url": f"{self.__prefix}tokens",
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if hasattr(request.state, 'user') and request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
 
             data = JsonOrFormData()
             await data.load(request)
 
-            if not request.headers.get("X-CSRF-Token"):  # Assuming CSRF token is in headers
+            if (not hasattr(request.state, "csrf_token") or not request.state.csrf_token):
                 return JSONResponse(status_code=401, content={"ok": False, "msg": "No csrf token given"})
 
             if not self._server.have_session_adapter:
@@ -1202,7 +1206,7 @@ class FastApiOAuthClient(OAuthClient):
                 "method": request.method,
                 "url": f"{self.__prefix}{self._bff_endpoint_name}",
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if hasattr(request.state, 'user') and request.state.user else None
+                "user": request.state.user.username if hasattr(request.state, 'user') and request.state.user and "username" in request.state.user else None
             }))
 
             # Implement logging logic here
@@ -1376,7 +1380,7 @@ class FastApiOAuthClient(OAuthClient):
                             response: Response,
                             silent: bool,
                             only_if_expired: bool):
-        if not request.state.csrf_token:
+        if (not hasattr(request.state, "csrf_token") or not request.state.csrf_token):
             return JSONResponse(content={"ok": False, "msg": "No csrf token given"},
                             status_code=401,
                             headers=response.headers)
@@ -1683,11 +1687,15 @@ class FastApiOAuthClient(OAuthClient):
             qr_url : str|None = None
             if "verification_uri_complete" in resp:
                 try:
-                    qr = qrcode.QRCode(version=1, box_size=10, border=5) # type: ignore
-                    qr.add_data(resp["verification_uri_complete"]) # type: ignore
-                    qr.make(fit=True) # type: ignore
-                    img = qr.make_image(fill_color="black", back_color="white") # type: ignore
-                    qr_url = img.get_image().tostring() # type: ignore
+                    qr = qrcode.QRCode(version=1, box_size=10, border=5) 
+                    qr.add_data(resp["verification_uri_complete"]) 
+                    qr.make(fit=True) 
+                    img = qr.make_image(fill_color="black", back_color="white") 
+                    img1 = img.get_image()
+                    buffered = io.BytesIO()
+                    img1.save(buffered, format="PNG")
+                    qr_url = "data:image/png;base64, " + base64.b64encode(buffered.getvalue()).decode("utf-8")
+
                 except Exception as err:
                     CrossauthLogger.logger().debug(json.dumps({"err": str(err)}))
                     CrossauthLogger.logger().warn(json.dumps({"msg": "Couldn't generate verification URL QR Code"}))
@@ -1695,15 +1703,16 @@ class FastApiOAuthClient(OAuthClient):
             if is_api:
                 return JSONResponse(content=resp, headers=response.headers)
             else:
-                return self.templates.TemplateResponse(
-                    request=request,
-                    name=self.device_code_flow_page, 
-                    context={
+                context : Dict[str,Any] = {
                     "user": request.state.user,
                     "scope": body.getAsStr("scope"),
                     "verification_uri_qrdata": qr_url,
                     **resp
-                })
+                }
+                return self.templates.TemplateResponse(
+                    request=request,
+                    name=self.device_code_flow_page, 
+                    context=context)
 
         except Exception as e:
             ce = CrossauthError.as_crossauth_error(e)
@@ -1717,6 +1726,8 @@ class FastApiOAuthClient(OAuthClient):
                 "error_message": ce.message,
                 "error_code": ce.code,
                 "error_code_name": ce.code_name,
+                "error": ce.oauthErrorCode,
+                "error_description": ce.message,
             }
             if is_api:
                 return JSONResponse(content=data, status_code=ce.http_status, headers=response.headers)
@@ -1804,8 +1815,7 @@ def decode_payload(token: str|None) -> Optional[Dict[str, Any]]:
         try:
             payload = json.loads(Crypto.base64_decode(token.split(".")[1]))
         except Exception as e:
-            ce = CrossauthError.as_crossauth_error(e)
-            CrossauthLogger.logger().debug(j({"err": ce}))
+            CrossauthLogger.logger().debug(j({"err": e}))
             CrossauthLogger.logger().error(j({"msg": "Couldn't decode id token"}))
     return payload
 
@@ -1975,7 +1985,7 @@ async def save_in_session_and_load(oauth_response: OAuthTokenResponse|OAuthDevic
                     status_code=200, headers=response.headers)
     except Exception as e:
         ce = CrossauthError.as_crossauth_error(e)
-        CrossauthLogger.logger().debug(j({"err": ce}))
+        CrossauthLogger.logger().debug(j({"err": e}))
         CrossauthLogger.logger().debug(j({"cerr": ce, "msg": "Error receiving tokens"}))
         if response:
             return templates.TemplateResponse(

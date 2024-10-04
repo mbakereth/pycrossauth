@@ -292,7 +292,7 @@ class OAuthClient:
         self._state = ""
         self._authz_code = ""
         self._oidc_config : OpenIdConfiguration | None = None
-        self._device_authorization_url : str|None = None
+        self._device_authorization_url : str = "device_authorization"
 
         self.auth_server_base_url = auth_server_base_url
         set_parameter("client_id", ParamType.String, self, options, "OAUTH_CLIENT_ID", required=True, protected=True)
@@ -308,7 +308,7 @@ class OAuthClient:
         set_parameter("auth_server_credentials", ParamType.String, self, options, "OAUTH_AUTH_SERVER_CREDENTIALS", protected=True)
         set_parameter("auth_server_mode", ParamType.String, self, options, "OAUTH_AUTH_SERVER_MODE", protected=True)
         set_parameter("auth_server_headers", ParamType.Json, self, options, "OAUTH_AUTH_SERVER_HEADERS", protected=True)
-        if (self._device_authorization_url is not None and self._device_authorization_url[0:1] == "/"): self._device_authorization_url = self._device_authorization_url[1:]
+        if (self._device_authorization_url[0:1] == "/"): self._device_authorization_url = self._device_authorization_url[1:]
 
     async def load_config(self, oidc_config : OpenIdConfiguration|None=None):
         """

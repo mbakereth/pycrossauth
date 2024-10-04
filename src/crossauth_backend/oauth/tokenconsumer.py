@@ -18,8 +18,6 @@ from jwt import (
     AbstractJWKBase
 )
 
-import base64
-
 type EncryptionKey = Dict[str, Any] | str
 
 class Keys(TypedDict, total=True):
@@ -245,7 +243,7 @@ class OAuthTokenConsumer:
                 await self.load_jwks()
         except Exception as e:
             ce = CrossauthError.as_crossauth_error(e)
-            CrossauthLogger.logger().debug(j({"err": ce}))
+            CrossauthLogger.logger().debug(j({"err": e}))
             CrossauthLogger.logger().error(j({"msg": "Couldn't load keys", "cerr": ce}))
             raise ValueError("Couldn't load keys")
 
@@ -379,7 +377,7 @@ class OAuthTokenConsumer:
             kid = header.get('kid', "_default")
         except Exception as e:
             ce = CrossauthError.as_crossauth_error(e)
-            CrossauthLogger.logger().debug(j({"err": ce}))
+            CrossauthLogger.logger().debug(j({"err": e}))
             CrossauthLogger.logger().warn(j({"msg": "Invalid access token format", "cerr": ce}))
             return None
         key = self.keys.get("_default")
@@ -405,7 +403,8 @@ class OAuthTokenConsumer:
         parts = token.split(".")
         if (len(parts) != 3):
             raise CrossauthError(ErrorCode.DataFormat, "Invalid JWT")
-        header_str = base64.urlsafe_b64decode(parts[0])
+        #header_str = base64.urlsafe_b64decode(parts[0])
+        header_str = Crypto.base64_decode(parts[0])
         return json.loads(header_str)
     
     def hash(self, plaintext : str) -> str: 

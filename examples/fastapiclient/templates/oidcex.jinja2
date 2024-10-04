@@ -1,0 +1,21 @@
+<html>
+    <head>
+        <title>Client: Authorization Code Flow</title>
+        <link rel="stylesheet" href="/public/style.css"/>
+
+        <script>
+            function authorize() {
+                window.location.href = '/authzcodeflow?scope=read+write+openid+email';
+            }
+        </script>
+
+        </head>
+    <body>
+        <h1>Client: Authorization Code Flow</h1>
+
+        <p><button onClick="authorize()">Authorize</button></p>
+
+        <p><a href="/">Home</a></p>
+
+    </body>
+</html>

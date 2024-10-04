@@ -302,7 +302,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                     CrossauthLogger.logger().error(j({
                         "msg": "Couldn't create CSRF token",
                         "cerr": str(e),
-                        "user": request.state.user.username if request.state.user else None,
+                        "user": FastApiSessionServer.username(request),
                         **report_session,
                     }))
                     CrossauthLogger.logger().debug(j({"err": str(e)}))
@@ -315,7 +315,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                         CrossauthLogger.logger().error(j({
                             "msg": "Couldn't create CSRF token",
                             "cerr": str(e),
-                            "user": request.state.user.username if request.state.user else None,
+                            "user": FastApiSessionServer.username(request),
                             **report_session,
                         }))
                         CrossauthLogger.logger().debug(j({"err": str(e)}))
@@ -364,7 +364,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 "method":request.method,
                 "url": self.__prefix + 'api/getcsrftoken',
                 "ip": request.client.host if request.client is not None else None,
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
             try:
                 return JSONResponse({
@@ -415,6 +415,14 @@ class FastApiSessionServer(FastApiSessionAdapter):
         request.state.session_id = session_id
         return session_cookie["value"]
 
+    @staticmethod
+    def username(request : Request) -> str|None:
+        if (not hasattr(request.state, "user")): return None
+        if (request.state.user is None): return None
+        if (type(request.state.user) is not dict): return None
+        if (not hasattr(request.state.user, "username")): return None # type: ignore
+        return cast(str, request.state.user.username) # type: ignore
+    
     def handle_error(self, e: Exception, request: Request, response: Response, error_fn: Callable[[Response, CrossauthError], None], password_invalid_ok: bool = False):
         """
         Calls your defined `error_fn`, first sanitising by changing 
@@ -430,7 +438,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
             CrossauthLogger.logger().error(j({
                 "cerr": ce,
                 "hash_of_session_id": self.get_hash_of_session_id(request),
-                "user": request.state.user.username if request.state.user else None
+                "user": FastApiSessionServer.username(request)
             }))
             return error_fn(response, ce)
         except Exception as e:

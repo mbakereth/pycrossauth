@@ -1,0 +1,30 @@
+<html>
+    <head>
+        <title>Delete Tokens</title>
+        <link rel="stylesheet" href="/public/style.css"/>
+
+        <script>
+            function cancel() {
+                window.location.href="/";
+            }
+        </script>
+        </head>
+    <body>
+        <h1>Client: Delete Tokens</h1>
+
+        {% if ok == true %}
+            <p>Your tokens have been deleted</p>
+        {% else %}
+            {% if ok == false %}
+                <p class="error">Error deleting tokens: {{ errorMessage }} </p>
+            {% endif %}
+            <form method="POST">
+                <input type="hidden" name="csrfToken" value="{{ csrfToken }}"/>
+                <p>Really delete your OAuth tokens?</p>
+                <p><button type="submit">Delete</button>&nbsp;
+                <button type="button" onClick="cancel">Cancel</button></p>
+            </form>
+        {% endif %}
+        <p><a href="/">Home</a></p>
+    </body>
+</html>
