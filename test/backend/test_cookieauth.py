@@ -38,13 +38,13 @@ class CsrfCookieTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recovered_token, token)
     
     async def create_and_validate_csrf_token(self):
-        auth = DoubleSubmitCsrfToken({"secret": "ABCDEFGHIJKLMNOPQRSTUVWX"});
-        token = auth.create_csrf_token();
-        cookie = auth.make_csrf_cookie(token);
-        form_or_header_value = auth.make_csrf_form_or_header_token(token);
+        auth = DoubleSubmitCsrfToken({"secret": "ABCDEFGHIJKLMNOPQRSTUVWX"})
+        token = auth.create_csrf_token()
+        cookie = auth.make_csrf_cookie(token)
+        form_or_header_value = auth.make_csrf_form_or_header_token(token)
         valid = False
         try:
-            auth.validate_double_submit_csrf_token(cookie["value"], form_or_header_value);
+            auth.validate_double_submit_csrf_token(cookie["value"], form_or_header_value)
             valid = True
         except:
             pass

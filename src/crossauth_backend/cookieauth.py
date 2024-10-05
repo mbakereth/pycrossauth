@@ -96,8 +96,9 @@ class DoubleSubmitCsrfToken:
         self._path = options["path"] if "path" in options else "/"
         self._secure = options["secure"] if "secure" in options else True
         self._sameSite = options["sameSite"] if "sameSite" in options else "lax"
-        self.__secret = options["secret"] if "secret" in options else ""
 
+        self.__secret = ""
+        
         # header options
         set_parameter("header_name", ParamType.String, self, options, "CSRF_HEADER_NAME", protected=True)
 

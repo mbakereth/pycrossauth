@@ -121,8 +121,19 @@ class SessionManager:
         for authentication_name in self._authenticators:
             self._authenticators[authentication_name].factor_name = authentication_name
 
-        self._session = SessionCookie(self._key_storage, options["session_cookie_options"] if "session_cookie_options" in options else {})
-        self._csrf_tokens = DoubleSubmitCsrfToken(options["double_submit_cookie_options"] if "double_submit_cookie_options" in options else {})
+        soptions : SessionCookieOptions = {}
+        if "secret" in options:
+            soptions["secret"] = options["secret"]
+        if ("session_cookie_options" in options):
+            soptions = {**soptions, **options["session_cookie_options"]}
+        self._session = SessionCookie(self._key_storage, soptions)
+        coptions : DoubleSubmitCsrfTokenOptions = {}
+        if "secret" in options:
+            coptions["secret"] = options["secret"]
+        if ("double_submit_cookie_options" in options):
+            coptions = {**coptions, **options["double_submit_cookie_options"]}
+        self._csrf_tokens = DoubleSubmitCsrfToken(coptions)
+
         self._allowed_factor2 : List[str] = []
         self.__enable_email_verification : bool = False
         self.__enable_password_reset : bool = False

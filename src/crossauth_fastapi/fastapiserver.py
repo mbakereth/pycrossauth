@@ -344,6 +344,9 @@ class FastApiServer(FastApiServerBase):
         
         app = self._app
 
+        if (self.oauth_resserver is not None and self.session_adapter is not None and self.oauth_resserver.session_adapter is None):
+            self.oauth_resserver.session_adapter = self.session_adapter
+
         # Create middleware to initialize everything to None
         @app.middleware("http") 
         async def pre_handler(request: Request, call_next): # type: ignore

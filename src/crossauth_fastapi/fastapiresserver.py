@@ -1,13 +1,16 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
-from typing import List, Dict, Any, Optional, cast, Mapping, TypedDict
+from typing import List, Dict, Any, Optional, cast, Mapping, TypedDict, Literal
 from fastapi import FastAPI, Request, Response
+from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.interfaces import User
 from crossauth_backend.storage import UserStorage
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.oauth.resserver import OAuthResourceServer, OAuthResourceServerOptions
 from crossauth_backend.oauth.client import OAuthTokenConsumer
+from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
 from fastapi.responses import JSONResponse
 import re
+from datetime import datetime
 
 class ProtectedEndpoint(TypedDict, total=False):
     scope: List[str]
@@ -41,6 +44,28 @@ class FastApiOAuthResourceServerOptions(OAuthResourceServerOptions, total=False)
     a status code of 401 Access Denied if the key is invalid or the 
     given scopes are not present.
     """
+
+    token_locations : List[Literal["beader","session"]]
+    """
+    Where access tokens may be found (in this order).
+    
+    If this contains `session`, must also provide the session adapter
+    
+    Default `header`
+    """
+
+    session_data_name : str
+    """
+    If token_locations contains `session`, tokens are keyed on this name.
+    
+    Default `oauth` 
+    """
+
+    session_adapter : FastApiSessionAdapter
+    """
+    If `token_locations` contains `session`, must provide a session adapter
+    """
+   
 
 class Authorization(TypedDict, total=False):
     authorized: bool
@@ -93,9 +118,16 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
         """
         super().__init__(token_consumers, options)
         self.user_storage = options["user_storage"] if "user_storage" in options else None
+        self.session_adapter = options["session_adapter"] if "session_adapter" in options else None
+
         self._protected_endpoints: Mapping[str, ProtectedEndpoint] = {}
         self.__error_body : Dict[str, Any] = {}
+        self.__token_locations : List[Literal["header","session"]] = ["header",]
+        self.__session_data_name : str = "oauth"
         set_parameter("error_body", ParamType.Json, self, options, "OAUTH_RESSERVER_ACCESS_DENIED_BODY")
+        set_parameter("token_locations", ParamType.JsonArray, self, options, "OAUTH_TOKEN_LOCATIONS")
+        set_parameter("session_data_name", ParamType.String, self, options, "OAUTH_SESSION_DATA_NAME")
+
         self._access_token_is_jwt = options["access_token_is_jwt"] if "access_token_is_jwt" in options else True
         if 'protected_endpoints' in options:
             regex = re.compile(r'^[!#\$%&\'\(\)\*\+,\.\/a-zA-Z\[\]\^_`-]+')
@@ -192,30 +224,59 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
         If there was no valid token, None is returned
         """
         try:
-            header = request.headers.get('Authorization')
-            if header and header.startswith("Bearer "):
-                parts = header.split(" ")
-                if len(parts) == 2:
-                    user : User|None = None
-                    resp = await self.access_token_authorized(parts[1])
-                    if resp:
-                        if 'sub' in resp:
-                            if self.user_storage:
-                                user_resp = await self.user_storage.get_user_by_username(resp['sub'])
-                                if user_resp:
-                                    user = user_resp["user"]
-                                request.state.user = user
-                            else:
-                                user = {
-                                    "id": resp["userid"] if "userid" in resp else resp["sub"],
-                                    "username": resp["sub"],
-                                    "state": resp["state"] if "state" in resp else "active",
-                                    "factor1": resp["factor1"] if "factor1" in resp else ""
-                                }
-                                request.state.user = user
-                        return {'authorized': True, 'token_payload': resp, 'user': user}
-                    return {'authorized': False}
+
+            payload : Dict[str,Any] | None = None
+
+            for loc in self.__token_locations:
+                if loc == "header":
+                    resp = await self.token_from_header(request)
+                    if resp is not None:
+                        payload = resp
+                        break
+                else:
+                    resp = await self.token_from_session(request)
+                    if resp is not None:
+                        payload = resp
+                        break
+
+            user : User|None = None
+            if payload is not None:
+                if 'sub' in payload:
+                    if self.user_storage:
+                        user_resp = await self.user_storage.get_user_by_username(payload['sub'])
+                        if user_resp:
+                            user = user_resp["user"]
+                        request.state.user = user
+                    else:
+                        user = {
+                            "id": payload["userid"] if "userid" in payload else payload["sub"],
+                            "username": payload["sub"],
+                            "state": payload["state"] if "state" in payload else "active",
+                            "factor1": payload["factor1"] if "factor1" in payload else ""
+                        }
+                        request.state.user = user
+                return {'authorized': True, 'token_payload': payload, 'user': user}
+            return {'authorized': False}
 
         except Exception as e:
             return {'authorized': False, 'error': "server_error", 'error_description': str(e)}
+        return None
+
+    async def token_from_header(self, request: Request) -> Optional[Dict[str, Any]]:
+        header = request.headers.get("authorization")
+        if header and header.startswith("Bearer "):
+            parts = header.split(" ")
+            if len(parts) == 2:
+                return await self.access_token_authorized(parts[1])
+        return None
+
+    async def token_from_session(self, request: Request) -> Optional[Dict[str, Any]]:
+        if not self.session_adapter:
+            raise CrossauthError(ErrorCode.Configuration, 
+                "Cannot get session data if sessions not enabled")
+        oauth_data = await self.session_adapter.get_session_data(request, self.__session_data_name)
+        if oauth_data and oauth_data.get("session_token"):
+            if oauth_data.get("expires_at") and oauth_data["expires_at"] < datetime.now().timestamp() * 1000:
+                return None
+            return await self.access_token_authorized(oauth_data["session_token"])
         return None
