@@ -1,11 +1,13 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from typing import Callable, Self, Literal, List, NamedTuple, Dict, Any, Optional, Awaitable, cast
 from fastapi import Request, Response
+from crossauth_backend.common.interfaces import User
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.oauth.client import OAuthTokenResponse, OAuthDeviceResponse, OAuthClientOptions, OAuthClient, OAuthFlows, OAuthMfaAuthenticatorsOrTokenResponse
 from crossauth_backend.crypto import Crypto
+from crossauth_backend.storage import UserStorage
 from crossauth_fastapi.fastapiserverbase import FastApiServerBase, FastApiErrorFn
 from crossauth_fastapi.fastapisession import FastApiSessionServer
 from crossauth_fastapi.fastapisession import JsonOrFormData
@@ -257,6 +259,99 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     These token types will be treated as JWT.  Default all of them
     """
 
+    user_creation_type : Literal["idToken", "merge", "embed", "custom"]
+    """
+    If using the BFF method, you can also create a user in the sesion
+    when the token is received, just like session management 
+    (`event.locals.user` for Sveltekit, `request.user`) for Fastify.
+    
+    Set this field to `merge` to do this by merging the ID token fields
+    with the User fields.  `embed` will put the ID token fields in `idToken`
+    in the user.  `custom` will call the user-defined function `userCreationFn`.
+    th user will be set to undefined;  If it is set to `idToken` (the default)
+    then a user object is created from the token without first checking
+    for a user in storage.
+    
+    Matching is done in the fields given in `user_match_field` and
+    `id_token_match_field`.
+
+    Currently only `idToken` and `custom` are supported as user storage
+    has not yet been implemented.
+    """
+
+    user_match_field : str
+    """
+    Field in user table to to match with idToken when `userCreationType`
+    is set to `merge` or `embed`.  Default `username`.
+    """
+
+    id_token_match_field : str
+    """
+    Field in ID token to to match with idToken when `userCreationType`
+    is set to `merge` or `embed`.  Default `sub`.
+    """
+
+    user_creation_fn: Callable[[Dict[str,Any],
+        UserStorage|None,
+        str,
+        str], Awaitable[User|None]] 
+    """
+    Supply this function if you set `userCreationType` to `custom`.
+    - id_token the response from the OAuth `token` endpoint.
+    - user_storage the fastify OAuth client
+    - user_match_field the FastApi response
+    - id_token_match_field the FastApi request
+    Returns the user if it exists and is active, None otherwise.
+    """
+
+async def idTokenUserCreateFn(id_token: Dict[str,Any], 
+                        user_storage : UserStorage|None,
+                        user_match_field : str, 
+                        id_token_match_field : str):
+    user : User = {
+        "id" : cast(str, id_token["userid"] if "userid" in id_token else id_token["sub"]),
+        "username" : cast(str, id_token["sub"]),
+        "state" : cast(str, id_token["state"] if "state" in id_token else "active"),
+        "factor1": "oidc",
+    }
+    return user
+
+async def mergeUserCreateFn(id_token: Dict[str,Any], 
+                        user_storage : UserStorage|None,
+                        user_match_field : str, 
+                        id_token_match_field : str):
+    if (user_storage is None): raise CrossauthError(ErrorCode.Configuration, "user_creation_type set to merge but no user storage set")
+    try:
+        if (user_match_field == "username"): ret = await user_storage.get_user_by_username(id_token[id_token_match_field])
+        elif (user_match_field == "username"): ret = await user_storage.get_user_by_email(id_token[id_token_match_field])
+        #else: ret = await user_storage.get_user_by(user_match_field, id_token[id_token_match_field])
+        else: ret = await user_storage.get_user_by_email(id_token[id_token_match_field])
+        user : User = ret["user"]
+        return cast(User, {**id_token, **user})
+    except Exception as e:
+        ce = CrossauthError.as_crossauth_error(e)
+        if ce.code == ErrorCode.UserNotExist or ce.code == ErrorCode.UserNotActive:
+            return None
+        raise ce
+
+async def embedUserCreateFn(id_token: Dict[str,Any], 
+                        user_storage : UserStorage|None,
+                        user_match_field : str, 
+                        id_token_match_field : str):
+    if (user_storage is None): raise CrossauthError(ErrorCode.Configuration, "user_creation_type set to embed but no user storage set")
+    try:
+        if (user_match_field == "username"): ret = await user_storage.get_user_by_username(id_token[id_token_match_field])
+        elif (user_match_field == "username"): ret = await user_storage.get_user_by_email(id_token[id_token_match_field])
+        #else: ret = await user_storage.get_user_by(user_match_field, id_token[id_token_match_field])
+        else: ret = await user_storage.get_user_by_email(id_token[id_token_match_field])
+        user : User = ret["user"]
+        return cast(User, {**user, "id_token": id_token})
+    except Exception as e:
+        ce = CrossauthError.as_crossauth_error(e)
+        if ce.code == ErrorCode.UserNotExist or ce.code == ErrorCode.UserNotActive:
+            return None
+        raise ce
+
 ##############################################################
 ## Class
 
@@ -414,6 +509,15 @@ class FastApiOAuthClient(OAuthClient):
     def templates(self): return self._templates
 
     @property
+    def user_creation_type(self): return self._user_creation_type
+
+    @property
+    def user_match_field(self): return self._user_match_field
+
+    @property
+    def id_token_match_field(self): return self._id_token_match_field
+
+    @property
     def jwt_tokens(self): return self._jwt_tokens
 
     def __init__(self, server: FastApiServerBase, auth_server_base_url: str, options: FastApiOAuthClientOptions = {}, have_session_server: bool = False):
@@ -472,6 +576,10 @@ class FastApiOAuthClient(OAuthClient):
         self._test_middleware = False
         self._test_request : Request|None = None
 
+        self._user_creation_type : Literal["idToken", "merge", "emded", "custom" ] = "idToken"
+        self._user_match_field : str = "username"
+        self._id_token_match_field : str = "sub"
+
         set_parameter("session_data_name", ParamType.String, self, options, "OAUTH_SESSION_DATA_NAME", protected=True)
         set_parameter("site_url", ParamType.String, self, options, "SITE_URL", True)
         set_parameter("token_response_type", ParamType.String, self, options, "OAUTH_TOKEN_RESPONSE_TYPE", protected=True)
@@ -499,6 +607,22 @@ class FastApiOAuthClient(OAuthClient):
         set_parameter("valid_flows", ParamType.JsonArray, self, options, "OAUTH_VALIFGLOWS")
         set_parameter("template_dir", ParamType.String, self, options, "TEMPLATE_DIR")
         set_parameter("jwt_tokens", ParamType.JsonArray, self, options, "OAUTH_JWT_TOKENS", protected=True)
+        set_parameter("user_creation_type", ParamType.String, self, options, "OAUTH_USER_CREATION_TYPE", protected=True)
+        set_parameter("user_match_field", ParamType.String, self, options, "OAUTH_USER_MATCH_FIELD", protected=True)
+        set_parameter("id_token_match_field", ParamType.String, self, options, "OAUTH_IDTOKEN_CREATION_TYPE", protected=True)
+    
+        self.user_creation_fn : Callable[[Dict[str,Any],
+            UserStorage|None,
+            str,
+            str], Awaitable[User|None]] = idTokenUserCreateFn
+        if (self._user_creation_type == "merge"): # type: ignore
+            self.user_creation_fn = mergeUserCreateFn
+        elif (self._user_creation_type == "embed"): # type: ignore
+            self.user_creation_fn = embedUserCreateFn
+        elif (self._user_creation_type == "custom" and "user_creation_fn" in options): # type: ignore
+            self.user_creation_fn = options["user_creation_fn"]
+        else:
+            self.user_creation_fn = idTokenUserCreateFn
 
         if (len(self.__valid_flows) == 1 and self.__valid_flows[0] == OAuthFlows.All):
             flows = OAuthFlows.all_flows()

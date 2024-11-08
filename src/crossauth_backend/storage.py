@@ -153,6 +153,21 @@ class UserStorage(ABC):
         """
         pass
 
+    @abstractmethod
+    async def get_user_by(self, field: str, value: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:
+        """
+        Returns user matching the given field, or throws an exception.
+
+        This does no normalisation.  Currently it is only used for the OAuth
+        client if you set user_creation_type to "merge", "embed" or "custom".
+
+        :param str field: the field to match
+        :param str value: the value to match
+        :param UserStorageGetOptions options: optionally turn off checks. Used internally
+        :raises :class:`crossauth_backend.CrossauthError`: with :class:`ErrorCode` either UserNotExist or Connection
+        """
+        pass
+
     async def create_user(self, user: UserInputFields, secrets: Optional[UserSecretsInputFields] = None) -> User:
         """
         Creates a user with the given details and secrets.
