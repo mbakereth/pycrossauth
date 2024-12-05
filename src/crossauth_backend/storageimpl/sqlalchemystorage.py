@@ -115,6 +115,8 @@ class SqlAlchemyKeyStorage(KeyStorage):
         values["date_created"] = date_created
         values["expires"] = expires if expires is not None else None
         values["data"] = data if data is not None else ""
+        print("extraFields", extra_fields)
+
         if (extra_fields is not None):
             for field in extra_fields:
                 fields.append(field)

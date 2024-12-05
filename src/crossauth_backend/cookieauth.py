@@ -394,7 +394,12 @@ class SessionCookie:
             try:
                 if self.idle_timeout > 0 and userid:
                     extra_fields_copy['lastActivity'] = datetime.now()
-                await self.key_storage.save_key(userid, hashed_session_id, date_created, expires, None, extra_fields)
+                data : str|None = None
+                if ("data" in extra_fields):
+                    data = extra_fields["data"]
+                    extra_fields = {**extra_fields}
+                    del extra_fields["data"]
+                await self.key_storage.save_key(userid, hashed_session_id, date_created, expires, data, extra_fields)
                 succeeded = True
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
@@ -405,7 +410,7 @@ class SessionCookie:
                         CrossauthLogger.logger().error({"msg": "Max attempts exceeded trying to create session ID"})
                         raise CrossauthError(ErrorCode.KeyExists)
                 else:
-                    CrossauthLogger.logger().debug({"err": e})
+                    CrossauthLogger.logger().debug(j({"err": ce}))
                     raise e
 
         key : Key = {

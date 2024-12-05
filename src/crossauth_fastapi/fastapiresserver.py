@@ -15,6 +15,7 @@ from datetime import datetime
 class ProtectedEndpoint(TypedDict, total=False):
     scope: List[str]
     accept_session_authorization: bool
+    suburls: bool
 
 class FastApiOAuthResourceServerOptions(OAuthResourceServerOptions, total=False):
     """
@@ -121,6 +122,7 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
         self.session_adapter = options["session_adapter"] if "session_adapter" in options else None
 
         self._protected_endpoints: Mapping[str, ProtectedEndpoint] = {}
+        self._protected_endpoint_prefixes: List[str] = []
         self.__error_body : Dict[str, Any] = {}
         self.__token_locations : List[Literal["header","session"]] = ["header",]
         self.__session_data_name : str = "oauth"
@@ -138,29 +140,44 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                     for s in value['scope']:
                         if not regex.match(s):
                             raise ValueError(f"Illegal characters in scope {s}")
-            self._protected_endpoints = options['protected_endpoints']
+            self._protected_endpoints = {**options['protected_endpoints']}
+            for name in options['protected_endpoints']:
+                endpoint = self._protected_endpoints[name]
+                if ("suburls" in endpoint and endpoint["suburls"]):
+                    if (not name.endswith("/")):
+                        name += "/"
+                        self._protected_endpoints[name] = endpoint
+                    self._protected_endpoint_prefixes.append(name)
 
         if 'protected_endpoints' in options:
             @app.middleware("http")
             async def pre_handler(request: Request, call_next): # type: ignore
                 url_without_query = request.url.path
-                if url_without_query not in self._protected_endpoints:
+                matches = False
+                matching_endpoint = ""
+                if (url_without_query in self._protected_endpoints):
+                    matches = True
+                    matching_endpoint = url_without_query
+                for name in self._protected_endpoint_prefixes:
+                    if url_without_query.startswith(name):
+                        matches = True
+                        matching_endpoint = name
+                if not matches:
                     return cast(Response, await call_next(request))
 
                 auth_response = await self.authorized(request)
-
                 statedict = request.state.__dict__["_state"]
                 if not ("user" in statedict and statedict["user"] is not None and "auth_type" in statedict and statedict["auth_type"] == "cookie" 
-                        and self._protected_endpoints[url_without_query].get('accept_session_authorization') != True):
+                        and self._protected_endpoints[matching_endpoint].get('accept_session_authorization') != True):
                     if not auth_response:
                         request.state.auth_error = "access_denied"
                         request.state.auth_error_description = "No access token"
-                        authenticate_header = self.authenticate_header(request)
-                        return Response(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
+                        authenticate_header = self.authenticate_header(request);
+                        return JSONResponse(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
 
                     if not auth_response['authorized']:
                         authenticate_header = self.authenticate_header(request)
-                        return Response(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
+                        return JSONResponse(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
 
                 if auth_response:
                     request.state.access_token_payload = auth_response.get('token_payload')
@@ -171,7 +188,7 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                         elif isinstance(auth_response['token_payload']['scope'], str):
                             request.state.scope = auth_response['token_payload']['scope'].split(" ")
 
-                    endpoint = self._protected_endpoints[url_without_query]
+                    endpoint = self._protected_endpoints[matching_endpoint]
                     if 'scope' in endpoint:
                         scopes = endpoint["scope"]
                         for scope in scopes:

@@ -771,10 +771,10 @@ class FastApiOAuthClient(OAuthClient):
                 ce = CrossauthError.as_crossauth_error(e)
                 CrossauthLogger.logger().error(j({
                     "msg": "Error receiving token",
-                    "cerr": ce,
+                    "cerr": str(ce),
                     "user": FastApiSessionServer.username(request)
                 }))
-                CrossauthLogger.logger().debug({"err": e})
+                CrossauthLogger.logger().debug({"err": ce})
                 return await self.__error_fn(self.server, request, response, ce)
 
         if OAuthFlows.AuthorizationCode in self.__valid_flows or OAuthFlows.AuthorizationCodeWithPKCE in self.__valid_flows or "OidcAuthorizationCode" in self.__valid_flows:
@@ -1284,43 +1284,53 @@ class FastApiOAuthClient(OAuthClient):
                 "user": FastApiSessionServer.username(request)
             }))
 
-            data = JsonOrFormData()
-            await data.load(request)
 
-            if (not hasattr(request.state, "csrf_token") or not request.state.csrf_token):
-                return JSONResponse(status_code=401, content={"ok": False, "msg": "No csrf token given"})
+            try:
 
-            if not self._server.have_session_adapter:
-                raise CrossauthError(ErrorCode.Configuration, 
-                    "Cannot get session data if sessions not enabled")
+                data = JsonOrFormData()
+                await data.load(request)
 
-            oauth_data = await self._server.get_session_data(request, self.session_data_name)
-            if not oauth_data:
-                return JSONResponse({}, status_code=204)
+                if (not hasattr(request.state, "csrf_token") or not request.state.csrf_token):
+                    return JSONResponse(status_code=401, content={"ok": False, "msg": "No csrf token given"})
 
-            tokens_returning: Dict[str, Any] = {}
-            for token_type in self.__token_endpoints:
+                if not self._server.have_session_adapter:
+                    raise CrossauthError(ErrorCode.Configuration, 
+                        "Cannot get session data if sessions not enabled")
 
-                is_have = False
-                token_name = token_type
-                if token_type.startswith("have_"):
-                    token_name = token_type.replace("have_", "")
-                    is_have = True
+                oauth_data = await self._server.get_session_data(request, self.session_data_name)
+                if not oauth_data:
+                    return JSONResponse({}, status_code=200)
 
-                token_name1 = token_name.replace("_token", "")
-                decode_token = False
-                if (token_name1 in self._jwt_tokens):
-                     decode_token = data.getAsBool("decode") or True
+                tokens_returning: Dict[str, Any] = {}
+                for token_type in self.__token_endpoints:
 
-                if token_name in oauth_data:
-                    payload = oauth_data[token_name]
-                    payload = decode_payload(oauth_data[token_name]) if decode_token else oauth_data[token_name]
-                    if payload:
-                        tokens_returning[token_type] = True if is_have else payload
-                elif is_have:
-                    tokens_returning[token_type] = False
+                    is_have = False
+                    token_name = token_type
+                    if token_type.startswith("have_"):
+                        token_name = token_type.replace("have_", "")
+                        is_have = True
 
-            return JSONResponse(status_code=200, content=tokens_returning)
+                    token_name1 = token_name.replace("_token", "")
+                    decode_token = False
+                    if (token_name1 in self._jwt_tokens):
+                        decode_token = data.getAsBool("decode") or True
+
+                    if token_name in oauth_data:
+                        payload = oauth_data[token_name]
+                        payload = decode_payload(oauth_data[token_name]) if decode_token else oauth_data[token_name]
+                        if payload:
+                            tokens_returning[token_type] = True if is_have else payload
+                    elif is_have:
+                        tokens_returning[token_type] = False
+
+                return JSONResponse(status_code=200, content=tokens_returning)
+            
+            except Exception as e:
+                ce = CrossauthError.as_crossauth_error(e)
+                CrossauthLogger.logger().error(j({"cerr": ce}))
+                CrossauthLogger.logger().debug(j({"err": ce}))
+                return JSONResponse(status_code=ce.http_status, content={"error": ce.message})
+
 
         self._server.app.post(self.__prefix + "tokens")(tokens_endpoint)
 
@@ -1330,11 +1340,15 @@ class FastApiOAuthClient(OAuthClient):
                 "method": request.method,
                 "url": f"{self.__prefix}{self._bff_endpoint_name}",
                 "ip": request.client.host if request.client else None,
-                "user": request.state.user.username if hasattr(request.state, 'user') and request.state.user and "username" in request.state.user else None
+                "user": request.state.user["username"] if hasattr(request.state, 'user') and request.state.user and "username" in request.state.user else None
             }))
 
             # Implement logging logic here
             url = request.url.path[len(self.__prefix) + len(self._bff_endpoint_name):]
+            orig_url = str(request.url)
+            query = ""
+            if (orig_url.find("?") > 0):
+                query = orig_url[orig_url.find("?"):]
             # Implement debug logging here
 
             csrf_required = request.method.upper() not in ["GET", "HEAD", "OPTIONS"]
@@ -1373,13 +1387,13 @@ class FastApiOAuthClient(OAuthClient):
                         if (body is None):
                             clientResponse = await session.request(
                                 request.method,
-                                f"{self._bff_base_url}{url}",
+                                f"{self._bff_base_url}{url}{query}",
                                 headers=headers,
                             )
                         else:
                             clientResponse = await session.request(
                                 request.method,
-                                f"{self._bff_base_url}{url}",
+                                f"{self._bff_base_url}{url}{query}",
                                 headers=headers,
                                 json=await request.json(),
                             )
@@ -1422,7 +1436,7 @@ class FastApiOAuthClient(OAuthClient):
                 if match_sub_urls:
                     if not route.endswith("/"):
                         route += "/"
-                    route += "*"
+                    route += "{full_path:path}"
 
                 self._server.app.add_api_route(f"{self.__prefix}{self._bff_endpoint_name}{route}", bff_endpoint, methods=cast(List[str], methods))
 

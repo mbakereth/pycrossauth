@@ -449,7 +449,7 @@ class OAuthClient:
             if error_description is None:
                 error_description = "Unknown error"
             return {"error": error, "error_description": error_description}
-        if self.state and state != self.state:
+        if self._state and state != self._state:
             return {"error": "access_denied", "error_description": "State is not valid"}
         self.authzCode = code
 
@@ -482,7 +482,8 @@ class OAuthClient:
                     raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
             return ret
         except Exception as e:
-            CrossauthLogger.logger().error(j({"err": str(e)}))
+            CrossauthLogger.logger().error(j({"cerr": e}))
+            CrossauthLogger.logger().debug(j({"err": e}))
             return {
                 "error": "server_error",
                 "error_description": "Unable to get access token from server"
