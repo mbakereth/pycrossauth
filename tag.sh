@@ -1,5 +1,5 @@
 #!/bin/bash
-tag=`cat VERSION`
+tag=`grep '^ *version =' pyproject.toml | sed 's/.*"\([0-9]*\.[0-9]*\.[0-9]*\)".*/\1/'`
 if [ $# = 1 ]; then
     msg=$1
 else
