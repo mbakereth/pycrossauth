@@ -158,10 +158,11 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                 if (url_without_query in self._protected_endpoints):
                     matches = True
                     matching_endpoint = url_without_query
-                for name in self._protected_endpoint_prefixes:
-                    if url_without_query.startswith(name):
-                        matches = True
-                        matching_endpoint = name
+                else:
+                    for name in self._protected_endpoint_prefixes:
+                        if url_without_query.startswith(name):
+                            matches = True
+                            matching_endpoint = name
                 if not matches:
                     return cast(Response, await call_next(request))
 
