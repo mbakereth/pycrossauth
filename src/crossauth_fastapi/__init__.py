@@ -9,7 +9,7 @@ from .fastapiresserver import FastApiOAuthResourceServer, FastApiOAuthResourceSe
 from .fastapiserver import FastApiServer, FastApiErrorFn
 
 # Version of realpython-reader package
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 __all__ = (
     "FastApiSessionServerOptions", "FastApiSessionServer",

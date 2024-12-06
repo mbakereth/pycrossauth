@@ -32,7 +32,7 @@ from .cookieauth import DoubleSubmitCsrfToken, DoubleSubmitCsrfTokenOptions, Ses
 from .session import SessionManager, SessionManagerOptions
 
 # Version of realpython-reader package
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 __all__ = (
     "ErrorCode", "CrossauthError",
