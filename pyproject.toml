@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycrossauth"
-version = "0.0.2"
+version = "0.0.3"
 description = "Cross platform web authentication and OAuth framework"
 readme = "README.md"
 authors = [{ name = "Matthew Baker", email = "matt@mattbaker.ch" }]
@@ -56,7 +56,7 @@ requires-python = ">=3.12"
 
 
 [tool.bumpver]
-current_version = "0.0.2"
+current_version = "0.0.3"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message  = "bump version {old_version} -> {new_version}"
 commit          = true
