@@ -141,6 +141,11 @@ class OAuthFlows:
             case _:
                 raise CrossauthError(ErrorCode.BadRequest, "Invalid OAuth flow " + oauthFlow)
 
+class IdTokenReturn(TypedDict, total=False):
+    id_payload: Mapping[str, Any]
+    error: str
+    error_description: str
+
 class OAuthTokenResponse(TypedDict, total=False):
     """
     These are the fields that can be returned in the JSON from an OAuth call.
@@ -149,6 +154,7 @@ class OAuthTokenResponse(TypedDict, total=False):
     access_token : str
     refresh_token : str
     id_token : str
+    id_payload : Mapping[str, Any]
     token_type : str
     expires_in : int
     error : str
@@ -253,6 +259,18 @@ class OAuthClientOptions(OAuthTokenConsumerOptions, total=False):
         Default `device_authorization`
     """
 
+    oauth_post_type : Literal["json", "form"]
+    """
+        If set to JSON, make calls to the token endpoint as JSON, otherwise
+        as x-www-form-urlencoded.
+    """
+
+    oauth_use_user_info_endpoint : bool
+    """
+    If your authorization server only returns certain claims in the userinfo
+    endpoint, rather than in the id token, set this to true
+    """
+
 class OAuthClient:
     """
     Base class for OAuth clients.
@@ -287,12 +305,11 @@ class OAuthClient:
         self._auth_server_credentials : Literal["include", "omit", "same-origin" ] | None = None
         self._auth_server_mode : Literal["no-cors", "cors", "same-origin" ] | None = None
         self._auth_server_headers : Dict[str, str] = {}
-        self._code_challenge : str|None = None
-        self._code_verifier : str|None = None
-        self._state = ""
         self._authz_code = ""
         self._oidc_config : OpenIdConfiguration | None = None
         self._device_authorization_url : str = "device_authorization"
+        self._oauth_post_type = "json"
+        self._oauth_use_user_info_endpoint = False
 
         self.auth_server_base_url = auth_server_base_url
         set_parameter("client_id", ParamType.String, self, options, "OAUTH_CLIENT_ID", required=True, protected=True)
@@ -309,6 +326,11 @@ class OAuthClient:
         set_parameter("auth_server_mode", ParamType.String, self, options, "OAUTH_AUTH_SERVER_MODE", protected=True)
         set_parameter("auth_server_headers", ParamType.Json, self, options, "OAUTH_AUTH_SERVER_HEADERS", protected=True)
         if (self._device_authorization_url[0:1] == "/"): self._device_authorization_url = self._device_authorization_url[1:]
+        set_parameter("oauth_post_type", ParamType.Json, self, options, "OAUTH_POST_TYPE", protected=True)
+        if (self._oauth_post_type != "json" and self._oauth_post_type != "form"):
+            raise CrossauthError(ErrorCode.Configuration, "oauth_post_type must be json or form")
+        set_parameter("oauth_use_user_info_endpoint", ParamType.Json, self, options, "OAUTH_USE_USER_INFO_ENDPOINT", protected=True)
+
 
     async def load_config(self, oidc_config : OpenIdConfiguration|None=None):
         """
@@ -378,7 +400,13 @@ class OAuthClient:
 
         return Crypto.sha256(plaintext)
 
-    async def start_authorization_code_flow(self, scope : str | None = None, pkce : bool = False):
+    async def code_challenge_and_verifier(self):
+        code_verifier = self.random_value(self._verifier_length)
+        code_challenge = await self.sha256(code_verifier) if self._code_challenge_method == "S256" else code_verifier
+        return {"code_verifier": code_verifier, "code_challenge": code_challenge}
+    
+
+    async def start_authorization_code_flow(self, state: str, scope : str | None = None, code_challenge: str|None = None, pkce : bool = False):
         """
         Initiates the authorization code flow
 
@@ -402,7 +430,6 @@ class OAuthClient:
                 "error": "server_error",
                 "error_description": "Cannot get authorize endpoint"
             }
-        self.state = self.random_value(self._state_length)
         if not self._client_id:
             return {
                 "error": "invalid_request",
@@ -415,19 +442,17 @@ class OAuthClient:
             }
 
         base = self._oidc_config["authorization_endpoint"]
-        url = f"{base}?response_type=code&client_id={urllib.parse.quote(self._client_id)}&state={urllib.parse.quote(self.state)}&redirect_uri={urllib.parse.quote(self._redirect_uri)}"
+        url = f"{base}?response_type=code&client_id={urllib.parse.quote(self._client_id)}&state={urllib.parse.quote(state)}&redirect_uri={urllib.parse.quote(self._redirect_uri)}"
 
         if scope:
             url += f"&scope={urllib.parse.quote(scope)}"
 
         if pkce:
-            self._code_verifier = self.random_value(self._verifier_length)
-            self._code_challenge = await self.sha256(self._code_verifier) if self._code_challenge_method == "S256" else self._code_verifier
-            url += f"&code_challenge={self._code_challenge}"
+            url += f"&code_challenge={code_challenge}"
 
         return {"url": url}
 
-    async def redirect_endpoint(self, code : str|None = None, state : str|None = None, error : str|None =None, error_description : str|None=None) -> OAuthTokenResponse:
+    async def redirect_endpoint(self, code : str|None = None, state : str|None = None, code_verifier: str|None = None, error : str|None =None, error_description : str|None=None) -> OAuthTokenResponse:
         """
         For calling in a Redirect Uri endpoint
 
@@ -449,8 +474,6 @@ class OAuthClient:
             if error_description is None:
                 error_description = "Unknown error"
             return {"error": error, "error_description": error_description}
-        if self._state and state != self._state:
-            return {"error": "access_denied", "error_description": "State is not valid"}
         self.authzCode = code
 
         if "authorization_code" not in self._oidc_config["grant_types_supported"]:
@@ -474,12 +497,24 @@ class OAuthClient:
         }
         if client_secret:
             params["client_secret"] = client_secret
-        params["code_verifier"] = self._code_verifier
+        params["code_verifier"] = code_verifier
         try:
             ret = cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers)) 
             if ("id_token" in ret):
-                if (await self.validate_id_token(ret["id_token"]) is None):
-                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+                access_token : str|None = None
+                if "access_token" in ret:
+                    access_token = ret["access_token"]
+                user_info = await self._get_id_payload(ret["id_token"], access_token)
+                error1 : str|None = user_info["error"] if "error" in user_info else None
+                error_description1 : str|None = user_info["error_description"] if "error_description" in user_info else ""
+                if (error1 is not None):
+                    return {
+                        "error": error1,
+                        "error_description": error_description1
+                    }
+                if ("id_payload" in user_info):
+                    ret["id_payload"] = user_info["id_payload"]
+            
             return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"cerr": e}))
@@ -526,7 +561,22 @@ class OAuthClient:
         if scope:
             params["scope"] = scope
         try:
-            return cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers)) 
+            ret = cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers)) 
+            if ("id_token" in ret):
+                access_token : str|None = None
+                if "access_token" in ret:
+                    access_token = ret["access_token"]
+                user_info = await self._get_id_payload(ret["id_token"], access_token)
+                error1 : str|None = user_info["error"] if "error" in user_info else None
+                error_description1 : str|None = user_info["error_description"] if "error_description" in user_info else ""
+                if (error1 is not None):
+                    return {
+                        "error": error1,
+                        "error_description": error_description1
+                    }
+                if ("id_payload" in user_info):
+                    ret["id_payload"] = user_info["id_payload"]
+            return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return {
@@ -577,8 +627,19 @@ class OAuthClient:
         try:
             ret = cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers))
             if ("id_token" in ret):
-                if (await self.validate_id_token(ret["id_token"]) is None):
-                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+                access_token : str|None = None
+                if "access_token" in ret:
+                    access_token = ret["access_token"]
+                user_info = await self._get_id_payload(ret["id_token"], access_token)
+                error1 : str|None = user_info["error"] if "error" in user_info else None
+                error_description1 : str|None = user_info["error_description"] if "error_description" in user_info else ""
+                if (error1 is not None):
+                    return {
+                        "error": error1,
+                        "error_description": error_description1
+                    }
+                if ("id_payload" in user_info):
+                    ret["id_payload"] = user_info["id_payload"]
             return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
@@ -722,10 +783,22 @@ class OAuthClient:
             "otp": otp,
             "scope": scope,
         }, self._auth_server_headers)
+        id_token : Mapping[str,Any]|None = None
         if ("id_token" in otpResp):
-            if (await self.validate_id_token(otpResp["id_token"]) is None):
-                raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
-        return cast(OAuthTokenResponse, {
+            access_token : str|None = None
+            if "access_token" in otpResp:
+                access_token = otpResp["access_token"]
+            user_info = await self._get_id_payload(otpResp["id_token"], access_token)
+            error1 : str|None = user_info["error"] if "error" in user_info else None
+            error_description1 : str|None = user_info["error_description"] if "error_description" in user_info else ""
+            if (error1 is not None):
+                return {
+                    "error": error1,
+                    "error_description": error_description1
+                }
+            if ("id_payload" in user_info):
+                id_token = user_info["id_payload"]
+        ret = cast(OAuthTokenResponse, {
             "id_token": otpResp.get("id_token"),
             "access_token": otpResp.get("access_token"),
             "refresh_token": otpResp.get("refresh_token"),
@@ -735,6 +808,9 @@ class OAuthClient:
             "error": otpResp.get("error"),
             "error_description": otpResp.get("error_description"),
         })
+        if (id_token is not None):
+            ret["id_payload"] = id_token
+        return ret
 
     async def mfa_oob_request(self, mfa_token: str, authenticator_id: str) -> OAuthMfaAuthenticatorsResponse:
         """
@@ -835,10 +911,22 @@ class OAuthClient:
                 "error": MapGetter[str].get(resp, "error", ""),
                 "error_description": MapGetter[str].get(resp, "error_description", ""),
             }
+        id_token : Mapping[str,Any]|None = None
         if ("id_token" in resp):
-            if (await self.validate_id_token(resp["id_token"]) is None):
-                raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
-        return cast(OAuthTokenResponse, {
+            access_token : str|None = None
+            if "access_token" in resp:
+                access_token = resp["access_token"]
+            user_info = await self._get_id_payload(resp["id_token"], access_token)
+            error1 : str|None = user_info["error"] if "error" in user_info else None
+            error_description1 : str|None = user_info["error_description"] if "error_description" in user_info else ""
+            if (error1 is not None):
+                return {
+                    "error": error1,
+                    "error_description": error_description1
+                }
+            if ("id_payload" in user_info):
+                id_token = user_info["id_payload"]
+        ret = cast(OAuthTokenResponse, {
             "id_token": resp.get("id_token"),
             "access_token": resp.get("access_token"),
             "refresh_token": resp.get("refresh_token"),
@@ -846,6 +934,9 @@ class OAuthClient:
             "scope": resp.get("scope"),
             "token_type": resp.get("token_type"),
         })
+        if (id_token is not None):
+            ret["id_payload"] = id_token
+        return ret
 
     async def refresh_token_flow(self, refresh_token: str) -> OAuthTokenResponse:
         """
@@ -886,8 +977,19 @@ class OAuthClient:
         try:
             ret = cast(OAuthTokenResponse, await self._post(url, params, self._auth_server_headers))
             if ("id_token" in ret):
-                if (await self.validate_id_token(ret["id_token"]) is None):
-                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+                access_token : str|None = None
+                if "access_token" in ret:
+                    access_token = ret["access_token"]
+                user_info = await self._get_id_payload(ret["id_token"], access_token)
+                error1 : str|None = user_info["error"] if "error" in user_info else None
+                error_description1 : str|None = user_info["error_description"] if "error_description" in user_info else ""
+                if (error1 is not None):
+                    return {
+                        "error": error1,
+                        "error_description": error_description1
+                    }
+                if ("id_payload" in user_info):
+                    ret["id_payload"] = user_info["id_payload"]
             return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
@@ -929,8 +1031,19 @@ class OAuthClient:
         try:
             ret = cast(OAuthDeviceAuthorizationResponse, await self._post(url, params, self._auth_server_headers))
             if ("id_token" in ret):
-                if (await self.validate_id_token(ret["id_token"]) is None):
-                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+                access_token : str|None = None
+                if "access_token" in ret:
+                    access_token = ret["access_token"]
+                user_info = await self._get_id_payload(ret["id_token"], access_token)
+                error1 : str|None = user_info["error"] if "error" in user_info else None
+                error_description1 : str|None = user_info["error_description"] if "error_description" in user_info else ""
+                if (error1 is not None):
+                    return {
+                        "error": error1,
+                        "error_description": error_description1
+                    }
+                if ("id_payload" in user_info):
+                    ret["id_payload"] = user_info["id_payload"]
             return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
@@ -977,8 +1090,19 @@ class OAuthClient:
             resp = await self._post(self._oidc_config["token_endpoint"], params, self._auth_server_headers)
             ret = cast(OAuthDeviceResponse, resp)
             if ("id_token" in ret):
-                if (await self.validate_id_token(ret["id_token"]) is None):
-                    raise CrossauthError(ErrorCode.InvalidToken, "Invalid ID token")
+                access_token : str|None = None
+                if "access_token" in ret:
+                    access_token = ret["access_token"]
+                user_info = await self._get_id_payload(ret["id_token"], access_token)
+                error1 : str|None = user_info["error"] if "error" in user_info else None
+                error_description1 : str|None = user_info["error_description"] if "error_description" in user_info else ""
+                if (error1 is not None):
+                    return {
+                        "error": error1,
+                        "error_description": error_description1
+                    }
+                if ("id_payload" in user_info):
+                    ret["id_payload"] = user_info["id_payload"]
             return ret
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
@@ -987,6 +1111,52 @@ class OAuthClient:
                 "error_description": "Error connecting to authorization server"
             }
 
+    #################################################################3
+    ## UserInfo
+
+    async def user_info_endpoint(self, access_token : str) -> Mapping[str, Any]:
+        if (not self._oidc_config or "token_endpoint" not in self._oidc_config):
+            CrossauthLogger.logger().warn(j({"msg": "Not fetching user info as the endpoint is not defined in the OIDC Config"}))
+            return {
+                "error": "server_error",
+                "error_description": "Cannot get token endpoint"
+            }
+        url = self._oidc_config["token_endpoint"]
+
+        resp = await self._post(url, {}, {"authorization": "Bearer " + access_token})
+        return resp
+    
+    async def _get_id_payload(self, id_token: str, access_token : str|None) -> IdTokenReturn:
+        ret : IdTokenReturn = {}
+        try:
+
+            payload = await self.validate_id_token(id_token)
+            if (not payload):
+                ret["error"] = "access_denied"
+                ret["error_description"] = "Invalid ID token received"
+                return ret
+            ret["id_payload"] = payload
+            if (access_token):
+                if (self._oauth_use_user_info_endpoint):
+                    user_info = await self.user_info_endpoint(access_token)
+                    if ("error" in user_info):
+                        ret["error"] = user_info["error"]
+                        ret["error_description"] = "Failed getting user info: "
+                        if ("error_description" in user_info):
+                            ret["error_description"] += user_info["error_description"]
+                        else:
+                            ret["error_description"] += "Unknown error"
+                    payload = {**payload, **user_info}
+            ret["id_payload"] = payload
+            return ret
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            CrossauthLogger.logger().error(j({"msg": "Couldn't get user info", "cerr": ce}));
+            ret["error"] = ce.oauthErrorCode
+            ret["error_description"] = "Couldn't get user info: " + ce.message
+            return ret
+        
     async def _post(self, url: str, params: Mapping[str, Any], headers: Dict[str, Any] = {}) -> Mapping[str, Any]:
         CrossauthLogger.logger().debug(j({
             "msg": "Fetch POST",
@@ -999,12 +1169,21 @@ class OAuthClient:
         if self._auth_server_mode:
             options["mode"] = self._auth_server_mode
         async with aiohttp.ClientSession() as session:
-            resp = await session.post(url, json=params, headers={
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                **headers,
-            })
-            return await resp.json()
+            if (self._oauth_post_type == "json"):
+                resp = await session.post(url, json=params, headers={
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    **headers,
+                })
+                return await resp.json()
+            else:
+                resp = await session.post(url, data=params, headers={
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencodedc',
+                    **headers,
+                })
+                return await resp.json()
+                    
 
     async def _get(self, url: str, headers: Mapping[str, Any] = {}) -> Mapping[str, Any] | List[Any]:
         CrossauthLogger.logger().debug(j({"msg": "Fetch GET", "url": url}))

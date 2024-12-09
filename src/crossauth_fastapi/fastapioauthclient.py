@@ -713,7 +713,10 @@ class FastApiOAuthClient(OAuthClient):
                 "ip": request.client.host if request.client else None,
                 "user": FastApiSessionServer.username(request)
             }))
-            ret = await self.start_authorization_code_flow(request.query_params.get("scope"))
+            state = self.random_value(self._state_length)
+            session_data = {"scope": request.query_params.get("scope"), "state": state}
+            await self.store_session_data(session_data, request, response)
+            ret = await self.start_authorization_code_flow(state, request.query_params.get("scope"))
             if "error" in ret or "url" not in ret:
                 ce = CrossauthError.from_oauth_error(ret["error"] or "server_error", ret["error_description"])
                 return await self.__error_fn(self.server, request, response, ce)
@@ -736,7 +739,14 @@ class FastApiOAuthClient(OAuthClient):
                 "ip": request.client.host if request.client is not None else None,
                 "user": FastApiSessionServer.username(request)
             }))
-            ret = await self.start_authorization_code_flow(request.query_params.get("scope"), True)
+            state = self.random_value(self._state_length)
+            challengeVerifier = await self.code_challenge_and_verifier()
+            session_data = {"scope": request.query_params.get("scope"), 
+                            "state": state,
+                            "code_challenge": challengeVerifier["code_challenge"],
+                            "code_verifier": challengeVerifier["code_verifier"]}
+            await self.store_session_data(session_data, request, response)
+            ret = await self.start_authorization_code_flow(state, request.query_params.get("scope"), challengeVerifier["code_challenge"], True)
             if "error" in ret or "url" not in ret:
                 ce = CrossauthError.from_oauth_error(ret["error"] or "server_error", ret["error_description"])
                 return await self.__error_fn(self.server, request, response, ce)
@@ -756,7 +766,14 @@ class FastApiOAuthClient(OAuthClient):
                 "ip": request.client.host if request.client else None,
                 "user": FastApiSessionServer.username(request)
             }))
-            resp = await self.redirect_endpoint(request.query_params.get("code"), request.query_params.get("state"), request.query_params.get("error"), request.query_params.get("error_description"))
+
+            oauth_data =  await self.server.get_session_data(request, self.session_data_name)
+            if (oauth_data is None or "state" not in oauth_data or oauth_data["state"] != request.query_params.get("state")):
+                raise CrossauthError(ErrorCode.Unauthorized, "State does not match")
+            verifier : str|None = None
+            if (oauth_data and "code_verifier" in oauth_data):
+                verifier = oauth_data["code_verifier"]
+            resp = await self.redirect_endpoint(request.query_params.get("code"), request.query_params.get("state"), verifier, request.query_params.get("error"), request.query_params.get("error_description"))
             try:
                 if ("id_token" in resp):
                     # This token is intended for us, so validate it
@@ -1909,6 +1926,20 @@ class FastApiOAuthClient(OAuthClient):
             CrossauthLogger.logger().debug(json.dumps({"err": str(e)}))
             return await self.__error_fn(self.server, request, response, ce)
 
+    async def store_session_data(self, session_data : Dict[str, Any], request: Request, response: Response|None):
+        if self.server.have_session_server:
+            session_cookie_value = self.server.get_session_cookie_value(request)
+            if not session_cookie_value and response is not None:
+                session_cookie_value = await self.server.create_anonymous_session(request, response, {
+                    self.session_data_name: session_data
+                })
+            else:
+                await self.server.update_session_data(request, self.session_data_name, session_data)
+        else:
+            if not self.server.have_session_adapter:
+                raise CrossauthError(ErrorCode.Configuration, "Cannot get session data if sessions not enabled")
+            await self.server.update_session_data(request, self.session_data_name, session_data)
+
 
 ##############################################################
 ## Default functions
@@ -1976,6 +2007,8 @@ def log_tokens(oauth_response: OAuthTokenResponse|OAuthDeviceResponse, client: F
         try:
             jwt = instance.decode(oauth_response["access_token"], None, do_verify=False, do_time_check=False)
             jti : str|None = jwt.get("jti")
+            if (jti == None):
+                jti = jwt.get("sid")
             hash_value = Crypto.hash(jti) if jti else None
             CrossauthLogger.logger().debug(j({"msg": "Got access token", "accessTokenHash": hash_value}))
         except Exception as e:
@@ -1985,6 +2018,8 @@ def log_tokens(oauth_response: OAuthTokenResponse|OAuthDeviceResponse, client: F
         try:
             jwt = instance.decode(oauth_response["id_token"], None, do_verify=False, do_time_check=False)
             jti : str|None = jwt.get("jti")
+            if (jti == None):
+                jti = jwt.get("sid")
             hash_value = Crypto.hash(jti) if jti else None
             CrossauthLogger.logger().debug(j({"msg": "Got id token", "idTokenHash": hash_value}))
         except Exception as e:
@@ -1994,6 +2029,8 @@ def log_tokens(oauth_response: OAuthTokenResponse|OAuthDeviceResponse, client: F
         try:
             jwt = instance.decode(oauth_response["refresh_token"], None, do_verify=False, do_time_check=False)
             jti : str|None = jwt.get("jti")
+            if (jti == None):
+                jti = jwt.get("sid")
             hash_value = Crypto.hash(jti) if jti else None
             CrossauthLogger.logger().debug(j({"msg": "Got refresh token", "refreshTokenHash": hash_value}))
         except Exception as e:
@@ -2071,6 +2108,7 @@ async def update_session_data(oauth_response: OAuthTokenResponse,
         id_payload = decode_payload(oauth_response["id_token"])
         session_data["id_payload"] = id_payload
 
+    await client.store_session_data(session_data, request, response)
     if client.server.have_session_server:
         session_cookie_value = client.server.get_session_cookie_value(request)
         if not session_cookie_value and response is not None:
@@ -2183,3 +2221,4 @@ async def save_in_session_and_redirect(oauth_response: OAuthTokenResponse|OAuthD
                         "error_messages": ce.messages,
                         "error_code_name": ce.code_name
                     }, status_code=ce.http_status, headers=response.headers)
+
