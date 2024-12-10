@@ -271,6 +271,16 @@ class OAuthClientOptions(OAuthTokenConsumerOptions, total=False):
     endpoint, rather than in the id token, set this to true
     """
 
+    oauth_authorize_redirect : str|None
+    """
+    In the special case where you are running this in Docker on a private
+    machine, the client cannot redirect to the authorization endpoint given
+    in the OIDC configuration.  You will typically set the auth_server_base_url
+    to the name of the docker host in this case, and set 
+    oauth_authorize_redirect to localhost.
+    Default None
+    """
+
 class OAuthClient:
     """
     Base class for OAuth clients.
@@ -310,6 +320,7 @@ class OAuthClient:
         self._device_authorization_url : str = "device_authorization"
         self._oauth_post_type = "json"
         self._oauth_use_user_info_endpoint = False
+        self._oauth_authorize_redirect : str|None = None
 
         self.auth_server_base_url = auth_server_base_url
         set_parameter("client_id", ParamType.String, self, options, "OAUTH_CLIENT_ID", required=True, protected=True)
@@ -330,7 +341,7 @@ class OAuthClient:
         if (self._oauth_post_type != "json" and self._oauth_post_type != "form"):
             raise CrossauthError(ErrorCode.Configuration, "oauth_post_type must be json or form")
         set_parameter("oauth_use_user_info_endpoint", ParamType.Json, self, options, "OAUTH_USE_USER_INFO_ENDPOINT", protected=True)
-
+        set_parameter("oauth_authorize_redirect", ParamType.String, self, options, "OAUTH_AUTHORIZE_REDIRECT", protected=True)
 
     async def load_config(self, oidc_config : OpenIdConfiguration|None=None):
         """
@@ -442,6 +453,8 @@ class OAuthClient:
             }
 
         base = self._oidc_config["authorization_endpoint"]
+        if (self._oauth_authorize_redirect):
+            base = self._oauth_authorize_redirect
         url = f"{base}?response_type=code&client_id={urllib.parse.quote(self._client_id)}&state={urllib.parse.quote(state)}&redirect_uri={urllib.parse.quote(self._redirect_uri)}"
 
         if scope:
