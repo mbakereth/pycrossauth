@@ -28,6 +28,10 @@ class CrossauthLoggerInterface:
         """ Report a message at debug level """
         pass
 
+    def set_level(self, level: int) -> None:
+        """ Set logging level """
+        pass
+
     NoLogging = 0
     Error = 1
     Warn = 2
