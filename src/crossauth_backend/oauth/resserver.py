@@ -28,6 +28,13 @@ class OAuthResourceServer:
                     ((payload.get('aud') == consumer.audience) or \
                      ('aud' not in payload and consumer.audience == ""))):
                     return await consumer.token_authorized(access_token, "access")
+            iss = payload.get('iss')
+            if iss is None:
+                iss = ""
+            aud = payload.get('aud')
+            if aud is None:
+                aud = ""
+            CrossauthLogger.logger().warn(j({"msg": "Access token's iss " + iss  + " or aud" + aud + " are not accepted"}))
             raise CrossauthError(ErrorCode.Unauthorized, "Invalid issuer in access token")
         except Exception as e:
             CrossauthLogger.logger().warn(j({"err": str(e)}))
