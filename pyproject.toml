@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycrossauth"
-version = "0.0.9"
+version = "0.0.10"
 description = "Cross platform web authentication and OAuth framework"
 readme = "README.md"
 authors = [{ name = "Matthew Baker", email = "matt@mattbaker.ch" }]
