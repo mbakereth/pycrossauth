@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from typing import List, Dict, Any, Optional, cast, Mapping, TypedDict, Literal
 from fastapi import FastAPI, Request, Response
+from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.interfaces import User
 from crossauth_backend.storage import UserStorage
@@ -265,6 +266,7 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                         if user_resp:
                             user = user_resp["user"]
                         request.state.user = user
+                        CrossauthLogger.logger().debug(j({"msg": "Got user from sub claim and user storage"}))
                     else:
                         user = {
                             "id": payload["userid"] if "userid" in payload else payload["sub"],
@@ -272,8 +274,10 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                             "state": payload["state"] if "state" in payload else "active",
                             "factor1": payload["factor1"] if "factor1" in payload else ""
                         }
+                        CrossauthLogger.logger().debug(j({"msg": "Got user from sub claim"}))
                         request.state.user = user
                 return {'authorized': True, 'token_payload': payload, 'user': user}
+            CrossauthLogger.logger().warn(j({"msg": "Did not receive a valid token"}))
             return {'authorized': False}
 
         except Exception as e:
