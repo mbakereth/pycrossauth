@@ -9,3 +9,4 @@ jwt
 Jinja2
 qrcode[pil]
 types-qrcode
+jwcrypto

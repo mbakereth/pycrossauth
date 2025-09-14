@@ -1,5 +1,5 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
-from typing import Any, Dict, Optional, TypedDict, NotRequired
+from typing import Any, Dict, Optional, TypedDict, NotRequired, Mapping
 import json
 from datetime import datetime
 from nulltype import NullType
@@ -154,6 +154,12 @@ class PartialUser(PartialUserInputFields, total=False):
     Same as User but all fields are not required
     """
     id : str | int
+    
+    username_normalized : str
+    """ Username lowercased and non language-normalized """
+
+    email_normalized : NotRequired[str]
+    """ Email lowercased and non language-normalized """
 
 
 class User(UserInputFields):
@@ -166,8 +172,14 @@ class User(UserInputFields):
     you should include ID field and make that immutable instead.
     """
 
-    """ ID fied, which may be auto-generated """
     id : str | int
+    """ ID fied, which may be auto-generated """
+
+    username_normalized : str
+    """ Username lowercased and non language-normalized """
+
+    email_normalized : NotRequired[str]
+    """ Email lowercased and non language-normalized """
 
 class UserSecretsInputFields(TypedDict, total=False):
     """
@@ -285,3 +297,12 @@ class KeyPrefix:
     mfa_token = "omfa:"
     device_code = "dc:"
     user_code = "uc:"
+
+def optional_equals(obj : Mapping[str, Any], key: str, value: Any) -> bool:
+    if (key not in obj):
+        return False
+    return obj[key] == value
+def optional_not_equals(obj : Mapping[str, Any], key: str, value: Any) -> bool:
+    if (key not in obj):
+        return True
+    return obj[key] != value

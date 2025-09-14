@@ -1,9 +1,11 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 import unittest
 from datetime import datetime, timedelta
-from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage
+from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage, InMemoryUserStorage
 from crossauth_backend.common.error import CrossauthError, ErrorCode
+from crossauth_backend.common.interfaces import PartialUser, PartialUserSecrets
 import json
+
 class in_memory_key_storage_test(unittest.IsolatedAsyncioTestCase):
 
     async def test_createAndDeleteSession(self):
@@ -147,3 +149,90 @@ class in_memory_key_storage_test(unittest.IsolatedAsyncioTestCase):
 
         keys = await key_storage.get_all_for_user("bob")
         self.assertEqual(len(keys), 1)
+
+async def test_data():
+    user_storage = InMemoryUserStorage()
+    await user_storage.create_user({
+        "username": "bob",
+        "email": "bob@bob.com",
+        "state": "active",
+        "factor1": "localpassword"}, {
+        "password": "bobPass123"
+    })
+    await user_storage.create_user({
+        "username": "alice",
+        "email": "alice@alice.com",
+        "state": "active",
+        "factor1": "localpassword"}, {
+        "password": "alicePass123"
+    })
+    return user_storage
+
+class in_memory_user_storage_test(unittest.IsolatedAsyncioTestCase):
+
+    async def test_createUser(self):
+        user_storage = InMemoryUserStorage()
+        user = await user_storage.create_user({
+            "username": "bob",
+            "email": "bob@bob.com",
+            "state": "active",
+            "factor1": "localpassword"}, {
+            "password": "bobPass123"
+        })
+        self.assertEqual(user["username"], "bob")
+        self.assertEqual(user["username_normalized"], "bob")
+        self.assertEqual("email" in user and user["email"], "bob@bob.com")
+        self.assertEqual("email_normalized" in user and user["email_normalized"], "bob@bob.com")
+
+
+    async def test_getUserByUsername(self):
+        user_storage = await test_data()
+        user_and_secrets = await user_storage.get_user_by_username("bob")
+        self.assertEqual(user_and_secrets["user"]["username"], "bob")
+        self.assertEqual("secrets" in user_and_secrets and "password" in user_and_secrets["secrets"] and user_and_secrets["secrets"]["password"], "bobPass123")
+
+    async def test_getUserById(self):
+        user_storage = await test_data()
+        user_and_secrets = await user_storage.get_user_by_id("bob")
+        self.assertEqual(user_and_secrets["user"]["username"], "bob")
+        self.assertEqual("secrets" in user_and_secrets and "password" in user_and_secrets["secrets"] and user_and_secrets["secrets"]["password"], "bobPass123")
+
+    async def test_getUserByEmail(self):
+        user_storage = await test_data()
+        user_and_secrets = await user_storage.get_user_by_email("bob@bob.com")
+        self.assertEqual(user_and_secrets["user"]["username"], "bob")
+        self.assertEqual("secrets" in user_and_secrets and "password" in user_and_secrets["secrets"] and user_and_secrets["secrets"]["password"], "bobPass123")
+
+    async def test_deleteUserByUsername(self):
+        user_storage = await test_data()
+        await user_storage.delete_user_by_username("bob")
+        found = False
+        try:
+            await user_storage.get_user_by_username("bob")
+            found = True
+        except:
+            pass
+        self.assertEqual(found, False)
+
+    async def test_updateUser(self):
+        user_storage = await test_data()
+        new_user : PartialUser = {
+            "id": "bob",
+            "email": "newbob@bob.com"
+        }
+        await user_storage.update_user(new_user)
+        user_and_secrets = await user_storage.get_user_by_email("bob@bob.com")
+        self.assertEqual(user_and_secrets["user"]["username"], "bob")
+        self.assertEqual("secrets" in user_and_secrets and "password" in user_and_secrets["secrets"] and user_and_secrets["secrets"]["password"], "bobPass123")
+
+    async def test_updatePassword(self):
+        user_storage = await test_data()
+        new_user : PartialUser = {
+            "id": "bob",
+        }
+        new_password : PartialUserSecrets = {
+            "password": "newpass",
+        }
+        await user_storage.update_user(new_user, new_password)
+        user_and_secrets = await user_storage.get_user_by_email("bob@bob.com")
+        self.assertEqual("secrets" in user_and_secrets and "password" in user_and_secrets["secrets"] and user_and_secrets["secrets"]["password"], "newpass")
