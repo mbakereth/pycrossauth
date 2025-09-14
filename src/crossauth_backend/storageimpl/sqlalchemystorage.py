@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union, TypedDict, cast, Mapping
 from nulltype import Null, NullType
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 from sqlalchemy import text, Row
+import re
 
 class SqlAlchemyKeyStorageOptions(TypedDict, total=False):
     """
@@ -165,6 +166,8 @@ class SqlAlchemyKeyStorage(KeyStorage):
         andClause: List[str] = []
         values : dict[str,Any] = {}
         for entry in key:
+            if (re.match(r'^[A-Za-z0-9_]+$', entry) == None):
+                raise CrossauthError(ErrorCode.BadRequest, f"Invalid field {entry}")
             column = entry if entry == "userid" else self.__userid_foreign_key_column
             value : Any = cast(Any, key[entry])
             if value is None:
@@ -176,7 +179,6 @@ class SqlAlchemyKeyStorage(KeyStorage):
         andString = " and ".join(andClause)
         query = f"delete from {self.__key_table} where {andString}"
         CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
-        print(query, values)
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
 
@@ -353,13 +355,21 @@ class SqlAlchemyUserStorage(UserStorage):
         self.__joins : List[str] = []
         set_parameter("joins", ParamType.JsonArray, self, options, "USER_TABLE_JOINS")
 
-    async def get_user_by(self, field: str, value: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:
+    async def get_user_by(self, field: str, value: Union[str, int], options: UserStorageGetOptions = {}) -> UserAndSecrets:
         async with self.engine.begin() as conn:
             ret = await self.get_user_by_in_transaction(conn, field, value)
             return ret
         
-    async def get_user_by_in_transaction(self, conn: AsyncConnection, field: str, value: str) -> UserAndSecrets:
+    async def get_user_by_in_transaction(self, conn: AsyncConnection, field: str, value: Union[str, int]) -> UserAndSecrets:
 
+        if (field == "username"):
+            value = self.normalize(value if type(value) == str else str(value))
+            field = "username_normalized"
+        elif (field == "email"):
+            value = self.normalize(value if type(value) == str else str(value))
+            field = "email_normalized"
+        elif (field != "id"):
+            raise CrossauthError(ErrorCode.BadRequest, "Can only get user by username, id or email")
         query = f"select * from {self.__user_table} where {field} = :field"
         values = {"field": value}
         res = await conn.execute(text(query), values)
@@ -497,13 +507,13 @@ class SqlAlchemyUserStorage(UserStorage):
         return {"user": user, "secrets": secrets}
         
     async def get_user_by_username(self, username: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:
-        raise NotImplementedError
+        return await self.get_user_by("username", username, options)
 
     async def get_user_by_id(self, id: Union[str, int], options: UserStorageGetOptions = {}) -> UserAndSecrets:
-        raise NotImplementedError
+        return await self.get_user_by("id", id, options)
 
     async def get_user_by_email(self, email: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:
-        raise NotImplementedError
+        return await self.get_user_by("email", email, options)
 
     async def create_user(self, user: UserInputFields, secrets: Optional[UserSecretsInputFields] = None) -> User:
         raise NotImplementedError

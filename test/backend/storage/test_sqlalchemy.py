@@ -6,8 +6,9 @@ from crossauth_backend.common.error import CrossauthError, ErrorCode
 import os
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text, Row
-from typing import Any
+from typing import Any, NamedTuple
 import json
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 class SqlAlchemyKeyStorageTest(unittest.IsolatedAsyncioTestCase):
 
@@ -174,9 +175,13 @@ class SqlAlchemyKeyStorageTest(unittest.IsolatedAsyncioTestCase):
 def to_dict(row : Row[Any], with_relationships:bool=True) -> dict[str,Any]:
     return row._asdict() # type: ignore
 
+class EngineAndId(NamedTuple):
+    engine: AsyncEngine
+    id: int
+
 class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
 
-    async def get_test_conn(self):
+    async def get_test_conn(self) -> EngineAndId:
         engine = create_async_engine(
             os.environ["SQLITE_URL"],
             echo=True
@@ -197,10 +202,38 @@ class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
                 INSERT INTO UserSecrets (userid, password) 
                     VALUES ({row_dict["id"]}, 'bobPass123')
             """))
-        return engine
+            id : int = row_dict["id"]
+        return EngineAndId(engine, id)
     
     async def test_get_user_by(self):
-        engine = await self.get_test_conn()
+        conn = await self.get_test_conn()
+        engine = conn.engine
         user_storage = SqlAlchemyUserStorage(engine)
         ret = await user_storage.get_user_by("username", "bob")
-        print(ret)
+        self.assertEqual(ret["user"]["id"], conn.id)
+        self.assertEqual(ret["user"]["username"], "bob")
+        self.assertEqual(ret["user"]["username_normalized"], "bob")
+        self.assertEqual("email" in ret["user"] and ret["user"]["email"], "bob@bob.com")
+        self.assertEqual("email_normalized" in ret["user"] and ret["user"]["email_normalized"], "bob@bob.com")
+        self.assertEqual("password" in ret["secrets"] and ret["secrets"]["password"], "bobPass123")
+
+    async def test_get_user_by_id(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+        ret = await user_storage.get_user_by_id(conn.id)
+        self.assertEqual(ret["user"]["id"], conn.id)
+
+    async def test_get_user_by_username(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+        ret = await user_storage.get_user_by_username("Bob")
+        self.assertEqual(ret["user"]["id"], conn.id)
+
+    async def test_get_user_by_email(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+        ret = await user_storage.get_user_by_email("Bob@bob.com")
+        self.assertEqual(ret["user"]["id"], conn.id)
