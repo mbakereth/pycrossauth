@@ -8,7 +8,7 @@ from nulltype import NullType
 from crossauth_backend.common.interfaces import User, UserSecrets, \
     UserInputFields, PartialUser, UserSecretsInputFields, PartialUserSecrets, \
     Key, PartialKey, \
-    OAuthClient
+    OAuthClient, PartialOAuthClient
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.utils import set_parameter, ParamType
 
@@ -549,7 +549,7 @@ class OAuthClientStorage(ABC):
         pass
 
     @abstractmethod
-    async def update_client(self, client: OAuthClient) -> None:
+    async def update_client(self, client: PartialOAuthClient) -> None:
         """
         If the given session key exists in the database, update it with the
         passed values. If it doesn't exist, throw a CrossauthError with

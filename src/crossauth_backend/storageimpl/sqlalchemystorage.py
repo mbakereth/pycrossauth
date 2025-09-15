@@ -4,7 +4,7 @@ from crossauth_backend.storage import KeyStorage, KeyDataEntry, \
         OAuthAuthorizationStorage, OAuthAuthorizationStorageOptions
 from crossauth_backend.common.interfaces import Key, PartialKey, \
     User, PartialUser, UserSecrets, UserInputFields, UserSecretsInputFields, PartialUserSecrets, \
-    OAuthClient
+    OAuthClient, PartialOAuthClient
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.utils import set_parameter, ParamType
@@ -904,16 +904,14 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
             async with self.engine.begin() as conn:
                 await conn.execute(text(query), field_values) 
 
-            for uri in client["redirect_uri"]:
-                query = f"INSERT INTO {self.__redirect_uri_table} (client_id, uri) VALUES (:client_id, :uri)"
-                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
-                async with self.engine.begin() as conn:
-                     await conn.execute(text(query), {"client_id": client_id, "uri": uri}) 
+                for uri in client["redirect_uri"]:
+                    query = f"INSERT INTO {self.__redirect_uri_table} (client_id, uri) VALUES (:client_id, :uri)"
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    await conn.execute(text(query), {"client_id": client_id, "uri": uri}) 
 
-            for flow in client["valid_flow"]:
-                query = f"INSERT INTO {self.__valid_flow_table} (client_id, flow) VALUES (:client_id, :flow)"
-                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
-                async with self.engine.begin() as conn:
+                for flow in client["valid_flow"]:
+                    query = f"INSERT INTO {self.__valid_flow_table} (client_id, flow) VALUES (:client_id, :flow)"
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
                     await conn.execute(text(query), {"client_id": client_id, "flow": flow}) 
 
             return await self.get_client_by_id(client_id)
@@ -924,11 +922,75 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
             print(e)
             raise ce
 
-    async def update_client(self, client: OAuthClient) -> None:
-        raise NotImplementedError
+    async def update_client(self, client: PartialOAuthClient) -> None:
+
+        try:
+        
+            for field in client:
+                if (re.match(r'^[A-Za-z0-9_\.]+$', field) is None):
+                    raise CrossauthError(ErrorCode.BadRequest, "Invalid user field name " + field)
+
+            field_placeholders : List[str] = []
+            field_values : Dict[str, Any] = {}
+            if ("client_id" not in client):
+                raise CrossauthError(ErrorCode.InvalidClientId, "Cannot update client without the client_id")
+            client_id = client["client_id"]
+            for field in client:
+                if (field != "client_id" and field != "redirect_uri" and field != "valid_flow"):
+                    field_placeholders.append(field + " = :"+field)
+                    field_values[field] = client[field]
+            field_placeholders_str = ", ".join(field_placeholders)
+            field_values["client_id"] = client_id
+
+            async with self.engine.begin() as conn:
+
+                if (len(field_placeholders) > 0):
+                    query = f"UPDATE {self.__client_table} SET {field_placeholders_str} WHERE client_id = :client_id"
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    await conn.execute(text(query), field_values) 
+                
+                # redirect_uris
+                if ("redirect_uri" in client):
+                    query = f"DELETE FROM {self.__redirect_uri_table} WHERE client_id = :client_id"
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    await conn.execute(text(query), {"client_id": client_id}) 
+                    query = f"INSERT INTO {self.__redirect_uri_table} (client_id, uri) VALUES (:client_id, :uri)"
+                    for uri in client["redirect_uri"]:
+                        query = f"INSERT INTO {self.__redirect_uri_table} (client_id, uri) VALUES (:client_id, :uri)"
+                        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                        await conn.execute(text(query), {"client_id": client_id, "uri": uri}) 
+
+                # valid flows
+                if ("valid_flow" in client):
+                    query = f"DELETE FROM {self.__valid_flow_table} WHERE client_id = :client_id"
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    await conn.execute(text(query), {"client_id": client_id}) 
+                    query = f"INSERT INTO {self.__valid_flow_table} (client_id, uri) VALUES (:client_id, :uri)"
+                    for flow in client["valid_flow"]:
+                        query = f"INSERT INTO {self.__valid_flow_table} (client_id, flow) VALUES (:client_id, :flow)"
+                        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                        await conn.execute(text(query), {"client_id": client_id, "flow": flow}) 
+
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            raise ce
+
 
     async def delete_client(self, client_id: str) -> None:
-        raise NotImplementedError
+            async with self.engine.begin() as conn:
+
+                query = f"DELETE FROM {self.__client_table} WHERE client_id = :client_id"
+                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                await conn.execute(text(query), {"client_id": client_id}) 
+
+                query = f"DELETE FROM {self.__redirect_uri_table} WHERE client_id = :client_id"
+                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                await conn.execute(text(query), {"client_id": client_id}) 
+
+                query = f"DELETE FROM {self.__valid_flow_table} WHERE client_id = :client_id"
+                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                await conn.execute(text(query), {"client_id": client_id}) 
 
 ####################################
 ## OAuthAuthorizationStorage

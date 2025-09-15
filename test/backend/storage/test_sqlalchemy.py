@@ -11,7 +11,7 @@ from typing import Any, NamedTuple
 import json
 from sqlalchemy.ext.asyncio import AsyncEngine
 from crossauth_backend.common.interfaces import PartialUser, UserInputFields, UserSecretsInputFields, PartialUserSecrets, UserState, \
-    OAuthClient
+    OAuthClient, PartialOAuthClient
 import logging
 from nulltype import Null
 from crossauth_backend.oauth.client import OAuthFlows
@@ -548,3 +548,36 @@ class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ret["redirect_uri"][0], "http://localhost/11")
         self.assertEqual(len(ret["valid_flow"]), 1)
         self.assertEqual(ret["valid_flow"][0], OAuthFlows.AuthorizationCode)
+
+    async def test_update(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        client : PartialOAuthClient = {
+            "client_id": "5",
+            "client_name": "BB",
+            "confidential": True,
+            "redirect_uri": ["http://localhost/2"],
+            "valid_flow": [OAuthFlows.AuthorizationCodeWithPKCE]
+        }
+        await client_storage.update_client(client)
+        ret = await client_storage.get_client_by_id("5")
+        self.assertEqual(ret["client_name"], "BB")
+        self.assertEqual(ret["confidential"], True)
+        self.assertEqual(len(ret["redirect_uri"]), 1)
+        self.assertEqual(ret["redirect_uri"][0], "http://localhost/2")
+        self.assertEqual(len(ret["valid_flow"]), 1)
+        self.assertEqual(ret["valid_flow"][0], OAuthFlows.AuthorizationCodeWithPKCE)
+
+    async def test_delete(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        await client_storage.delete_client("5")
+        found = False
+        try:
+            await client_storage.get_client_by_id("5")
+            found = True
+        except:
+            pass
+        self.assertEqual(found, False)
