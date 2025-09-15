@@ -9,13 +9,21 @@ from sqlalchemy import text, Row
 from typing import Any, NamedTuple
 import json
 from sqlalchemy.ext.asyncio import AsyncEngine
+from crossauth_backend.common.interfaces import PartialUser, UserInputFields, UserSecretsInputFields, PartialUserSecrets, UserState
+import logging
+
 
 class SqlAlchemyKeyStorageTest(unittest.IsolatedAsyncioTestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        logging.basicConfig()
+        logging.getLogger("sqlalchemy.engine").setLevel(logging.ERROR)
 
     async def get_clean_conn(self):
         engine = create_async_engine(
             os.environ["SQLITE_URL"],
-            echo=True
+            echo=False
         )
         async with engine.begin() as conn:
             await conn.execute(text("DELETE from Key"))
@@ -181,10 +189,16 @@ class EngineAndId(NamedTuple):
 
 class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        logging.basicConfig()
+        logging.getLogger("sqlalchemy").setLevel(logging.ERROR)
+
+
     async def get_test_conn(self) -> EngineAndId:
         engine = create_async_engine(
             os.environ["SQLITE_URL"],
-            echo=True
+            echo=False
         )
         async with engine.begin() as conn:
             await conn.execute(text("DELETE from User"))
@@ -263,3 +277,80 @@ class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
         except:
             pass
         self.assertEqual(found, False)
+
+    async def test_create_user(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+        new_user : UserInputFields = {
+            "username": "mary",
+            "email": "mary@mary.com",
+            "state": UserState.active,
+            "factor1": "password"
+        }
+        created_user = await user_storage.create_user(new_user)
+        self.assertEqual(created_user["username"], "mary")
+        self.assertEqual(created_user["username_normalized"], "mary")
+        self.assertEqual("email" in created_user and created_user["email"], "mary@mary.com")
+        self.assertEqual("email_normalized" in created_user and created_user["email_normalized"], "mary@mary.com")
+        self.assertEqual("state" in created_user and created_user["state"], UserState.active)
+
+    async def test_create_user_and_secrets(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+        new_user : UserInputFields = {
+            "username": "mary",
+            "email": "mary@mary.com",
+            "state": UserState.active,
+            "factor1": "password"
+        }
+        new_secrets : UserSecretsInputFields = {
+            "password": "maryPass123",
+        }
+        created_user = await user_storage.create_user(new_user, new_secrets)
+        self.assertEqual(created_user["username"], "mary")
+        self.assertEqual(created_user["username_normalized"], "mary")
+        self.assertEqual("email" in created_user and created_user["email"], "mary@mary.com")
+        self.assertEqual("email_normalized" in created_user and created_user["email_normalized"], "mary@mary.com")
+        self.assertEqual("state" in created_user and created_user["state"], UserState.active)
+
+        ret = await user_storage.get_user_by_id(created_user["id"])
+        self.assertEqual("secrets" in ret and "password" in ret["secrets"] and ret["secrets"]["password"], "maryPass123")
+
+    async def test_update_user(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+
+        user : PartialUser = {
+            "id": conn.id,
+            "email": "bob1@bob.com",
+        }
+        await user_storage.update_user(user)
+        ret = await user_storage.get_user_by_id(conn.id)
+        updated_user = ret["user"]
+        self.assertEqual(updated_user["username"], "bob")
+        self.assertEqual("email" in updated_user and updated_user["email"], "bob1@bob.com")
+        self.assertEqual("email_normalized" in updated_user and updated_user["email_normalized"], "bob1@bob.com")
+
+    async def test_update_user_and_secrets(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+
+        user : PartialUser = {
+            "id": conn.id,
+            "email": "bob1@bob.com",
+        }
+        secrets: PartialUserSecrets = {
+            "password": "xyz"
+        }
+        await user_storage.update_user(user, secrets)
+        ret = await user_storage.get_user_by_id(conn.id)
+        updated_user = ret["user"]
+        updated_secrets = ret["secrets"]
+        self.assertEqual(updated_user["username"], "bob")
+        self.assertEqual("email" in updated_user and updated_user["email"], "bob1@bob.com")
+        self.assertEqual("email_normalized" in updated_user and updated_user["email_normalized"], "bob1@bob.com")
+        self.assertEqual("password" in updated_secrets and updated_secrets["password"], "xyz")

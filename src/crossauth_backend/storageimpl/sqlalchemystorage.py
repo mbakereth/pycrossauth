@@ -398,24 +398,23 @@ class SqlAlchemyUserStorage(UserStorage):
         values = {"field": id}
         res = await conn.execute(text(query), values)
         row = res.fetchone()
-        if (row is None):
-            raise CrossauthError(ErrorCode.InvalidUsername, "No secrets found for user")
-        secrets_fields = self.to_dict(row)
+        secrets_fields : Dict[str,Any]|None = None
+        if (row is not None):
+            secrets_fields = self.to_dict(row)
         for join in self.__joins:
             query = f"select * from {join} where {self.__userid_foreign_key_column} = :field"
             values = {"field": id}
             res = await conn.execute(text(query), values)
             row = res.fetchone()
-            if (row is None):
-                raise CrossauthError(ErrorCode.InvalidUsername, "No secrets found for user")
-            relations_fields[join] = self.to_dict(row)
+            if (row is not None):
+                relations_fields[join] = self.to_dict(row)
 
         return self.make_user_and_secrets(user_fields, secrets_fields, relations_fields)
 
     def to_dict(self, row : Row[Any]) -> dict[str,Any]:
         return row._asdict() # type: ignore
 
-    def make_user_and_secrets(self, user_fields: Dict[str, Any], secrets_fields: Dict[str, Any], relations_fields: Dict[str, Dict[str, Any]]) -> UserAndSecrets:
+    def make_user_and_secrets(self, user_fields: Dict[str, Any], secrets_fields: Dict[str, Any]|None, relations_fields: Dict[str, Dict[str, Any]]) -> UserAndSecrets:
         id: Union[int, str]
         username: str
         username_normalized: str
@@ -466,23 +465,6 @@ class SqlAlchemyUserStorage(UserStorage):
         if "factor2" in user_fields:
             factor2 = user_fields["factor2"]
 
-        if self.__userid_foreign_key_column in secrets_fields:
-            id = user_fields[self.__id_column]
-            if self.__userid_foreign_key_column != "userid":
-                del secrets_fields[self.__userid_foreign_key_column]
-        else:
-            raise CrossauthError(ErrorCode.InvalidUsername, "No user id in user secrets")
-
-        if "password" in secrets_fields:
-            password = secrets_fields["password"]
-        if "totpsecret" in secrets_fields:
-            totpsecret = secrets_fields["totpsecret"]
-        if "otp" in secrets_fields:
-            otp = secrets_fields["otp"]
-
-        if "expires" in secrets_fields:
-            expires = secrets_fields["expires"]
-
         user = cast(User, {
             **user_fields,
             "id": id, 
@@ -508,16 +490,37 @@ class SqlAlchemyUserStorage(UserStorage):
                 **fields
             })
             
-        secrets = cast(UserSecrets, {
-            **secrets_fields,
-            "userid": id, 
-            "password": password,
-            "totpsecret": totpsecret,
-            "otp": otp,
-            "expires": expires,
-        })
 
-        return {"user": user, "secrets": secrets}
+        if secrets_fields:
+            if self.__userid_foreign_key_column in secrets_fields:
+                if self.__userid_foreign_key_column != "userid":
+                    del secrets_fields[self.__userid_foreign_key_column]
+
+            if "password" in secrets_fields:
+                password = secrets_fields["password"]
+            if "totpsecret" in secrets_fields:
+                totpsecret = secrets_fields["totpsecret"]
+            if "otp" in secrets_fields:
+                otp = secrets_fields["otp"]
+
+            if "expires" in secrets_fields:
+                expires = secrets_fields["expires"]
+
+            secrets = cast(UserSecrets, {
+                **secrets_fields,
+                "userid": id, 
+                "password": password,
+                "totpsecret": totpsecret,
+                "otp": otp,
+                "expires": expires,
+            })
+
+            return {"user": user, "secrets": secrets}
+        
+        else:
+
+            return {"user": user, "secrets": {"userid": id}}
+
         
     async def get_user_by_username(self, username: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:
         return await self.get_user_by("username", username, options)
@@ -529,10 +532,151 @@ class SqlAlchemyUserStorage(UserStorage):
         return await self.get_user_by("email", email, options)
 
     async def create_user(self, user: UserInputFields, secrets: Optional[UserSecretsInputFields] = None) -> User:
-        raise NotImplementedError
+        if (secrets is not None and "password" not in secrets):
+            raise CrossauthError(ErrorCode.PasswordFormat, "Password required when creating user")
 
+        username_normalized = ""
+        email_normalized : str|None = None
+
+        try:
+            if "email" in user and "email_normalized" not in user:
+                email_normalized = self.normalize(user["email"])
+            if ("username_normalized" not in user):
+                username_normalized = self.normalize(user["username"])
+        
+            for field in user:
+                if (re.match(r'^[A-Za-z0-9_\.]+$', field) is None):
+                    raise CrossauthError(ErrorCode.BadRequest, "Invalid user field name " + field)
+            if secrets:
+                for field in secrets:
+                    if (re.match(r'^[A-Za-z0-9_\.]+$', field) is None):
+                        raise CrossauthError(ErrorCode.BadRequest, "Invalid secrets field name " + field)
+
+            field_names : List[str] = []
+            field_placeholders : List[str] = []
+            field_values : Dict[str, Any] = {}
+            
+            for field in user:
+                field_names.append(field)
+                field_placeholders.append(":"+field)
+                field_values[field] = user[field]
+            if ("username_normalized" not in field_values):
+                field_names.append("username_normalized")
+                field_placeholders.append(":username_normalized")
+                field_values["username_normalized"] = username_normalized
+            if (email_normalized and "email_normalized" not in field_values):
+                field_names.append("email_normalized")
+                field_placeholders.append(":email_normalized")
+                field_values["email_normalized"] = email_normalized
+
+            field_names_str = ", ".join(field_names)
+            field_placeholders_str = ", ".join(field_placeholders)
+
+            query = f"INSERT INTO {self.__user_table} ({field_names_str}) VALUES ({field_placeholders_str})"
+            CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+            async with self.engine.begin() as conn:
+                await conn.execute(text(query), field_values) 
+                ret = await self.get_user_by_in_transaction(conn, "username", user["username"])
+
+                if (secrets):
+                    field_names : List[str] = []
+                    field_placeholders : List[str] = []
+                    field_values : Dict[str, Any] = {}
+                    
+                    for field in secrets:
+                        if (field != "userid"):
+                            field_names.append(field)
+                            field_placeholders.append(":"+field)
+                            field_values[field] = secrets[field]
+
+                    field_names.append(self.__userid_foreign_key_column)
+                    field_placeholders.append(":" + self.__userid_foreign_key_column)
+                    field_values[self.__userid_foreign_key_column] = ret["user"]["id"]
+
+                    field_names_str = ", ".join(field_names)
+                    field_placeholders_str = ", ".join(field_placeholders)
+
+                    query = f"INSERT INTO {self.__user_secrets_table} ({field_names_str}) VALUES ({field_placeholders_str})"
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    await conn.execute(text(query), field_values) 
+
+                return ret["user"]
+                
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            print(e)
+            raise ce
+
+    
     async def update_user(self, user: PartialUser, secrets: Optional[PartialUserSecrets] = None) -> None:
-        raise NotImplementedError
+        if (secrets is not None and "password" not in secrets):
+            raise CrossauthError(ErrorCode.PasswordFormat, "Password required when creating user")
+
+        username_normalized = ""
+        email_normalized : str|None = None
+        if ("id" not in user):
+            raise CrossauthError(ErrorCode.BadRequest, "Must pass id in user when updating")
+        id : str|int = user["id"]
+
+        try:
+            if "email" in user and "email_normalized" not in user:
+                email_normalized = self.normalize(user["email"])
+            if ("username" in user and "username_normalized" not in user):
+                username_normalized = self.normalize(user["username"])
+        
+            for field in user:
+                if (re.match(r'^[A-Za-z0-9_\.]+$', field) is None):
+                    raise CrossauthError(ErrorCode.BadRequest, "Invalid user field name " + field)
+            if secrets:
+                for field in secrets:
+                    if (re.match(r'^[A-Za-z0-9_\.]+$', field) is None):
+                        raise CrossauthError(ErrorCode.BadRequest, "Invalid secrets field name " + field)
+
+            field_placeholders : List[str] = []
+            field_values : Dict[str, Any] = {}
+            
+            for field in user:
+                if (field != "id"):
+                    field_placeholders.append(field + " = :"+field)
+                    field_values[field] = user[field]
+            if ("username_normalized" not in field_values and "username" in user):
+                field_placeholders.append("username_normalized = :username_normalized")
+                field_values["username_normalized"] = username_normalized
+            if (email_normalized and "email_normalized" not in field_values and "email" in user):
+                field_placeholders.append("email_normalized = :email_normalized")
+                field_values["email_normalized"] = email_normalized
+
+            field_placeholders_str = ", ".join(field_placeholders)
+            field_values[self.__id_column] = id
+
+            async with self.engine.begin() as conn:
+
+                if (len(field_placeholders) > 0):
+                    query = f"UPDATE {self.__user_table} SET {field_placeholders_str} WHERE {self.__id_column} = :{self.__id_column}"
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    await conn.execute(text(query), field_values) 
+
+                if (secrets):
+                    field_placeholders : List[str] = []
+                    field_values : Dict[str, Any] = {}
+                    
+                    for field in secrets:
+                        if (field != "id"):
+                            field_placeholders.append(field + " = :"+field)
+                            field_values[field] = secrets[field]
+
+                    field_placeholders_str = ", ".join(field_placeholders)
+                    field_values[self.__userid_foreign_key_column] = id
+
+                    query = f"UPDATE {self.__user_secrets_table} SET {field_placeholders_str} WHERE {self.__userid_foreign_key_column} = :{self.__userid_foreign_key_column}"
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    await conn.execute(text(query), field_values) 
+                
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            raise ce
 
     async def delete_user_by_username(self, username: str) -> None:
         query = f"delete from {self.__user_table} where username_normalized = :value"
