@@ -2,7 +2,8 @@
 import unittest
 from datetime import datetime, timedelta
 from crossauth_backend.storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyUserStorage, \
-    SqlAlchemyOAuthClientStorage, register_sqlite_datetime
+    SqlAlchemyOAuthClientStorage, SqlAlchemyOAuthAuthorizationStorage, \
+    register_sqlite_datetime
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 import os
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -581,3 +582,102 @@ class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
         except:
             pass
         self.assertEqual(found, False)
+
+##############
+## OAuthAuthorizations
+
+######################
+## OAuthClientStorage
+
+class SqlAlchemyOAuthAutorizationsTest(unittest.IsolatedAsyncioTestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        logging.basicConfig()
+        logging.getLogger("sqlalchemy").setLevel(logging.ERROR)
+
+
+    async def get_test_conn(self) -> EngineAndId:
+        engine = create_async_engine(
+            os.environ["SQLITE_URL"],
+            echo=False
+        )
+        async with engine.begin() as conn:
+            await conn.execute(text("DELETE from User"))
+            await conn.execute(text("DELETE from UserSecrets"))
+            await conn.execute(text("DELETE from OAuthClient"))
+            await conn.execute(text("DELETE from OAuthClientValidFlow"))
+            await conn.execute(text("DELETE from OAuthClientRedirectUri"))
+            await conn.execute(text("DELETE from OAuthAuthorization"))
+
+            # create user
+            await conn.execute(text("""
+                INSERT INTO User (username, username_normalized, email, email_normalized) 
+                    VALUES ('bob', 'bob', 'bob@bob.com', 'bob@bob.com')
+            """))
+            res = await conn.execute(text("SELECT id FROM User where username = 'bob'"))
+            row = res.fetchone()
+            if (row is None):
+                raise Exception("Can't get User record I just created")
+            row_dict = to_dict(row)
+            await conn.execute(text(f"""
+                INSERT INTO UserSecrets (userid, password) 
+                    VALUES ({row_dict["id"]}, 'bobPass123')
+            """))
+            id : int = row_dict["id"]
+
+            # create client without secret or user id
+            await conn.execute(text("""
+                INSERT INTO OAuthClient (client_id, confidential, client_name) 
+                    VALUES ('1', 0, 'A')
+            """))
+
+            # create authorization
+            await conn.execute(text("""
+                INSERT INTO OAuthAuthorization (client_id, scope) 
+                    VALUES ('1', 'read')
+            """))
+
+            # create authorization
+            await conn.execute(text(f"""
+                INSERT INTO OAuthAuthorization (client_id, scope, userid) 
+                    VALUES ('1', 'read1', {id})
+            """))
+
+        return EngineAndId(engine, id)
+    
+    async def test_get_authorizations(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthAuthorizationStorage(engine)
+        ret = await client_storage.get_authorizations("1")
+        self.assertEqual(len(ret), 1)
+        self.assertEqual(ret[0], "read")
+
+    async def test_update_authorizations(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthAuthorizationStorage(engine)
+        await client_storage.update_authorizations("1", Null, ["write", "x"])
+        ret = await client_storage.get_authorizations("1")
+        self.assertEqual(len(ret), 2)
+        self.assertIn(ret[0], ["write", "x"])
+        self.assertIn(ret[1], ["write", "x"])
+
+    async def test_get_authorizations_user(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthAuthorizationStorage(engine)
+        ret = await client_storage.get_authorizations("1", conn.id)
+        self.assertEqual(len(ret), 1)
+        self.assertEqual(ret[0], "read1")
+
+    async def test_update_authorizations_user(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthAuthorizationStorage(engine)
+        await client_storage.update_authorizations("1", conn.id, ["write1", "x1"])
+        ret = await client_storage.get_authorizations("1", conn.id)
+        self.assertEqual(len(ret), 2)
+        self.assertIn(ret[0], ["write1", "x1"])
+        self.assertIn(ret[1], ["write1", "x1"])

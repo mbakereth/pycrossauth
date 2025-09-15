@@ -1016,8 +1016,7 @@ class SqlAlchemyOAuthAuthorizationStorage(OAuthAuthorizationStorage):
         self.__authorization_table = "OAuthAuthorization"
         self.__userid_foreign_key_column = "userid"
         set_parameter("authorization_table", ParamType.Number, self, options, "OAUTH_AUTHORIZATION_TABLE")
-        set_parameter("valid_flow_table", ParamType.Number, self, options, "OAUTH_REDIRECTURI_TABLE")
-        set_parameter("__userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
+        set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
 
         self.__joins : List[str] = []
         set_parameter("joins", ParamType.JsonArray, self, options, "USER_TABLE_JOINS")
@@ -1027,6 +1026,63 @@ class SqlAlchemyOAuthAuthorizationStorage(OAuthAuthorizationStorage):
         if (re.match(r'^[A-Za-z0-9_]+$', self.__userid_foreign_key_column) == None):
             raise CrossauthError(ErrorCode.Configuration, "Invalid userid foreiggn key column " + self.__userid_foreign_key_column)
 
+    async def get_authorizations(self, client_id: str, userid: str|int|None = None) -> List[Optional[str]]:
+
+        try :
+            return_values: List[Optional[str]] = []
+            query: str = f"SELECT scope FROM {self.__authorization_table} WHERE client_id = :client_id"
+            values : dict[str,Any] = {"client_id": client_id}
+            if userid:
+                query += f" AND {self.__userid_foreign_key_column} = :{self.__userid_foreign_key_column}"
+                values[self.__userid_foreign_key_column] = userid
+            else:
+                query += f" AND {self.__userid_foreign_key_column} is NULL"
+
+            CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+            async with self.engine.begin() as conn:
+                res = await conn.execute(text(query), values) 
+
+                for row in res.mappings():
+                    return_values.append(row["scope"])
+
+            return return_values
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            raise ce
+
+    
+    
+    async def update_authorizations(self, client_id: str, userid: str|int|NullType, authorizations: List[str|NullType]) -> None:
+        try :
+            query: str = f"DELETE FROM {self.__authorization_table} WHERE client_id = :client_id"
+            values : dict[str,Any] = {"client_id": client_id}
+            if userid:
+                query += f" AND {self.__userid_foreign_key_column} = :{self.__userid_foreign_key_column}"
+                values[self.__userid_foreign_key_column] = userid
+            else:
+                query += f" AND {self.__userid_foreign_key_column} IS NULL"
+
+            async with self.engine.begin() as conn:
+                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                await conn.execute(text(query), values) 
+
+                for scope in authorizations:
+                    if (userid != Null):
+                        query: str = f"INSERT INTO {self.__authorization_table} (client_id, scope, userid) VALUES (:client_id, :scope, :userid)"
+                        values : dict[str,Any] = {"client_id": client_id, "scope": scope, "userid": userid}
+                    else:
+                        query: str = f"INSERT INTO {self.__authorization_table} (client_id, scope) VALUES (:client_id, :scope)"
+                        values : dict[str,Any] = {"client_id": client_id, "scope": scope}
+
+                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    await conn.execute(text(query), values) 
+
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            raise ce
+    
 #########################
 ## SQLite adapters
 
