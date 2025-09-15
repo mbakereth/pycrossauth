@@ -14,6 +14,7 @@ from crossauth_backend.common.interfaces import PartialUser, UserInputFields, Us
     OAuthClient
 import logging
 from nulltype import Null
+from crossauth_backend.oauth.client import OAuthFlows
 
 register_sqlite_datetime()
 
@@ -382,6 +383,8 @@ class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
             await conn.execute(text("DELETE from User"))
             await conn.execute(text("DELETE from UserSecrets"))
             await conn.execute(text("DELETE from OAuthClient"))
+            await conn.execute(text("DELETE from OAuthClientValidFlow"))
+            await conn.execute(text("DELETE from OAuthClientRedirectUri"))
 
             # create user
             await conn.execute(text("""
@@ -421,6 +424,20 @@ class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
             await conn.execute(text(f"""
                 INSERT INTO OAuthClient (client_id, confidential, client_name, client_secret) 
                     VALUES ('4', 1, 'C', 'passC')
+            """))
+
+            # create client with flows and erdirect uris
+            await conn.execute(text("""
+                INSERT INTO OAuthClient (client_id, confidential, client_name) 
+                    VALUES ('5', 1, 'D')
+            """))
+            await conn.execute(text("""
+                INSERT INTO OAuthClientRedirectUri (client_id, uri) 
+                    VALUES ('5', 'http://localhost/1')
+            """))
+            await conn.execute(text(f"""
+                INSERT INTO OAuthClientValidFlow (client_id, flow) 
+                    VALUES ('5', '{OAuthFlows.AuthorizationCode}')
             """))
         return EngineAndId(engine, id)
     
@@ -482,3 +499,52 @@ class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
         client_storage = SqlAlchemyOAuthClientStorage(engine)
         ret = await client_storage.get_client_by_name("C", Null)
         self.assertEqual(len(ret), 1)
+
+    async def test_get_client_with_uri_and_flow(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_client_by_id("5")
+        self.assertEqual(ret["client_id"], '5')
+        self.assertTrue("client_secret" in ret)
+        self.assertIsNone("client_secret" in ret and ret["client_secret"])
+        self.assertTrue("userid" in ret)
+        self.assertIsNone("userid" in ret and ret["userid"])
+        self.assertEqual(len(ret["redirect_uri"]), 1)
+        self.assertEqual(ret["redirect_uri"][0], "http://localhost/1")
+        self.assertEqual(len(ret["valid_flow"]), 1)
+        self.assertEqual(ret["valid_flow"][0], OAuthFlows.AuthorizationCode)
+
+    async def test_get_paginated(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_clients(0, 2)
+        self.assertEqual(len(ret), 2)
+
+    async def test_get_paginated_userid(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_clients(0, 2, conn.id)
+        self.assertEqual(len(ret), 1)
+
+    async def test_create(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        client : OAuthClient = {
+            "client_id": "11",
+            "client_name": "AA",
+            "confidential": False,
+            "redirect_uri": ["http://localhost/11"],
+            "valid_flow": [OAuthFlows.AuthorizationCode]
+        }
+        ret = await client_storage.create_client(client)
+        self.assertEqual(ret["client_id"], "11")
+        self.assertEqual(ret["client_name"], "AA")
+        self.assertEqual(ret["confidential"], False)
+        self.assertEqual(len(ret["redirect_uri"]), 1)
+        self.assertEqual(ret["redirect_uri"][0], "http://localhost/11")
+        self.assertEqual(len(ret["valid_flow"]), 1)
+        self.assertEqual(ret["valid_flow"][0], OAuthFlows.AuthorizationCode)

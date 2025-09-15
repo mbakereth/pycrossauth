@@ -769,17 +769,30 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
             ret = await self.get_client_in_transaction(conn, "client_id", client_id)
             return ret[0]
         
-    async def get_client_in_transaction(self, conn: AsyncConnection, field: str, value: str, userid: Optional[int|str|NullType] = None) -> List[OAuthClient]:
+    async def get_client_in_transaction(self, conn: AsyncConnection, field: str|None, value: str|None, userid: Optional[int|str|NullType] = None, skip: int|None=None, take: int|None=None) -> List[OAuthClient]:
 
-        if (field != "client_id" and field != "client_name"):
+        if (field is not None and (field != "client_id" and field != "client_name")):
             raise CrossauthError(ErrorCode.BadRequest, "Invalid get_client_by field " + field)
-        query = f"select * from {self.__client_table} where {field} = :field"
-        values : Dict[str,Any] = {"field": value}
+        where : List[str] = []
+        values : Dict[str,Any] = {}
+        limit = ""
+        offset = ""
+        if (field is not None):
+            where.append(f"{field} = :field")
+            values["field"] = value
         if (userid == Null):
-            query = query + f" AND {self.__userid_foreign_key_column} is NULL"
+            where.append(f"{self.__userid_foreign_key_column} is NULL")
         elif (userid is not None):
-            query = query + f" AND {self.__userid_foreign_key_column} = :userid"
+            where.append(f"{self.__userid_foreign_key_column} = :userid")
             values["userid"] = userid
+        if (skip is not None):
+            offset = "OFFSET " + str(int(skip))
+        if (take is not None):
+            limit = "LIMIT " + str(int(take))
+        where_str = " AND ".join(where)
+        if (len(where_str) > 0):
+            where_str = "WHERE " + where_str
+        query = f"select * from {self.__client_table} {where_str} {limit} {offset}"
         res = await conn.execute(text(query), values)
         clients : List[OAuthClient] = []
         for row in res.mappings():
@@ -804,7 +817,7 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
             client = self._make_client(row, redirect_uri_mappings, valid_flow_mappings)
             clients.append(client)
         if (field == "client_id" and len(clients) == 0):
-            raise CrossauthError(ErrorCode.InvalidClientId, "No client exists with " + field + " " + value)
+            raise CrossauthError(ErrorCode.InvalidClientId, "No client exists with " + field + " " + str(value))
         return clients
 
     def _make_client(self, client_fields: RowMapping, redirect_uri_fields: List[RowMapping], valid_flow_fields: List[RowMapping]) -> OAuthClient:
@@ -840,6 +853,16 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
         if (client_secret is not None):
             client["client_secret"] = client_secret
 
+        client["redirect_uri"] = []
+        for row in redirect_uri_fields:
+            if ("uri" in row):
+                client["redirect_uri"].append(row["uri"])
+
+        client["valid_flow"] = []
+        for row in valid_flow_fields:
+            if ("flow" in row):
+                client["valid_flow"].append(row["flow"])
+
         return client
 
     async def get_client_by_name(self, name: str, userid: str|int|None = None) -> List[OAuthClient]:
@@ -848,10 +871,58 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
             return ret
 
     async def get_clients(self, skip: Optional[int] = None, take: Optional[int] = None, userid: str|int|None = None) -> List[OAuthClient]:
-        raise NotImplementedError
+        async with self.engine.begin() as conn:
+            ret = await self.get_client_in_transaction(conn, None, None, userid, skip, take)
+            return ret
 
     async def create_client(self, client: OAuthClient) -> OAuthClient:
-        raise NotImplementedError
+
+        try:        
+            for field in client:
+                if (re.match(r'^[A-Za-z0-9_\.]+$', field) is None):
+                    raise CrossauthError(ErrorCode.BadRequest, "Invalid client field name " + field)
+
+            field_names : List[str] = []
+            field_placeholders : List[str] = []
+            field_values : Dict[str, Any] = {}
+            
+            for field in client:
+                if (field != "redirect_uri" and field != "valid_flow"):
+                    field_names.append(field)
+                    field_placeholders.append(":"+field)
+                    field_values[field] = client[field]
+
+            if ("client_id" not in client):
+                raise CrossauthError(ErrorCode.InvalidClientId, "CLient ID not given when creating client")
+            client_id = client["client_id"]
+
+            field_names_str = ", ".join(field_names)
+            field_placeholders_str = ", ".join(field_placeholders)
+
+            query = f"INSERT INTO {self.__client_table} ({field_names_str}) VALUES ({field_placeholders_str})"
+            CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+            async with self.engine.begin() as conn:
+                await conn.execute(text(query), field_values) 
+
+            for uri in client["redirect_uri"]:
+                query = f"INSERT INTO {self.__redirect_uri_table} (client_id, uri) VALUES (:client_id, :uri)"
+                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                async with self.engine.begin() as conn:
+                     await conn.execute(text(query), {"client_id": client_id, "uri": uri}) 
+
+            for flow in client["valid_flow"]:
+                query = f"INSERT INTO {self.__valid_flow_table} (client_id, flow) VALUES (:client_id, :flow)"
+                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                async with self.engine.begin() as conn:
+                    await conn.execute(text(query), {"client_id": client_id, "flow": flow}) 
+
+            return await self.get_client_by_id(client_id)
+                
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            CrossauthLogger.logger().debug(j({"err": ce}))
+            print(e)
+            raise ce
 
     async def update_client(self, client: OAuthClient) -> None:
         raise NotImplementedError

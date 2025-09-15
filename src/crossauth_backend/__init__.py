@@ -6,7 +6,8 @@ from .common.jwt import JWT
 from .common.interfaces import Key, PartialKey, \
     UserInputFields, User, \
     UserSecretsInputFields, UserSecrets, UserState, KeyPrefix, ApiKey, \
-    PartialUserInputFields, PartialUser, PartialUserSecrets
+    PartialUserInputFields, PartialUser, PartialUserSecrets, \
+    OAuthClient, PartialOAuthClient
 
 from .oauth.wellknown import TokenEndpointAuthMethod, ResponseMode, \
     GrantType, SubjectType, ClaimType, \
@@ -41,7 +42,8 @@ __all__ = (
     "ErrorCode", "CrossauthError",
     "CrossauthLogger", "j",
     "JWT",
-    "Key", "PartialKey", "KeyDataEntry", \
+    "Key", "PartialKey", "KeyDataEntry", 
+    "OAuthClient", "PartialOAuthClient",
     "UserInputFields", "User", "UserSecretsInputFields", "UserSecrets", "UserState", "KeyPrefix", "ApiKey",
     "PartialUserInputFields", "PartialUser", "PartialUserSecrets",
     "TokenEndpointAuthMethod", "ResponseMode", "GrantType", "SubjectType", "ClaimType",
