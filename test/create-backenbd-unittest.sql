@@ -12,11 +12,11 @@ CREATE TABLE User (
     dummyField              text default ''
 );
 
-CREATE UNIQUE INDEX id_idx ON User(id);
-CREATE UNIQUE INDEX username_idx ON User(username);
-CREATE UNIQUE INDEX username_normalized_idx ON User(username_normalized);
-CREATE UNIQUE INDEX email_idx ON User(email);
-CREATE UNIQUE INDEX email_normalized_idx ON User(email_normalized);
+CREATE UNIQUE INDEX User_id_idx ON User(id);
+CREATE UNIQUE INDEX User_username_idx ON User(username);
+CREATE UNIQUE INDEX User_username_normalized_idx ON User(username_normalized);
+CREATE UNIQUE INDEX User_email_idx ON User(email);
+CREATE UNIQUE INDEX User_email_normalized_idx ON User(email_normalized);
 
 DROP TABLE IF EXISTS UserSecrets;
 CREATE TABLE UserSecrets (
@@ -25,7 +25,7 @@ CREATE TABLE UserSecrets (
     totpsecret              text default ''
 );
 
-CREATE UNIQUE INDEX userid ON UserSecrets(userid);
+CREATE UNIQUE INDEX UserSecrets_userid ON UserSecrets(userid);
 
 DROP TABLE IF EXISTS Key;
 CREATE TABLE Key (
@@ -62,8 +62,19 @@ DROP TABLE IF EXISTS OAuthClientRedirectUri;
 CREATE TABLE OAuthClientRedirectUri (
     id                      integer PRIMARY KEY AUTOINCREMENT,
     client_id               text REFERENCES Client(client_id),
+    uri                    text
+);
+
+CREATE UNIQUE INDEX OAuthClientRedirectUri_uniq_idx ON OAuthClientRedirectUri(client_id, uri);
+
+DROP TABLE IF EXISTS OAuthClientValidFlow;
+CREATE TABLE OAuthClientValidFlow (
+    id                      integer PRIMARY KEY AUTOINCREMENT,
+    client_id               text REFERENCES Client(client_id),
     flow                    text
 );
+
+CREATE UNIQUE INDEX OAuthClientValidFlow_uniq_idx ON OAuthClientValidFlow(client_id, flow);
 
 DROP TABLE IF EXISTS OAuthAuthorization;
 CREATE TABLE OAuthAuthorization (
@@ -73,5 +84,5 @@ CREATE TABLE OAuthAuthorization (
     scope                   text null
 );
 
-CREATE INDEX client_id_userid_idx ON OAuthAuthorization(client_id, userid);
-CREATE INDEX scope_unique_idx ON OAuthAuthorization(client_id, userid, scope);
+CREATE INDEX OAuthAuthorization_client_id_userid_idx ON OAuthAuthorization(client_id, userid);
+CREATE UNIQUE INDEX OAuthAuthorization_scope_unique_idx ON OAuthAuthorization(client_id, userid, scope);

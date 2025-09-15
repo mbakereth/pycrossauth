@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from crossauth_backend.common.interfaces import PartialUser, UserInputFields, UserSecretsInputFields, PartialUserSecrets, UserState, \
     OAuthClient
 import logging
+from nulltype import Null
 
 register_sqlite_datetime()
 
@@ -415,6 +416,12 @@ class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
                 INSERT INTO OAuthClient (client_id, confidential, client_name, client_secret, userid) 
                     VALUES ('3', 1, 'C', 'passC', {id})
             """))
+
+            # create client with secret and user id
+            await conn.execute(text(f"""
+                INSERT INTO OAuthClient (client_id, confidential, client_name, client_secret) 
+                    VALUES ('4', 1, 'C', 'passC')
+            """))
         return EngineAndId(engine, id)
     
     async def test_get_client(self):
@@ -449,3 +456,29 @@ class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("client_secret" in ret and ret["client_secret"], "passC")
         self.assertTrue("userid" in ret)
         self.assertEqual("userid" in ret and ret["userid"], conn.id)
+
+    async def test_get_client_by_name(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_client_by_name("A")
+        self.assertEqual(len(ret), 1)
+        self.assertEqual(ret[0]["client_id"], '1')
+        self.assertTrue("client_secret" in ret[0])
+        self.assertIsNone("client_secret" in ret[0] and ret[0]["client_secret"])
+        self.assertTrue("userid" in ret[0])
+        self.assertIsNone("userid" in ret[0] and ret[0]["userid"])
+
+    async def test_get_client_by_name_user_mitmatch(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_client_by_name("C", conn.id+1)
+        self.assertEqual(len(ret), 0)
+
+    async def test_get_client_by_name_user_null(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_client_by_name("C", Null)
+        self.assertEqual(len(ret), 1)

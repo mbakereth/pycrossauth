@@ -1,6 +1,7 @@
 from crossauth_backend.storage import KeyStorage, KeyDataEntry, \
     UserStorage, UserStorageOptions, UserStorageGetOptions, UserAndSecrets, \
-    OAuthClientStorage, OAuthClientStorageOptions
+    OAuthClientStorage, OAuthClientStorageOptions, \
+        OAuthAuthorizationStorage, OAuthAuthorizationStorageOptions
 from crossauth_backend.common.interfaces import Key, PartialKey, \
     User, PartialUser, UserSecrets, UserInputFields, UserSecretsInputFields, PartialUserSecrets, \
     OAuthClient
@@ -58,12 +59,12 @@ class SqlAlchemyKeyStorage(KeyStorage):
             raise CrossauthError(ErrorCode.InvalidKey)
 
 
-        return self.make_key(row)
+        return self._make_key(row)
 
     def to_dict(self, row : Row[Any], with_relationships:bool=True) -> dict[str,Any]:
         return row._asdict() # type: ignore
 
-    def make_key(self, row: Row[Any]) -> Key:
+    def _make_key(self, row: Row[Any]) -> Key:
         fields = self.to_dict(row)
         value: str
         userid: Union[int, str, NullType] = Null
@@ -236,7 +237,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
             return []
 
         for row in rows:
-            key: Key = self.make_key(row)
+            key: Key = self._make_key(row)
             if self.__userid_foreign_key_column != "userid":
                 key["userid"] = key[self.__userid_foreign_key_column]
                 del key[self.__userid_foreign_key_column]
@@ -426,12 +427,12 @@ class SqlAlchemyUserStorage(UserStorage):
             if (row is not None):
                 relations_fields[join] = self.to_dict(row)
 
-        return self.make_user_and_secrets(user_fields, secrets_fields, relations_fields)
+        return self._make_user_and_secrets(user_fields, secrets_fields, relations_fields)
 
     def to_dict(self, row : Row[Any]) -> dict[str,Any]:
         return row._asdict() # type: ignore
 
-    def make_user_and_secrets(self, user_fields: Dict[str, Any], secrets_fields: Dict[str, Any]|None, relations_fields: Dict[str, Dict[str, Any]]) -> UserAndSecrets:
+    def _make_user_and_secrets(self, user_fields: Dict[str, Any], secrets_fields: Dict[str, Any]|None, relations_fields: Dict[str, Dict[str, Any]]) -> UserAndSecrets:
         id: Union[int, str]
         username: str
         username_normalized: str
@@ -732,7 +733,12 @@ class SqlAlchemyOAuthClientStorageOptions(OAuthClientStorageOptions, total=False
     """ 
     Name of the redirect uri table.  Default `OAuthClientRedirectUri`. 
     """
-    
+
+    userid_foreign_key_column : str
+    """
+    Column name for the userid field in the client table. Default `userid`
+    """
+
 class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
 
 
@@ -741,9 +747,12 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
         self.__client_table = "OAuthClient"
         self.__valid_flow_table = "OAuthClientValidFlow"
         self.__redirect_uri_table = "OAuthClientRedirectUri"
+        self.__userid_foreign_key_column = "userid"
+
         set_parameter("client_table", ParamType.Number, self, options, "OAUTH_CLIENT_TABLE")
         set_parameter("valid_flow_table", ParamType.Number, self, options, "OAUTH_REDIRECTURI_TABLE")
         set_parameter("redirect_uri_table", ParamType.String, self, options, "OAUTH_VALID_FLOW_TABLE")
+        set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
 
         self.__joins : List[str] = []
         set_parameter("joins", ParamType.JsonArray, self, options, "USER_TABLE_JOINS")
@@ -765,16 +774,40 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
         if (field != "client_id" and field != "client_name"):
             raise CrossauthError(ErrorCode.BadRequest, "Invalid get_client_by field " + field)
         query = f"select * from {self.__client_table} where {field} = :field"
-        values = {"field": value}
+        values : Dict[str,Any] = {"field": value}
+        if (userid == Null):
+            query = query + f" AND {self.__userid_foreign_key_column} is NULL"
+        elif (userid is not None):
+            query = query + f" AND {self.__userid_foreign_key_column} = :userid"
+            values["userid"] = userid
         res = await conn.execute(text(query), values)
         clients : List[OAuthClient] = []
         for row in res.mappings():
-            clients.append(self.make_client(row))
+            if ("client_id" not in row):
+                raise CrossauthError(ErrorCode.Configuration, "No client_id in client table")
+            client_id = row["client_id"]
+
+            query = f"select * from {self.__redirect_uri_table} where client_id = :field"
+            values = {"field": client_id}
+            redirect_uri_res = await conn.execute(text(query), values)
+            redirect_uri_mappings : List[RowMapping] = []
+            for redirect_uri_row in redirect_uri_res.mappings():
+                redirect_uri_mappings.append(redirect_uri_row)
+
+            query = f"select * from {self.__valid_flow_table} where client_id = :field"
+            values = {"field": client_id}
+            valid_flow_res = await conn.execute(text(query), values)
+            valid_flow_mappings : List[RowMapping] = []
+            for valid_flow_row in valid_flow_res.mappings():
+                valid_flow_mappings.append(valid_flow_row)
+
+            client = self._make_client(row, redirect_uri_mappings, valid_flow_mappings)
+            clients.append(client)
         if (field == "client_id" and len(clients) == 0):
-            raise CrossauthError(ErrorCode.InvalidClientId, "No client exists with id " + value)
+            raise CrossauthError(ErrorCode.InvalidClientId, "No client exists with " + field + " " + value)
         return clients
 
-    def make_client(self, client_fields: RowMapping) -> OAuthClient:
+    def _make_client(self, client_fields: RowMapping, redirect_uri_fields: List[RowMapping], valid_flow_fields: List[RowMapping]) -> OAuthClient:
         client_id: str
         confidential: bool
         client_name: str
@@ -810,7 +843,9 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
         return client
 
     async def get_client_by_name(self, name: str, userid: str|int|None = None) -> List[OAuthClient]:
-        raise NotImplementedError
+        async with self.engine.begin() as conn:
+            ret = await self.get_client_in_transaction(conn, "client_name", name , userid)
+            return ret
 
     async def get_clients(self, skip: Optional[int] = None, take: Optional[int] = None, userid: str|int|None = None) -> List[OAuthClient]:
         raise NotImplementedError
@@ -823,6 +858,44 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
 
     async def delete_client(self, client_id: str) -> None:
         raise NotImplementedError
+
+####################################
+## OAuthAuthorizationStorage
+
+class SqlAlchemyOAuthAuthorizationStorageOptions(OAuthAuthorizationStorageOptions, total=False):
+    """
+    Optional parameters for :class: SqlAlchemyUserStorage.
+
+    See :func: SqlAlchemyUserStorage__init__ for details
+    """
+
+    azuthorization_table : str
+    """ Name of client table.  Default `OAuthClient` """
+
+    userid_foreign_key_column : str
+    """Name of the user id column in the table. Default userid """
+
+class SqlAlchemyOAuthAuthorizationStorage(OAuthAuthorizationStorage):
+
+
+    def __init__(self, engine : AsyncEngine, options: SqlAlchemyOAuthAuthorizationStorageOptions = {}):
+        self.engine = engine
+        self.__authorization_table = "OAuthAuthorization"
+        self.__userid_foreign_key_column = "userid"
+        set_parameter("authorization_table", ParamType.Number, self, options, "OAUTH_AUTHORIZATION_TABLE")
+        set_parameter("valid_flow_table", ParamType.Number, self, options, "OAUTH_REDIRECTURI_TABLE")
+        set_parameter("__userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
+
+        self.__joins : List[str] = []
+        set_parameter("joins", ParamType.JsonArray, self, options, "USER_TABLE_JOINS")
+
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__authorization_table) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid oauth authorization table name " + self.__authorization_table)
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__userid_foreign_key_column) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid userid foreiggn key column " + self.__userid_foreign_key_column)
+
+#########################
+## SQLite adapters
 
 def adapt_date_iso_real(val : datetime): 
     """Adapt datetime.date to ISO 8601 date."""
