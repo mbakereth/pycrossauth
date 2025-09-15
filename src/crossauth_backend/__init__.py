@@ -26,7 +26,10 @@ from .storage import UserStorageGetOptions, UserStorageOptions, UserStorage, \
     OAuthAuthorizationStorageOptions, OAuthAuthorizationStorage, UserAndSecrets
 
 from .storageimpl.inmemorystorage import InMemoryKeyStorage
-from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeyStorageOptions
+from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeyStorageOptions, \
+    SqlAlchemyUserStorage, SqlAlchemyUserStorageOptions, \
+    SqlAlchemyOAuthClientStorage, SqlAlchemyOAuthClientStorageOptions, \
+    register_sqlite_datetime
 
 from .cookieauth import DoubleSubmitCsrfToken, DoubleSubmitCsrfTokenOptions, SessionCookie, SessionCookieOptions
 from .session import SessionManager, SessionManagerOptions
@@ -52,6 +55,9 @@ __all__ = (
     "OAuthAuthorizationStorageOptions", "OAuthAuthorizationStorage",
     "InMemoryKeyStorage",
     "SqlAlchemyKeyStorage", "SqlAlchemyKeyStorageOptions",
+    "SqlAlchemyUserStorage", "SqlAlchemyUserStorageOptions",
+    "SqlAlchemyOAuthClientStorage", "SqlAlchemyOAuthClientStorageOptions",
+    "register_sqlite_datetime",
     "DoubleSubmitCsrfToken", "DoubleSubmitCsrfTokenOptions", 
     "SessionCookie", "SessionCookieOptions",
     "SessionManager", "SessionManagerOptions",

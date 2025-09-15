@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 import unittest
 from datetime import datetime, timedelta
-from crossauth_backend.storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyUserStorage
+from crossauth_backend.storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyUserStorage, \
+    SqlAlchemyOAuthClientStorage, register_sqlite_datetime
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 import os
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -9,9 +10,11 @@ from sqlalchemy import text, Row
 from typing import Any, NamedTuple
 import json
 from sqlalchemy.ext.asyncio import AsyncEngine
-from crossauth_backend.common.interfaces import PartialUser, UserInputFields, UserSecretsInputFields, PartialUserSecrets, UserState
+from crossauth_backend.common.interfaces import PartialUser, UserInputFields, UserSecretsInputFields, PartialUserSecrets, UserState, \
+    OAuthClient
 import logging
 
+register_sqlite_datetime()
 
 class SqlAlchemyKeyStorageTest(unittest.IsolatedAsyncioTestCase):
 
@@ -182,6 +185,9 @@ class SqlAlchemyKeyStorageTest(unittest.IsolatedAsyncioTestCase):
 
 def to_dict(row : Row[Any], with_relationships:bool=True) -> dict[str,Any]:
     return row._asdict() # type: ignore
+
+###################################
+# UserStorage
 
 class EngineAndId(NamedTuple):
     engine: AsyncEngine
@@ -354,3 +360,92 @@ class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("email" in updated_user and updated_user["email"], "bob1@bob.com")
         self.assertEqual("email_normalized" in updated_user and updated_user["email_normalized"], "bob1@bob.com")
         self.assertEqual("password" in updated_secrets and updated_secrets["password"], "xyz")
+
+######################
+## OAuthClientStorage
+
+class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        logging.basicConfig()
+        logging.getLogger("sqlalchemy").setLevel(logging.ERROR)
+
+
+    async def get_test_conn(self) -> EngineAndId:
+        engine = create_async_engine(
+            os.environ["SQLITE_URL"],
+            echo=False
+        )
+        async with engine.begin() as conn:
+            await conn.execute(text("DELETE from User"))
+            await conn.execute(text("DELETE from UserSecrets"))
+            await conn.execute(text("DELETE from OAuthClient"))
+
+            # create user
+            await conn.execute(text("""
+                INSERT INTO User (username, username_normalized, email, email_normalized) 
+                    VALUES ('bob', 'bob', 'bob@bob.com', 'bob@bob.com')
+            """))
+            res = await conn.execute(text("SELECT id FROM User where username = 'bob'"))
+            row = res.fetchone()
+            if (row is None):
+                raise Exception("Can't get User record I just created")
+            row_dict = to_dict(row)
+            await conn.execute(text(f"""
+                INSERT INTO UserSecrets (userid, password) 
+                    VALUES ({row_dict["id"]}, 'bobPass123')
+            """))
+            id : int = row_dict["id"]
+
+            # create client without secret or user id
+            await conn.execute(text("""
+                INSERT INTO OAuthClient (client_id, confidential, client_name) 
+                    VALUES ('1', 0, 'A')
+            """))
+
+            # create client with secret and without user id
+            await conn.execute(text("""
+                INSERT INTO OAuthClient (client_id, confidential, client_name, client_secret) 
+                    VALUES ('2', 1, 'B', 'passB')
+            """))
+
+            # create client with secret and user id
+            await conn.execute(text(f"""
+                INSERT INTO OAuthClient (client_id, confidential, client_name, client_secret, userid) 
+                    VALUES ('3', 1, 'C', 'passC', {id})
+            """))
+        return EngineAndId(engine, id)
+    
+    async def test_get_client(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_client_by_id("1")
+        self.assertEqual(ret["client_id"], '1')
+        self.assertTrue("client_secret" in ret)
+        self.assertIsNone("client_secret" in ret and ret["client_secret"])
+        self.assertTrue("userid" in ret)
+        self.assertIsNone("userid" in ret and ret["userid"])
+
+    async def test_get_client_with_secret(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_client_by_id("2")
+        self.assertEqual(ret["client_id"], '2')
+        self.assertTrue("client_secret" in ret)
+        self.assertEqual("client_secret" in ret and ret["client_secret"], "passB")
+        self.assertTrue("userid" in ret)
+        self.assertIsNone("userid" in ret and ret["userid"])
+
+    async def test_get_client_with_secret_and_userid(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        client_storage = SqlAlchemyOAuthClientStorage(engine)
+        ret = await client_storage.get_client_by_id("3")
+        self.assertEqual(ret["client_id"], '3')
+        self.assertTrue("client_secret" in ret)
+        self.assertEqual("client_secret" in ret and ret["client_secret"], "passC")
+        self.assertTrue("userid" in ret)
+        self.assertEqual("userid" in ret and ret["userid"], conn.id)

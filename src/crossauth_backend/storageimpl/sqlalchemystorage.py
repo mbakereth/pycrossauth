@@ -1,17 +1,23 @@
 from crossauth_backend.storage import KeyStorage, KeyDataEntry, \
-    UserStorage, UserStorageOptions, UserStorageGetOptions, UserAndSecrets
+    UserStorage, UserStorageOptions, UserStorageGetOptions, UserAndSecrets, \
+    OAuthClientStorage, OAuthClientStorageOptions
 from crossauth_backend.common.interfaces import Key, PartialKey, \
-    User, PartialUser, UserSecrets, UserInputFields, UserSecretsInputFields, PartialUserSecrets
+    User, PartialUser, UserSecrets, UserInputFields, UserSecretsInputFields, PartialUserSecrets, \
+    OAuthClient
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.utils import set_parameter, ParamType
 import json
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Union, TypedDict, cast, Mapping
 from nulltype import Null, NullType
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
-from sqlalchemy import text, Row
+from sqlalchemy import text, Row, RowMapping
 import re
+import sqlite3
+
+###################
+## KeyStorage
 
 class SqlAlchemyKeyStorageOptions(TypedDict, total=False):
     """
@@ -78,6 +84,10 @@ class SqlAlchemyKeyStorage(KeyStorage):
             # SQLite doesn't have datetime fields
             if (type(fields["created"]) == str):
                 created = datetime.strptime(fields["created"], '%Y-%m-%d %H:%M:%S.%f')
+            elif (type(fields["created"]) == int):
+                created = datetime.fromtimestamp(int(fields["created"]))
+            elif (type(fields["expires"]) == float):
+                created = datetime.fromtimestamp(float(fields["created"]))
             else:
                 created = fields["created"]
         else:
@@ -87,8 +97,12 @@ class SqlAlchemyKeyStorage(KeyStorage):
             # SQLite doesn't have datetime fields
             if (type(fields["expires"]) == str):
                 expires = datetime.strptime(fields["expires"], '%Y-%m-%d %H:%M:%S.%f')
+            elif (type(fields["expires"]) == int):
+                expires = datetime.fromtimestamp(int(fields["expires"]))
+            elif (type(fields["expires"]) == float):
+                expires = datetime.fromtimestamp(float(fields["expires"]))
             else:
-                expires = fields["expires"] or Null
+                expires = cast(datetime, fields["expires"])
 
         if "userid" not in fields:
             fields["userid"] = Null
@@ -128,6 +142,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
                 fields.append(field)
                 placeholders.append(":"+field)
                 values[field] = extra_fields[field]
+
         fieldsString = ", ".join(fields)
         placeholdersString = ", ".join(placeholders)
         query = f"insert into {self.__key_table} ({fieldsString}) values ({placeholdersString})"
@@ -300,6 +315,9 @@ class SqlAlchemyKeyStorage(KeyStorage):
             if changed:
                 await self.update_key_in_transaction(conn, {"value": key["value"], "data": json.dumps(data)})
 
+###################
+## UserStorage
+
 class SqlAlchemyUserStorageOptions(UserStorageOptions, total=False):
     """
     Optional parameters for :class: SqlAlchemyUserStorage.
@@ -308,10 +326,10 @@ class SqlAlchemyUserStorageOptions(UserStorageOptions, total=False):
     """
 
     user_table : str
-    """ Name of user table (to Prisma, ie lowercase).  Default `user` """
+    """ Name of user table Default `User` """
 
     user_secrets_table : str
-    """ Name of user secrets table (to Prisma, ie lowercase).  Default `userSecrets` """
+    """ Name of user secrets table (Default `UserSecrets` """
 
     id_column : str
     """ 
@@ -339,19 +357,18 @@ class SqlAlchemyUserStorageOptions(UserStorageOptions, total=False):
     Default true.
     """
 
-
 class SqlAlchemyUserStorage(UserStorage):
 
 
-    def __init__(self, engine : AsyncEngine, options: SqlAlchemyKeyStorageOptions = {}):
+    def __init__(self, engine : AsyncEngine, options: SqlAlchemyUserStorageOptions = {}):
         self.engine = engine
         self.__user_table = "User"
         self.__user_secrets_table = "UserSecrets"
         self.__id_column = "id"
         self.__userid_foreign_key_column = "userid"
         self.__force_id_to_number = True
-        set_parameter("user_table", ParamType.Number, self, options, "USER_STORAGE_TABLE")
-        set_parameter("user_secrets_table", ParamType.Number, self, options, "USER_STORAGE_TABLE")
+        set_parameter("user_table", ParamType.Number, self, options, "USER_TABLE")
+        set_parameter("user_secrets_table", ParamType.Number, self, options, "USER_SECRETS_TABLE")
         set_parameter("id_column", ParamType.String, self, options, "USER_ID_COLUMN")
         set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
         set_parameter("force_id_to_number", ParamType.Boolean, self, options, "USER_FORCE_ID_TO_NUMBER")
@@ -694,3 +711,188 @@ class SqlAlchemyUserStorage(UserStorage):
 
     async def get_users(self, skip: Optional[int] = None, take: Optional[int] = None) -> List[User]:
         raise NotImplementedError
+    
+####################################
+## OAuthClientStorage
+
+class SqlAlchemyOAuthClientStorageOptions(OAuthClientStorageOptions, total=False):
+    """
+    Optional parameters for :class: SqlAlchemyUserStorage.
+
+    See :func: SqlAlchemyUserStorage__init__ for details
+    """
+
+    client_table : str
+    """ Name of client table.  Default `OAuthClient` """
+
+    valid_flow_table : str
+    """ Name of the valid flows table.  Default `OAuthClientValidFlow` """
+
+    redirect_uri_table : str
+    """ 
+    Name of the redirect uri table.  Default `OAuthClientRedirectUri`. 
+    """
+    
+class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
+
+
+    def __init__(self, engine : AsyncEngine, options: SqlAlchemyOAuthClientStorageOptions = {}):
+        self.engine = engine
+        self.__client_table = "OAuthClient"
+        self.__valid_flow_table = "OAuthClientValidFlow"
+        self.__redirect_uri_table = "OAuthClientRedirectUri"
+        set_parameter("client_table", ParamType.Number, self, options, "OAUTH_CLIENT_TABLE")
+        set_parameter("valid_flow_table", ParamType.Number, self, options, "OAUTH_REDIRECTURI_TABLE")
+        set_parameter("redirect_uri_table", ParamType.String, self, options, "OAUTH_VALID_FLOW_TABLE")
+
+        self.__joins : List[str] = []
+        set_parameter("joins", ParamType.JsonArray, self, options, "USER_TABLE_JOINS")
+
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__client_table) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid oauth client table name " + self.__client_table)
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__valid_flow_table) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid user oauth client valid flows table name " + self.__valid_flow_table)
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__redirect_uri_table) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid user oauth client redirect uris table name " + self.__redirect_uri_table)
+
+    async def get_client_by_id(self, client_id: str) -> OAuthClient:
+        async with self.engine.begin() as conn:
+            ret = await self.get_client_in_transaction(conn, "client_id", client_id)
+            return ret[0]
+        
+    async def get_client_in_transaction(self, conn: AsyncConnection, field: str, value: str, userid: Optional[int|str|NullType] = None) -> List[OAuthClient]:
+
+        if (field != "client_id" and field != "client_name"):
+            raise CrossauthError(ErrorCode.BadRequest, "Invalid get_client_by field " + field)
+        query = f"select * from {self.__client_table} where {field} = :field"
+        values = {"field": value}
+        res = await conn.execute(text(query), values)
+        clients : List[OAuthClient] = []
+        for row in res.mappings():
+            clients.append(self.make_client(row))
+        if (field == "client_id" and len(clients) == 0):
+            raise CrossauthError(ErrorCode.InvalidClientId, "No client exists with id " + value)
+        return clients
+
+    def make_client(self, client_fields: RowMapping) -> OAuthClient:
+        client_id: str
+        confidential: bool
+        client_name: str
+        client_secret: str|NullType|None = None
+
+        if "client_id" in client_fields:
+            client_id = client_fields["client_id"]
+        else:
+            raise CrossauthError(ErrorCode.InvalidUsername, "No client id in client table")
+
+        if "confidential" in client_fields:
+            confidential = client_fields["confidential"]
+        else:
+            raise CrossauthError(ErrorCode.InvalidUsername, "No confidential field in client table")
+
+        if "client_name" in client_fields:
+            client_name = client_fields["client_name"]
+        else:
+            raise CrossauthError(ErrorCode.InvalidUsername, "No client_name field in client table")
+
+        if "client_secret" in client_fields:
+            client_secret = client_fields["client_secret"]
+
+        client = cast(OAuthClient, {
+            **client_fields,
+            "client_id": client_id,
+            "confidential": confidential,
+            "client_name": client_name,
+        })
+        if (client_secret is not None):
+            client["client_secret"] = client_secret
+
+        return client
+
+    async def get_client_by_name(self, name: str, userid: str|int|None = None) -> List[OAuthClient]:
+        raise NotImplementedError
+
+    async def get_clients(self, skip: Optional[int] = None, take: Optional[int] = None, userid: str|int|None = None) -> List[OAuthClient]:
+        raise NotImplementedError
+
+    async def create_client(self, client: OAuthClient) -> OAuthClient:
+        raise NotImplementedError
+
+    async def update_client(self, client: OAuthClient) -> None:
+        raise NotImplementedError
+
+    async def delete_client(self, client_id: str) -> None:
+        raise NotImplementedError
+
+def adapt_date_iso_real(val : datetime): 
+    """Adapt datetime.date to ISO 8601 date."""
+    return val.isoformat() 
+
+def adapt_datetime_iso_real(val : datetime): #
+    """Adapt datetime.datetime to timezone-naive ISO 8601 date."""
+    return val.isoformat() #
+
+def adapt_datetime_epoch_real(val : datetime): 
+    """Adapt datetime.datetime to Unix timestamp."""
+    return val.timestamp() 
+
+def convert_date_real(val : str|bytes):
+    """Convert ISO 8601 date to datetime.date object."""
+    if (type(val) == str):
+        return datetime.fromisoformat(val) 
+    return date.fromisoformat(val.decode()) # type: ignore
+
+def convert_datetime_real(val: str|bytes): 
+    """Convert ISO 8601 datetime to datetime.datetime object."""
+    if (type(val) == str):
+        return datetime.fromisoformat(val) 
+    return datetime.fromisoformat(val.decode()) # type: ignore
+
+def convert_timestamp_real(val : float): 
+    """Convert Unix epoch timestamp to datetime.datetime object."""
+    return datetime.fromtimestamp(val) 
+
+def adapt_date_iso_int(val : datetime): 
+    """Adapt datetime.date to ISO 8601 date."""
+    return val.isoformat() 
+
+def adapt_datetime_iso_int(val : datetime): 
+    """Adapt datetime.datetime to timezone-naive ISO 8601 date."""
+    return int(val.isoformat()) 
+
+def adapt_datetime_epoch_int(val : datetime): 
+    """Adapt datetime.datetime to Unix timestamp."""
+    return val.timestamp() 
+
+def convert_date_int(val : bytes|str): 
+    """Convert ISO 8601 date to datetime.date object."""
+    if (type(val) == str):
+        return datetime.fromisoformat(val) 
+    return date.fromisoformat(val.decode())  # type: ignore
+
+def convert_datetime_int(val : bytes|str): 
+    """Convert ISO 8601 datetime to datetime.datetime object."""
+    if (type(val) == str):
+        return datetime.fromisoformat(val) 
+    return datetime.fromisoformat(val.decode())  # type: ignore
+
+def convert_timestamp_int(val : int): 
+    """Convert Unix epoch timestamp to datetime.datetime object."""
+    return datetime.fromtimestamp(int(val)) 
+
+def register_sqlite_datetime():
+    """
+    SQLite has no date column types.  As of Python 3.12, the default adapters
+    which made this seamless don't work.
+
+    If you don't have your own adapters and you want to store dates etc as
+    real, call this function to register the ones supplied with Crossauth
+    and declare your columns as date/datetime/timestamp as normal.
+    """
+    sqlite3.register_adapter(date, adapt_date_iso_real) # type: ignore
+    sqlite3.register_adapter(datetime, adapt_datetime_iso_real) # type: ignore
+    sqlite3.register_adapter(datetime, adapt_datetime_epoch_real) # type: ignore
+
+    sqlite3.register_converter("date", convert_date_real) # type: ignore
+    sqlite3.register_converter("datetime", convert_datetime_real) # type: ignore
+    sqlite3.register_converter("timestamp", convert_timestamp_real) # type: ignore
