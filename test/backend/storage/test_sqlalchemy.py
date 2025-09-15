@@ -237,3 +237,29 @@ class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
         user_storage = SqlAlchemyUserStorage(engine)
         ret = await user_storage.get_user_by_email("Bob@bob.com")
         self.assertEqual(ret["user"]["id"], conn.id)
+
+    async def test_delete_user_by_username(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+        await user_storage.delete_user_by_username("Bob")
+        found = False
+        try:
+            await user_storage.get_user_by_id(conn.id)
+            found = True
+        except:
+            pass
+        self.assertEqual(found, False)
+
+    async def test_delete_user_by_id(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine)
+        await user_storage.delete_user_by_id(conn.id)
+        found = False
+        try:
+            await user_storage.get_user_by_id(conn.id)
+            found = True
+        except:
+            pass
+        self.assertEqual(found, False)

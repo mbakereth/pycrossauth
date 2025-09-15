@@ -32,6 +32,10 @@ class SqlAlchemyKeyStorage(KeyStorage):
         self.__userid_foreign_key_column = "userid"
         set_parameter("key_table", ParamType.Number, self, options, "KEY_STORAGE_TABLE")
         set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__key_table) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid key table name " + self.__key_table)
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__userid_foreign_key_column) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid key userid foreign key name " + self.__userid_foreign_key_column)
 
     async def get_key(self, key: str) -> Key:
 
@@ -355,6 +359,15 @@ class SqlAlchemyUserStorage(UserStorage):
         self.__joins : List[str] = []
         set_parameter("joins", ParamType.JsonArray, self, options, "USER_TABLE_JOINS")
 
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__user_table) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid user table name " + self.__user_table)
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__user_secrets_table) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid user secrets table name " + self.__user_secrets_table)
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__userid_foreign_key_column) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid user userid foreign key name " + self.__userid_foreign_key_column)
+        if (re.match(r'^[A-Za-z0-9_]+$', self.__id_column) == None):
+            raise CrossauthError(ErrorCode.Configuration, "Invalid user user id name " + self.__id_column)
+
     async def get_user_by(self, field: str, value: Union[str, int], options: UserStorageGetOptions = {}) -> UserAndSecrets:
         async with self.engine.begin() as conn:
             ret = await self.get_user_by_in_transaction(conn, field, value)
@@ -522,10 +535,18 @@ class SqlAlchemyUserStorage(UserStorage):
         raise NotImplementedError
 
     async def delete_user_by_username(self, username: str) -> None:
-        raise NotImplementedError
+        query = f"delete from {self.__user_table} where username_normalized = :value"
+        values = {"value": self.normalize(username)}
+        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        async with self.engine.begin() as conn:
+            await conn.execute(text(query), values) 
 
     async def delete_user_by_id(self, id: str|int) -> None:
-        raise NotImplementedError
+        query = f"delete from {self.__user_table} where {self.__id_column} = :value"
+        values = {"value": id}
+        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        async with self.engine.begin() as conn:
+            await conn.execute(text(query), values) 
 
     async def get_users(self, skip: Optional[int] = None, take: Optional[int] = None) -> List[User]:
         raise NotImplementedError
