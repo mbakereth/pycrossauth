@@ -19,7 +19,7 @@ from .oauth.tokenconsumer import EncryptionKey, \
 
 from .utils import set_parameter, ParamType, MapGetter
 
-from .crypto import Crypto
+from .crypto import Crypto, HashOptions
 
 from .storage import UserStorageGetOptions, UserStorageOptions, UserStorage, \
     KeyStorage, KeyDataEntry, \
@@ -36,8 +36,12 @@ from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeySt
 from .cookieauth import DoubleSubmitCsrfToken, DoubleSubmitCsrfTokenOptions, SessionCookie, SessionCookieOptions
 from .session import SessionManager, SessionManagerOptions
 
+from .auth import Authenticator, AuthenticationParameters, AuthenticationOptions, AuthenticatorCapabilities, PasswordAuthenticator
+
+from .authenticators.passwordauth import default_password_validator
+
 # Version of realpython-reader package
-__version__ = "0.0.3"
+__version__ = "0.0.9"
 
 __all__ = (
     "ErrorCode", "CrossauthError",
@@ -51,7 +55,7 @@ __all__ = (
     "OpenIdConfiguration", "Jwks", "DEFAULT_OIDCCONFIG", "AuthorizeQueryType", "TokenBodyType",
     "EncryptionKey", "OAuthTokenConsumerOptions", "OAuthTokenConsumer",
     "set_parameter", "ParamType", "MapGetter",
-    "Crypto",
+    "Crypto", "HashOptions",
     "UserStorageGetOptions", "UserStorageOptions", "UserStorage", 
     "KeyStorage", 
     "OAuthClientStorageOptions", "OAuthClientStorage", 
@@ -64,5 +68,8 @@ __all__ = (
     "DoubleSubmitCsrfToken", "DoubleSubmitCsrfTokenOptions", 
     "SessionCookie", "SessionCookieOptions",
     "SessionManager", "SessionManagerOptions",
-    "UserAndSecrets"
+    "UserAndSecrets",
+    "Authenticator", "AuthenticationParameters", "AuthenticationOptions", "AuthenticatorCapabilities", "PasswordAuthenticator",
+
+    "default_password_validator"
 )

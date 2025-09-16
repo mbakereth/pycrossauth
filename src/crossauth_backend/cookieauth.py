@@ -137,7 +137,7 @@ class DoubleSubmitCsrfToken:
             "secure": self.secure,
             "httpOnly": self.httpOnly}
         if (self.domain is not None): options["domain"] = self.domain
-        options["sameSite"] = self.sameSite
+        options["sameSite"] = self.sameSite # type: ignore
 
         return Cookie(name=self.cookie_name, value=cookie_value, options=options)
 
@@ -443,7 +443,7 @@ class SessionCookie:
             options['expires'] = session_key['expires'] # type: ignore
         if self.path:
             options['path'] = self.path
-        options['sameSite'] = self.sameSite
+        options['sameSite'] = self.sameSite # type: ignore
         if self.httpOnly:
             options['httpOnly'] = self.httpOnly
         if self.secure:

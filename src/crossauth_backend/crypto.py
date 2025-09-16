@@ -132,6 +132,7 @@ class Crypto:
 
         :return: :class:`PasswordHash` object containing the deecoded hash components
         """
+
         parts = hash.split(':')
         if len(parts) != 7:
             raise CrossauthError(ErrorCode.InvalidHash)

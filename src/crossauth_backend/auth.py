@@ -10,6 +10,7 @@ class AuthenticationParameters(UserSecretsInputFields, total=False):
     """
 
     otp: str
+    password: str
 
 class AuthenticationOptions(TypedDict, total=False):
     """

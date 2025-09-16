@@ -34,6 +34,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
 
 
     def __init__(self, engine : AsyncEngine, options: SqlAlchemyKeyStorageOptions = {}):
+        super().__init__()
         self.__key_table = "Key"
         self.engine = engine
         self.__userid_foreign_key_column = "userid"
