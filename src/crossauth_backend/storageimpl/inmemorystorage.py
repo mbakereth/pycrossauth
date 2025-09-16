@@ -1,15 +1,18 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from crossauth_backend.storage import KeyStorage, KeyDataEntry, UserStorage, \
-    UserStorageOptions, UserStorageGetOptions, UserAndSecrets
+    UserStorageOptions, UserStorageGetOptions, UserAndSecrets, \
+    OAuthClientStorage, OAuthClientStorageOptions, \
+        OAuthAuthorizationStorage, OAuthAuthorizationStorageOptions
 from crossauth_backend.common.interfaces import Key, PartialKey, \
     User, UserInputFields, UserSecrets, UserSecretsInputFields, UserState, \
     PartialUser, PartialUserSecrets, \
+    OAuthClient, PartialOAuthClient, \
     optional_not_equals
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 
 import json
-from typing import Dict, List, Optional, Union, Mapping, Any
+from typing import Dict, List, Optional, Union, Mapping, Any, cast
 from datetime import datetime
 from nulltype import Null, NullType
 
@@ -311,3 +314,133 @@ class InMemoryUserStorage(UserStorage):
                 if (field in secrets):
                     stored_secrets[field] = secrets[field]
 
+###########################
+# OAuthClientStorage
+
+class InMemoryOAuthClientStorage(OAuthClientStorage):
+    """
+    Implementation of :class:`KeyStorage` where keys stored in memory.  Intended for testing.
+    """
+
+    def __init__(self, options : OAuthClientStorageOptions = {}):
+        super().__init__(options)
+        self._clients_by_id : Dict[str, OAuthClient] = {}
+        self._clients_by_name : Dict[str, List[OAuthClient]] = {}
+
+    async def get_client_by_id(self, client_id: str) -> OAuthClient:
+        return self._clients_by_id[client_id]
+    
+    async def get_client_by_name(self, name: str, userid: str|int|None|NullType = None) -> List[OAuthClient]:
+        if (name not in self._clients_by_name):
+            return []
+        all_by_name = self._clients_by_name[name]
+        ret : List[OAuthClient] = []
+        for client in all_by_name:
+            if (userid is None):
+                ret.append(client)
+            elif (userid == Null):
+                if ("userid" in client and client["userid"] is None):
+                    ret.append(client)
+            else:
+                if ("userid" in client and client["userid"] == userid):
+                    ret.append(client)
+        return ret
+    
+    async def get_clients(self, skip: Optional[int] = None, take: Optional[int] = None, userid: str|int|None|NullType = None) -> List[OAuthClient]:
+        client_ids = list(self._clients_by_id)
+        client_ids.sort()
+        if skip is None:
+            skip = 0
+        if (take is None):
+            take = 20
+        ret : List[OAuthClient] = []
+        skipped = 0
+        matches = False
+        for client_id in client_ids:
+            client = self._clients_by_id[client_id]
+            matches = False
+            if (userid is None):
+                matches = True
+            elif (userid == Null and "userid" in client and client["userid"] == None):
+                matches = True
+            elif ("userid" in client and client["userid"] == userid):
+                matches = True
+            if (matches):
+                if (skipped >= skip):
+                    ret.append(client)
+                    if (len(ret) >= take):
+                        break
+                else:
+                    skipped += 1
+
+        return ret
+
+    async def create_client(self, client: OAuthClient) -> OAuthClient:
+        new_client : OAuthClient = cast(OAuthClient, {
+            "client_secret": None,
+            "userid": None,
+            **client,
+        })
+        self._clients_by_id[client["client_id"]] = new_client
+        if (client["client_name"] not in self._clients_by_name):
+            self._clients_by_name[client["client_name"]] = [new_client]
+        else:
+            l = self._clients_by_name[client["client_name"]]
+            l.append(new_client)
+        return new_client
+
+    async def update_client(self, client: PartialOAuthClient) -> None:
+        if ("client_id" not in client):
+            raise CrossauthError(ErrorCode.InvalidClientId, "Must give client_id when updating client")
+        existing_client = self._clients_by_id[client["client_id"]]
+        for key in client.keys():
+            existing_client[key] = client[key]
+
+    async def delete_client(self, client_id: str) -> None:
+        if (client_id not in self._clients_by_id):
+            return
+        client = self._clients_by_id[client_id]
+        if (client["client_name"] in self._clients_by_name):
+            client_list = self._clients_by_name[client["client_name"]]
+            for i in range(len(client_list)):
+                if client_list[i]["client_id"] == client_id:
+                    del client_list[i]
+                    break
+        del self._clients_by_id[client_id]
+
+###########################
+# OAuthAuthorizationStorage
+
+class InMemoryOAuthAuthorizationStorage(OAuthAuthorizationStorage):
+    """
+    Implementation of :class:`KeyStorage` where keys stored in memory.  Intended for testing.
+    """
+
+    def __init__(self, options : OAuthAuthorizationStorageOptions = {}):
+        super().__init__(options)
+        self._scopes_by_client_id : Dict[str, Dict[str, List[str|None]]] = {}
+
+    async def get_authorizations(self, client_id: str, userid: str|int|None = None) -> List[Optional[str]]:
+        if (client_id not in self._scopes_by_client_id):
+            return []
+        all_scopes = self._scopes_by_client_id[client_id]
+        ret : List[str|None] = []
+        if (userid is None):
+            userid = ""
+        else:
+            userid = str(userid)
+        if (userid in all_scopes):
+            scopes = all_scopes[userid]
+            ret = scopes
+
+        return ret
+    
+    async def update_authorizations(self, client_id: str, userid: str|int|None, authorizations: List[str|None]) -> None:
+        if (userid is None):
+            userid = ""
+        by_client_id : Dict[str, List[str|None]] = {}
+        if (client_id not in self._scopes_by_client_id):            
+            self._scopes_by_client_id[client_id] = by_client_id
+        else:
+            by_client_id = self._scopes_by_client_id[client_id]
+        by_client_id[str(userid)] = authorizations

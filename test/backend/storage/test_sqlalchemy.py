@@ -427,7 +427,7 @@ class SqlAlchemyClientStorageTest(unittest.IsolatedAsyncioTestCase):
                     VALUES ('4', 1, 'C', 'passC')
             """))
 
-            # create client with flows and erdirect uris
+            # create client with flows and redirect uris
             await conn.execute(text("""
                 INSERT INTO OAuthClient (client_id, confidential, client_name) 
                     VALUES ('5', 1, 'D')
@@ -658,7 +658,7 @@ class SqlAlchemyOAuthAutorizationsTest(unittest.IsolatedAsyncioTestCase):
         conn = await self.get_test_conn()
         engine = conn.engine
         client_storage = SqlAlchemyOAuthAuthorizationStorage(engine)
-        await client_storage.update_authorizations("1", Null, ["write", "x"])
+        await client_storage.update_authorizations("1", None, ["write", "x"])
         ret = await client_storage.get_authorizations("1")
         self.assertEqual(len(ret), 2)
         self.assertIn(ret[0], ["write", "x"])

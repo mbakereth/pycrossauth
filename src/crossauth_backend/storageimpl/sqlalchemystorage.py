@@ -851,7 +851,10 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
             "client_name": client_name,
         })
         if (client_secret is not None):
-            client["client_secret"] = client_secret
+            if (type(client_secret) == NullType):
+                client["client_secret"] = None
+            else:
+                client["client_secret"] = client_secret  # type: ignore
 
         client["redirect_uri"] = []
         for row in redirect_uri_fields:
@@ -865,12 +868,12 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
 
         return client
 
-    async def get_client_by_name(self, name: str, userid: str|int|None = None) -> List[OAuthClient]:
+    async def get_client_by_name(self, name: str, userid: str|int|None|NullType = None) -> List[OAuthClient]:
         async with self.engine.begin() as conn:
             ret = await self.get_client_in_transaction(conn, "client_name", name , userid)
             return ret
 
-    async def get_clients(self, skip: Optional[int] = None, take: Optional[int] = None, userid: str|int|None = None) -> List[OAuthClient]:
+    async def get_clients(self, skip: Optional[int] = None, take: Optional[int] = None, userid: str|int|None|NullType = None) -> List[OAuthClient]:
         async with self.engine.begin() as conn:
             ret = await self.get_client_in_transaction(conn, None, None, userid, skip, take)
             return ret
@@ -1053,7 +1056,7 @@ class SqlAlchemyOAuthAuthorizationStorage(OAuthAuthorizationStorage):
 
     
     
-    async def update_authorizations(self, client_id: str, userid: str|int|NullType, authorizations: List[str|NullType]) -> None:
+    async def update_authorizations(self, client_id: str, userid: str|int|None, authorizations: List[str|None]) -> None:
         try :
             query: str = f"DELETE FROM {self.__authorization_table} WHERE client_id = :client_id"
             values : dict[str,Any] = {"client_id": client_id}

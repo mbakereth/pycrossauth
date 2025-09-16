@@ -504,7 +504,7 @@ class OAuthClientStorage(ABC):
         pass
 
     @abstractmethod
-    async def get_client_by_name(self, name: str, userid: str|int|None = None) -> List[OAuthClient]:
+    async def get_client_by_name(self, name: str, userid: str|int|None|NullType = None) -> List[OAuthClient]:
         """
         Returns the matching client in the storage by friendly name or
         throws an exception if it doesn't exist.
@@ -521,7 +521,7 @@ class OAuthClientStorage(ABC):
         pass
 
     @abstractmethod
-    async def get_clients(self, skip: Optional[int] = None, take: Optional[int] = None, userid: str|int|None = None) -> List[OAuthClient]:
+    async def get_clients(self, skip: Optional[int] = None, take: Optional[int] = None, userid: str|int|None|NullType = None) -> List[OAuthClient]:
         """
         Returns all clients in alphabetical order of client name.
 
@@ -612,7 +612,7 @@ class OAuthAuthorizationStorage(ABC):
         pass
 
     @abstractmethod
-    async def update_authorizations(self, client_id: str, userid: str|int|NullType, authorizations: List[str|NullType]) -> None:
+    async def update_authorizations(self, client_id: str, userid: str|int|None, authorizations: List[str|None]) -> None:
         """
         Saves a new set of authorizations for the given client and optionally user.
 

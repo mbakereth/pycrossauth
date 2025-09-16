@@ -26,7 +26,8 @@ from .storage import UserStorageGetOptions, UserStorageOptions, UserStorage, \
     OAuthClientStorageOptions, OAuthClientStorage, \
     OAuthAuthorizationStorageOptions, OAuthAuthorizationStorage, UserAndSecrets
 
-from .storageimpl.inmemorystorage import InMemoryKeyStorage
+from .storageimpl.inmemorystorage import InMemoryKeyStorage, InMemoryUserStorage, \
+    InMemoryOAuthClientStorage, InMemoryOAuthAuthorizationStorage
 from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeyStorageOptions, \
     SqlAlchemyUserStorage, SqlAlchemyUserStorageOptions, \
     SqlAlchemyOAuthClientStorage, SqlAlchemyOAuthClientStorageOptions, \
@@ -55,7 +56,7 @@ __all__ = (
     "KeyStorage", 
     "OAuthClientStorageOptions", "OAuthClientStorage", 
     "OAuthAuthorizationStorageOptions", "OAuthAuthorizationStorage",
-    "InMemoryKeyStorage",
+    "InMemoryKeyStorage", "InMemoryUserStorage", "InMemoryOAuthClientStorage", "InMemoryOAuthAuthorizationStorage",
     "SqlAlchemyKeyStorage", "SqlAlchemyKeyStorageOptions",
     "SqlAlchemyUserStorage", "SqlAlchemyUserStorageOptions",
     "SqlAlchemyOAuthClientStorage", "SqlAlchemyOAuthClientStorageOptions",
