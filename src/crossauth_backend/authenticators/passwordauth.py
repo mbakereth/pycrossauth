@@ -2,7 +2,7 @@
 from crossauth_backend.auth import PasswordAuthenticator, AuthenticationOptions, AuthenticationParameters
 from crossauth_backend.storage import UserStorage
 from crossauth_backend.utils import set_parameter, ParamType
-from crossauth_backend.common.interfaces import UserInputFields, UserSecretsInputFields, User, Key
+from crossauth_backend.common.interfaces import UserInputFields, UserSecretsInputFields, User, Key, UserState
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.crypto import Crypto, HashOptions
 from crossauth_backend.common.logger import CrossauthLogger, j
@@ -115,11 +115,11 @@ class LocalPasswordAuthenticator(PasswordAuthenticator):
             username = user["username"] if user is not None else "Unknown"
             CrossauthLogger.logger().debug(j({"msg": "Invalid password hash", "user": username}))
             raise CrossauthError(ErrorCode.PasswordInvalid)
-        if user is not None and user['state'] == "awaitingtwofactorsetup":
+        if user is not None and user['state'] == UserState.awaiting_two_factor_setup:
             raise CrossauthError(ErrorCode.TwoFactorIncomplete)
-        if user is not None and user['state'] == "awaitingemailverification":
+        if user is not None and user['state'] == UserState.awaiting_email_verification:
             raise CrossauthError(ErrorCode.EmailNotVerified)
-        if user is not None and user['state'] == "deactivated":
+        if user is not None and user['state'] == UserState.disabled:
             raise CrossauthError(ErrorCode.UserNotActive)
 
     def validate_secrets(self, params: AuthenticationParameters) -> List[str]:

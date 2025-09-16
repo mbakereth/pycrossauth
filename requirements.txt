@@ -11,3 +11,5 @@ qrcode[pil]
 types-qrcode
 jwcrypto
 aiosqlite
+ldap3
+types-ldap3

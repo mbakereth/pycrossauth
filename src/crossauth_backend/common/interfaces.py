@@ -1,5 +1,5 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
-from typing import Any, Dict, Optional, TypedDict, NotRequired, Mapping
+from typing import Any, Dict, Optional, TypedDict, NotRequired, Mapping, List
 import json
 from datetime import datetime
 from nulltype import NullType
@@ -242,12 +242,12 @@ class OAuthClient(TypedDict):
     a str or `undefined`.
     """
 
-    redirect_uri : list[str]
+    redirect_uri : List[str]
     """
     An array of value redirect URIs for the client.
     """
 
-    valid_flow : list[str]
+    valid_flow : List[str]
     """
     An array of OAuth flows allowed for this client.  
     
@@ -299,12 +299,12 @@ class PartialOAuthClient(TypedDict, total=False):
     a str or `undefined`.
     """
 
-    redirect_uri : list[str]
+    redirect_uri : List[str]
     """
     An array of value redirect URIs for the client.
     """
 
-    valid_flow : list[str]
+    valid_flow : List[str]
     """
     An array of OAuth flows allowed for this client.  
     
@@ -324,6 +324,12 @@ class PartialOAuthClient(TypedDict, total=False):
     a str or number (depending on the ID type in your user storage)
     or `undefined`.
     """
+
+class LdapUser(TypedDict):
+    dn: str
+    """ The user's dn in LDAP """
+
+    uid : NotRequired[str|List[str]]
 
 class UserState:
     """

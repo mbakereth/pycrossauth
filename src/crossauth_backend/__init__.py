@@ -7,7 +7,7 @@ from .common.interfaces import Key, PartialKey, \
     UserInputFields, User, \
     UserSecretsInputFields, UserSecrets, UserState, KeyPrefix, ApiKey, \
     PartialUserInputFields, PartialUser, PartialUserSecrets, \
-    OAuthClient, PartialOAuthClient
+    OAuthClient, PartialOAuthClient, LdapUser
 
 from .oauth.wellknown import TokenEndpointAuthMethod, ResponseMode, \
     GrantType, SubjectType, ClaimType, \
@@ -32,13 +32,15 @@ from .storageimpl.sqlalchemystorage import SqlAlchemyKeyStorage, SqlAlchemyKeySt
     SqlAlchemyUserStorage, SqlAlchemyUserStorageOptions, \
     SqlAlchemyOAuthClientStorage, SqlAlchemyOAuthClientStorageOptions, \
     register_sqlite_datetime
+from .storageimpl.ldapstorage import default_create_user_dn, LdapUserStorage, LdapUserStorageOptions
 
 from .cookieauth import DoubleSubmitCsrfToken, DoubleSubmitCsrfTokenOptions, SessionCookie, SessionCookieOptions
 from .session import SessionManager, SessionManagerOptions
 
 from .auth import Authenticator, AuthenticationParameters, AuthenticationOptions, AuthenticatorCapabilities, PasswordAuthenticator
 
-from .authenticators.passwordauth import default_password_validator
+from .authenticators.passwordauth import default_password_validator, LocalPasswordAuthenticator, LocalPasswordAuthenticatorOptions
+from .authenticators.ldapauth import LdapAuthenticator, LdapAuthenticatorOptions
 
 # Version of realpython-reader package
 __version__ = "0.0.9"
@@ -47,7 +49,7 @@ __all__ = (
     "ErrorCode", "CrossauthError",
     "CrossauthLogger", "j",
     "JWT",
-    "Key", "PartialKey", "KeyDataEntry", 
+    "Key", "PartialKey", "KeyDataEntry", "LdapUser",
     "OAuthClient", "PartialOAuthClient",
     "UserInputFields", "User", "UserSecretsInputFields", "UserSecrets", "UserState", "KeyPrefix", "ApiKey",
     "PartialUserInputFields", "PartialUser", "PartialUserSecrets",
@@ -64,6 +66,7 @@ __all__ = (
     "SqlAlchemyKeyStorage", "SqlAlchemyKeyStorageOptions",
     "SqlAlchemyUserStorage", "SqlAlchemyUserStorageOptions",
     "SqlAlchemyOAuthClientStorage", "SqlAlchemyOAuthClientStorageOptions",
+    "default_create_user_dn", "LdapUserStorage", "LdapUserStorageOptions",
     "register_sqlite_datetime",
     "DoubleSubmitCsrfToken", "DoubleSubmitCsrfTokenOptions", 
     "SessionCookie", "SessionCookieOptions",
@@ -71,5 +74,6 @@ __all__ = (
     "UserAndSecrets",
     "Authenticator", "AuthenticationParameters", "AuthenticationOptions", "AuthenticatorCapabilities", "PasswordAuthenticator",
 
-    "default_password_validator"
+    "default_password_validator", "LocalPasswordAuthenticator", "LocalPasswordAuthenticatorOptions",
+    "LdapAuthenticator", "LdapAuthenticatorOptions",
 )
