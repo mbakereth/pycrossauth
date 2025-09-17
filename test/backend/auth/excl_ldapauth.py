@@ -2,7 +2,7 @@ import unittest
 from crossauth_backend.authenticators.ldapauth import LdapAuthenticator
 from crossauth_backend.storageimpl.ldapstorage import LdapUserStorage
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryUserStorage
-from crossauth_backend.common.interfaces import UserState
+from crossauth_backend.common.interfaces import UserState, UserInputFields
 import os
 from typing import NamedTuple, List
 
@@ -43,3 +43,53 @@ class default_password_validator_test(unittest.IsolatedAsyncioTestCase):
             {"password": ldap.password})
         user_and_secrets = await ldap_storage.get_user_by_username(ldap.username)
         await auth.authenticate_user(user_and_secrets["user"], {}, {"password": ldap.password});
+
+    async def test_authenticateUserInLdapNotInLocal(self):
+        ldap = get_auth()
+
+        local_storage = InMemoryUserStorage()
+        ldap_storage = LdapUserStorage(local_storage, {
+            "ldap_urls": ldap.ldap_urls,
+            "ldap_user_search_base": ldap.ldap_user_search_base,
+            "ldap_username_attribute": ldap.ldap_username_attribute,
+        })
+        ok = False
+        try:
+            auth = LdapAuthenticator(ldap_storage, {
+            })
+            user : UserInputFields = {
+                "username": ldap.username,
+                "state": UserState.active,
+                "email": ldap.email,
+                "factor1": "ldap",
+            }
+            await auth.authenticate_user(user, {}, {"password": ldap.password});
+            user_and_secrets = await ldap_storage.get_user_by_username(ldap.username)
+            self.assertEqual("email" in  user_and_secrets["user"] and user_and_secrets["user"]["email"], ldap.email)
+            ok = True
+        except:
+            pass
+        
+        self.assertFalse(ok)
+
+    async def test_authenticateUserAutoCreate(self):
+        ldap = get_auth()
+
+        local_storage = InMemoryUserStorage()
+        ldap_storage = LdapUserStorage(local_storage, {
+            "ldap_urls": ldap.ldap_urls,
+            "ldap_user_search_base": ldap.ldap_user_search_base,
+            "ldap_username_attribute": ldap.ldap_username_attribute,
+        })
+        auth = LdapAuthenticator(ldap_storage, {
+            "ldap_auto_create_account": True,
+        })
+        user : UserInputFields = {
+            "username": ldap.username,
+            "state": UserState.active,
+            "email": ldap.email,
+            "factor1": "ldap",
+        }
+        await auth.authenticate_user(user, {}, {"password": ldap.password});
+        user_and_secrets = await ldap_storage.get_user_by_username(ldap.username)
+        self.assertEqual("email" in  user_and_secrets["user"] and user_and_secrets["user"]["email"], ldap.email)
