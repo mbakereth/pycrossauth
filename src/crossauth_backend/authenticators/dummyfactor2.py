@@ -4,7 +4,9 @@ from crossauth_backend.common.interfaces import UserInputFields, UserSecretsInpu
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 
 from typing import List, Optional, Dict, Any
-from datetime import timedelta, datetime, time
+from datetime import timedelta, datetime
+import time
+import re
 
 class DummyFactor2AuthenticatorOptions(AuthenticationOptions, total=False):
     """
@@ -33,7 +35,7 @@ class DummyFactor2Authenticator(PasswordAuthenticator):
 
         """
 
-        super().__init__(options)
+        super().__init__({"friendly_name": "Dummy Factor2", **options})
 
         self._code = code
 
@@ -50,7 +52,7 @@ class DummyFactor2Authenticator(PasswordAuthenticator):
             "username": user["username"],
             "factor2": self.factor_name
         }
-        session_data = {
+        session_data : Dict[str,str|int] = {
             "username": user["username"],
             "factor2": self.factor_name,
             "expiry": expiry,
@@ -68,9 +70,12 @@ class DummyFactor2Authenticator(PasswordAuthenticator):
             
         :return Dictionary with user_data, secrets, and new_session_data, or None
         """
+
+        if ("data" not in session_key):
+            raise CrossauthError(ErrorCode.InvalidKey, "2FA data not found in session")
         # const data = getJsonData(sessionKey)["2fa"];
         # const data = KeyStorage.decodeData(sessionKey.data)["2fa"];
-        data = KeyStorage.decode_data(session_key.data)["2fa"]
+        data = KeyStorage.decode_data(session_key["data"])["2fa"]
         
         # const otp = this.code;
         otp = self.code
@@ -93,11 +98,12 @@ class DummyFactor2Authenticator(PasswordAuthenticator):
         }
     
     def mfa_type(self) -> str:
-        pass
-
-    def mfa_channel(self) -> str:
         """ Returns `oob` """
         return "oob"
+
+    def mfa_channel(self) -> str:
+        """ Returns `email` """
+        return "email"
 
     async def authenticate_user(self, user: UserInputFields|None, secrets: UserSecretsInputFields, params: AuthenticationParameters) -> None:
         """
@@ -113,13 +119,13 @@ class DummyFactor2Authenticator(PasswordAuthenticator):
                     
         :raise CrossauthError: with ErrorCode `InvalidToken` or `Expired`.
         """
-        if ("otp" not in params or params["otp"] == "" or "otp" not in secrets or secrets["otp"]):
+        if ("otp" not in params or params["otp"] == "" or "otp" not in secrets or secrets["otp"] == ""):
             raise CrossauthError(ErrorCode.InvalidToken, "Missing code")
         if params["otp"] != secrets["otp"]:
             raise CrossauthError(ErrorCode.InvalidToken, "Invalid code")
         
         now = int(time.time() * 1000)  # Get current time in milliseconds
-        if not secrets.expiry or now > secrets.expiry:
+        if "expiry" not in secrets or now > secrets["expiry"]:
             raise CrossauthError(ErrorCode.Expired, "Token has expired")
 
     async def create_persistent_secrets(self, 
