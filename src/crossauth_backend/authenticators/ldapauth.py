@@ -36,7 +36,7 @@ class LdapAuthenticator(PasswordAuthenticator):
 
         """
 
-        super().__init__(options)
+        super().__init__({"friendly_name": "LDAP", **options})
 
         self.__ldap_auto_create_account : bool = False
         self.__ldap_storage : LdapUserStorage = ldap_storage
