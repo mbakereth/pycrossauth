@@ -1,5 +1,4 @@
 import unittest
-import unittest.mock
 from crossauth_backend.authenticators.totpauth import TotpAuthenticator
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryUserStorage
 from crossauth_backend.common.interfaces import UserState, UserInputFields, UserSecretsInputFields, Key
