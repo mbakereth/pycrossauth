@@ -6,7 +6,6 @@ from crossauth_backend.common.error import CrossauthError, ErrorCode
 from typing import List, Optional, Dict, Any
 from datetime import timedelta, datetime
 import time
-import re
 
 class DummyFactor2AuthenticatorOptions(AuthenticationOptions, total=False):
     """
@@ -173,26 +172,3 @@ class DummyFactor2Authenticator(PasswordAuthenticator):
     def validate_secrets(self, params: AuthenticationParameters) -> List[str]:
         """ Nothing to do for this class.  Returns empty set """
         return []
-
-    @staticmethod
-    def is_email_valid(email: str) -> bool:
-        """
-        Returns whether or not the passed email has a valid form.
-        :param email the email address to validate
-        :return true if it is valid. false otherwise
-        """
-        return bool(re.match(
-            r'^(([^<>()[\]\.,;:\s@"]+(\.[^<>()[\]\.,;:\s@"]+)*)|.(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$',
-            str(email).lower()
-        ))
-    
-    @staticmethod
-    def zero_pad(num: int, places: int) -> str:
-        """
-        Takles a number and turns it into a zero-padded string
-        :param num: number ot pad
-        :param places: total number of required digits
-        :returns: zero-padded string
-        """
-        zero = places - len(str(num)) + 1
-        return "0" * (zero if zero > 0 else 0) + str(num)

@@ -190,7 +190,7 @@ class OAuthTokenConsumer:
         set_parameter("jwt_secret_key_file", ParamType.String, self, options, "JWT_SECRET_KEY_FILE")
         set_parameter("jwt_secret_key", ParamType.String, self, options, "JWT_SECRET_KEY")
         set_parameter("jwt_public_key", ParamType.String, self, options, "JWT_PUBLIC_KEY")
-        set_parameter("clock_tolerance", ParamType.Number, self, options, "OAUTH_CLOCK_TOLERANCE")
+        set_parameter("clock_tolerance", ParamType.Integer, self, options, "OAUTH_CLOCK_TOLERANCE")
         set_parameter("persist_access_token", ParamType.Boolean, self, options, "OAUTH_PERSIST_ACCESS_TOKEN")
 
         if self._jwt_public_key and not self._jwt_key_type:

@@ -15,6 +15,7 @@ class ParamType(Enum):
 
     String = auto()
     Number = auto()
+    Integer = auto()
     Boolean = auto()
     Json = auto()
     JsonArray = auto()
@@ -52,6 +53,8 @@ def set_from_env(instance: Any, param: str, param_type: ParamType, name_in_env_f
         setattr(instance, param, None if env_value == "null" else env_value)
     elif param_type == ParamType.Number:
         setattr(instance, param, None if env_value == "null" else float(env_value))
+    elif param_type == ParamType.Integer:
+        setattr(instance, param, None if env_value == "null" else int(env_value))
     elif param_type == ParamType.Boolean:
         setattr(instance, param, env_value.lower() in ["1", "true"] if env_value else False)
     elif param_type == ParamType.Json:

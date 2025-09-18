@@ -38,7 +38,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
         self.__key_table = "Key"
         self.engine = engine
         self.__userid_foreign_key_column = "userid"
-        set_parameter("key_table", ParamType.Number, self, options, "KEY_STORAGE_TABLE")
+        set_parameter("key_table", ParamType.String, self, options, "KEY_STORAGE_TABLE")
         set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
         if (re.match(r'^[A-Za-z0-9_]+$', self.__key_table) == None):
             raise CrossauthError(ErrorCode.Configuration, "Invalid key table name " + self.__key_table)
@@ -369,8 +369,8 @@ class SqlAlchemyUserStorage(UserStorage):
         self.__id_column = "id"
         self.__userid_foreign_key_column = "userid"
         self.__force_id_to_number = True
-        set_parameter("user_table", ParamType.Number, self, options, "USER_TABLE")
-        set_parameter("user_secrets_table", ParamType.Number, self, options, "USER_SECRETS_TABLE")
+        set_parameter("user_table", ParamType.String, self, options, "USER_TABLE")
+        set_parameter("user_secrets_table", ParamType.String, self, options, "USER_SECRETS_TABLE")
         set_parameter("id_column", ParamType.String, self, options, "USER_ID_COLUMN")
         set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
         set_parameter("force_id_to_number", ParamType.Boolean, self, options, "USER_FORCE_ID_TO_NUMBER")
@@ -750,8 +750,8 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
         self.__redirect_uri_table = "OAuthClientRedirectUri"
         self.__userid_foreign_key_column = "userid"
 
-        set_parameter("client_table", ParamType.Number, self, options, "OAUTH_CLIENT_TABLE")
-        set_parameter("valid_flow_table", ParamType.Number, self, options, "OAUTH_REDIRECTURI_TABLE")
+        set_parameter("client_table", ParamType.String, self, options, "OAUTH_CLIENT_TABLE")
+        set_parameter("valid_flow_table", ParamType.String, self, options, "OAUTH_REDIRECTURI_TABLE")
         set_parameter("redirect_uri_table", ParamType.String, self, options, "OAUTH_VALID_FLOW_TABLE")
         set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
 
@@ -1019,7 +1019,7 @@ class SqlAlchemyOAuthAuthorizationStorage(OAuthAuthorizationStorage):
         self.engine = engine
         self.__authorization_table = "OAuthAuthorization"
         self.__userid_foreign_key_column = "userid"
-        set_parameter("authorization_table", ParamType.Number, self, options, "OAUTH_AUTHORIZATION_TABLE")
+        set_parameter("authorization_table", ParamType.String, self, options, "OAUTH_AUTHORIZATION_TABLE")
         set_parameter("userid_foreign_key_column", ParamType.String, self, options, "USER_ID_FOREIGN_KEY_COLUMN")
 
         self.__joins : List[str] = []

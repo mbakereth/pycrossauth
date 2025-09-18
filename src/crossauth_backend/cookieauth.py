@@ -329,8 +329,8 @@ class SessionCookie:
 
         self.__user_storage = options["user_storage"] if "user_storage" in options else None
         self.key_storage = key_storage
-        set_parameter("idle_timeout", ParamType.Number, self, options, "SESSION_IDLE_TIMEOUT", protected=True)
-        set_parameter("persist", ParamType.Number, self, options, "PERSIST_SESSION_ID")
+        set_parameter("idle_timeout", ParamType.Integer, self, options, "SESSION_IDLE_TIMEOUT", protected=True)
+        set_parameter("persist", ParamType.Boolean, self, options, "PERSIST_SESSION_ID")
         self.filter_function = options['filterFunction'] if 'filterFunction' in options else None
 
         # cookie settings
