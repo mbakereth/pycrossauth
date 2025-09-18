@@ -56,6 +56,9 @@ from .auth import Authenticator, AuthenticationParameters, AuthenticationOptions
 from .authenticators.passwordauth import default_password_validator, LocalPasswordAuthenticator, LocalPasswordAuthenticatorOptions
 from .authenticators.ldapauth import LdapAuthenticator, LdapAuthenticatorOptions
 from .authenticators.dummyfactor2 import DummyFactor2Authenticator, DummyFactor2AuthenticatorOptions
+from .authenticators.emailauth import EmailAuthenticator, EmailAuthenticatorOptions
+from .authenticators.smsauth import SmsAuthenticator, SmsAuthenticatorOptions, SMSUser
+from .authenticators.dummysmsauth import DummySmsAuthenticator
 
 # Version of realpython-reader package
 __version__ = "0.0.9"
@@ -111,4 +114,7 @@ __all__ = (
     "default_password_validator", "LocalPasswordAuthenticator", "LocalPasswordAuthenticatorOptions",
     "LdapAuthenticator", "LdapAuthenticatorOptions",
     "DummyFactor2Authenticator", "DummyFactor2AuthenticatorOptions",
+    "EmailAuthenticator", "EmailAuthenticatorOptions",
+    "SmsAuthenticator", "SmsAuthenticatorOptions", "SMSUser",
+    "DummySmsAuthenticator",
 )

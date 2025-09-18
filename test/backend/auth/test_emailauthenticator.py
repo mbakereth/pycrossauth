@@ -8,7 +8,6 @@ from typing import cast, Dict
 import json
 from datetime import datetime
 from nulltype import Null
-import smtplib
 
 smtp_data = ""
 smtp_body = ""

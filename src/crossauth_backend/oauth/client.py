@@ -12,9 +12,8 @@ import urllib.parse
 from abc import abstractmethod
 import requests
 from urllib.parse import urlparse
-from jwt import (
-    JWT
-)
+from jwt import JWT
+
 import aiohttp
 
 class OAuthFlows:

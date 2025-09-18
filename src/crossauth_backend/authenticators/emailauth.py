@@ -76,8 +76,7 @@ class EmailAuthenticator(Authenticator):
         """
         Constructor
 
-        :param code to accept as valid second factor
-        :param options see :class:`crossauth_backend.DummyFactor2AuthenticatorOptions`  
+        :param options see :class:`crossauth_backend.EmailAuthenticatorOptions`  
 
         """
 
