@@ -311,6 +311,7 @@ async def idTokenUserCreateFn(id_token: Dict[str,Any],
     user : User = {
         "id" : cast(str, id_token["userid"] if "userid" in id_token else id_token["sub"]),
         "username" : cast(str, id_token["sub"]),
+        "username_normalized": UserStorage.normalize(cast(str, id_token["sub"])),
         "state" : cast(str, id_token["state"] if "state" in id_token else "active"),
         "factor1": "oidc",
     }
@@ -714,7 +715,7 @@ class FastApiOAuthClient(OAuthClient):
                 "user": FastApiSessionServer.username(request)
             }))
             state = self.random_value(self._state_length)
-            session_data = {"scope": request.query_params.get("scope"), "state": state}
+            session_data : Dict[str,str|int|None] = {"scope": request.query_params.get("scope"), "state": state}
             await self.store_session_data(session_data, request, response)
             ret = await self.start_authorization_code_flow(state, request.query_params.get("scope"))
             if "error" in ret or "url" not in ret:
@@ -741,7 +742,7 @@ class FastApiOAuthClient(OAuthClient):
             }))
             state = self.random_value(self._state_length)
             challengeVerifier = await self.code_challenge_and_verifier()
-            session_data = {"scope": request.query_params.get("scope"), 
+            session_data : Dict[str,int|str|None] = {"scope": request.query_params.get("scope"), 
                             "state": state,
                             "code_challenge": challengeVerifier["code_challenge"],
                             "code_verifier": challengeVerifier["code_verifier"]}

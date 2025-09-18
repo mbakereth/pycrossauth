@@ -22,7 +22,7 @@ class EmailAuthenticatorOptions(AuthenticationOptions, total=False):
     """
 
     views : str
-    """ The directory containing views (by default, Nunjucks templates) """
+    """ The directory containing views (by default, Jinja2 templates) """
 
     email_authenticator_text_bod: str
     """ 
@@ -72,7 +72,7 @@ class EmailAuthenticator(Authenticator):
     This authenticator sends a one-time code by email
     """
 
-    def __init__(self, code: str, options: EmailAuthenticatorOptions = {}):
+    def __init__(self, options: EmailAuthenticatorOptions = {}):
         """
         Constructor
 
@@ -144,9 +144,9 @@ class EmailAuthenticator(Authenticator):
         
         if self.__email_authenticator_text_body is not None and self.__email_authenticator_text_body != "":
             if self.__render:
-                text_body = self.__render(self.__email_authenticator_text_body, data)
+                text_body = self.__render(self.__views + "/" + self.__email_authenticator_text_body, data)
             else:
-                template = Template(self.__email_authenticator_text_body)
+                template = Template(self.__views + "/" + self.__email_authenticator_text_body)
                 text_body = template.render(data)
             
             text_part = MIMEText(text_body, 'plain')
@@ -154,9 +154,9 @@ class EmailAuthenticator(Authenticator):
             
         if self.__email_authenticator_html_body is not None and self.__email_authenticator_html_body != "":
             if self.__render is not None:
-                html_body = self.__render(self.__email_authenticator_html_body, data)
+                html_body = self.__render(self.__views + "/" + self.__email_authenticator_html_body, data)
             else:
-                template = Template(self.__email_authenticator_html_body)
+                template = Template(self.__views + "/" + self.__email_authenticator_html_body)
                 html_body = template.render(data)
             
             html_part = MIMEText(html_body, 'html')
@@ -201,7 +201,8 @@ class EmailAuthenticator(Authenticator):
             "username": user["username"],
             "factor2": self.factor_name,
             "expiry": expiry,
-            "otp": otp
+            "email": email,
+            "otp": otp,
         }
         
         message_id = await self._send_token(email, otp)
