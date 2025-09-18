@@ -13,3 +13,6 @@ jwcrypto
 aiosqlite
 ldap3
 types-ldap3
+pyotp
+
+

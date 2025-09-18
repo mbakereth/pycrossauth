@@ -60,6 +60,7 @@ from .authenticators.emailauth import EmailAuthenticator, EmailAuthenticatorOpti
 from .authenticators.smsauth import SmsAuthenticator, SmsAuthenticatorOptions, SMSUser
 from .authenticators.dummysmsauth import DummySmsAuthenticator
 from .authenticators.oidcauth import OidcAuthenticator, OidcAuthenticatorOptions
+from .authenticators.totpauth import TotpAuthenticator
 
 # Version of realpython-reader package
 __version__ = "0.0.9"
@@ -119,4 +120,5 @@ __all__ = (
     "SmsAuthenticator", "SmsAuthenticatorOptions", "SMSUser",
     "DummySmsAuthenticator",
     "OidcAuthenticator", "OidcAuthenticatorOptions",
+    "TotpAuthenticator",
 )

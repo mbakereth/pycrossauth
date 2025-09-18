@@ -164,7 +164,7 @@ class default_emailauth_validator_test(unittest.IsolatedAsyncioTestCase):
             expiry = cast(int, out["sessionData"]["expiry"]) # type: ignore
             self.assertGreater(expiry, now)
 
-            session_key : Key = {"value": emailed_otp, "created": datetime.now(), "expires": Null, "data": json.dumps({"2fa": out["sessionData"]})} # type: ignore
+            session_key : Key = {"value": "XXX", "created": datetime.now(), "expires": Null, "data": json.dumps({"2fa": out["sessionData"]})} # type: ignore
             out = await authenticator.reprepare_configuration("bob", session_key)
             emailed_otp = json.loads(smtp_data)["otp"]
             self.assertEqual(out["newSessionData"]["username"], "bob") # type: ignore
