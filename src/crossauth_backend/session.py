@@ -2,12 +2,13 @@ from crossauth_backend.storage import UserStorage, KeyStorage, KeyDataEntry
 from crossauth_backend.cookieauth import DoubleSubmitCsrfTokenOptions, DoubleSubmitCsrfToken
 from crossauth_backend.cookieauth import SessionCookieOptions, SessionCookie, Cookie
 from crossauth_backend.crypto import Crypto
+from crossauth_backend.emailtoken import TokenEmailer, TokenEmailerOptions
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.interfaces import User, UserSecrets, UserInputFields, UserState, KeyPrefix
 from crossauth_backend.auth import Authenticator, AuthenticationParameters
-from typing import TypedDict, List, Mapping, NamedTuple, Any, Dict
+from typing import List, Mapping, NamedTuple, Any, Dict
 from datetime import datetime
 import json
 
@@ -15,7 +16,7 @@ class UserIdAndData(NamedTuple):
     userid: str
     user_Data: Dict[str,Any]
 
-class SessionManagerOptions(TypedDict, total=False):
+class SessionManagerOptions(TokenEmailerOptions, total=False):
     """
     Options for SessionManager
     """
@@ -141,14 +142,16 @@ class SessionManager:
         self._allowed_factor2 : List[str] = []
         self.__enable_email_verification : bool = False
         self.__enable_password_reset : bool = False
-        self.__token_emailer = None
+        self.__token_emailer : TokenEmailer|None = None
 
         set_parameter("allowed_factor2", ParamType.JsonArray, self, options, "ALLOWED_FACTOR2", protected=True)
         set_parameter("enable_email_verification", ParamType.Boolean, self, options, "ENABLE_EMAIL_VERIFICATION")
         set_parameter("enable_password_reset", ParamType.Boolean, self, options, "ENABLE_PASSWORD_RESET")
         self._email_token_storage = self._key_storage
         if self._user_storage and (self.__enable_email_verification or self.__enable_password_reset):
-            raise CrossauthError(ErrorCode.NotImplemented, "email verification is not supported in this version")
+            if ("email_token_storage" in options):
+                self.__email_token_storage = options["email_token_storage"]
+            self.__token_emailer = TokenEmailer(self._user_storage, self._key_storage, options)
 
     
     async def login(self, username : str, 
@@ -718,9 +721,10 @@ class SessionManager:
         if not user:
             raise CrossauthError(ErrorCode.UserNotExist, "Couldn't fetch user")
         
-        new_user = {
+        state = UserState.awaiting_email_verification if not skip_email_verification and self.__enable_email_verification else UserState.active
+        new_user : Dict[str, Any]= {
             "id": user["id"],
-            "state": UserState.awaiting_email_verification if not skip_email_verification and self.__enable_email_verification else UserState.active,
+            "state": state,
             "factor2": data["factor2"],
         }
         
@@ -730,9 +734,9 @@ class SessionManager:
             await self.user_storage.update_user(new_user)
 
         if not skip_email_verification and new_signup and self.__enable_email_verification and self.__token_emailer:
-            await self.__token_emailer.send_email_verification_token(user.id, None)
+            await self.__token_emailer.send_email_verification_token(user["id"], "")
         
-        await self.key_storage.update_data(SessionCookie.hash_session_id(key.value), "2fa", None)
+        await self.key_storage.update_data(SessionCookie.hash_session_id(key["value"]), "2fa", None)
         
         return User(**{**user.__dict__, **new_user})
 
