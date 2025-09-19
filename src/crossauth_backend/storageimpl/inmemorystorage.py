@@ -161,7 +161,7 @@ class InMemoryUserStorage(UserStorage):
         self.__secrets_by_email: Dict[str, UserSecrets] = {}
 
     async def get_user_by(self, field: str, value: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:
-        field_value_normalized = UserStorage.normalize(value)
+        field_value_normalized = UserStorage.normalize(value) if self._normalize_username else value
         users_by_field = self.__users_by_username
         secrets_by_field = self.__secrets_by_username
         if (field == "email"):
@@ -230,8 +230,10 @@ class InMemoryUserStorage(UserStorage):
         new_user : User = {
             **user,
             "id": user["username"],
-            "username_normalized": UserStorage.normalize(user["username"])
         }
+        if (self._normalize_username):
+            new_user["username_normalized"] = UserStorage.normalize(user["username"])
+
         new_secrets : UserSecrets = {
             "userid": new_user["id"]
         }
@@ -241,30 +243,39 @@ class InMemoryUserStorage(UserStorage):
                 "userid": new_user["id"]
             }
 
-        if (new_user["username_normalized"] in self.__users_by_username):
+        if (self._normalize_username and "username_normalized" in new_user and new_user["username_normalized"] in self.__users_by_username):
+            raise CrossauthError(ErrorCode.UserExists)
+        if (not self._normalize_username and new_user["username"] in self.__users_by_username):
             raise CrossauthError(ErrorCode.UserExists)
         
-        if ("email" in new_user):
+        if ("email" in new_user and self._normalize_email):
             new_user["email_normalized"] = UserStorage.normalize(new_user["email"])
             if (new_user["email_normalized"] in self.__users_by_email):
                 raise CrossauthError(ErrorCode.UserExists)
 
-
-        self.__users_by_username[new_user["username_normalized"]] = new_user
-        self.__secrets_by_username[new_user["username_normalized"]] = new_secrets
+        username_field = "username_normalized" if self._normalize_username else "username"
+        email_field = "email_normalized" if self._normalize_email else "email"
+        if (username_field not in new_user):
+            raise CrossauthError(ErrorCode.Configuration, username_field + " not in user")
+        self.__users_by_username[new_user[username_field]] = new_user # type: ignore
+        self.__secrets_by_username[new_user[username_field]] = new_secrets # type: ignore
+        if (email_field not in new_user):
+            raise CrossauthError(ErrorCode.Configuration, email_field + " not in user")
         if ("email_normalized" in new_user):
-            self.__users_by_email[new_user["email_normalized"]] = new_user
-            self.__secrets_by_email[new_user["email_normalized"]] = new_secrets 
+            self.__users_by_email[new_user[email_field]] = new_user # type: ignore
+            self.__secrets_by_email[new_user[email_field]] = new_secrets  # type: ignore
         
         return new_user
 
 
     async def delete_user_by_username(self, username: str) -> None:
-        username_normalized = UserStorage.normalize(username)
+        username_normalized = UserStorage.normalize(username) if self._normalize_username else username
+        username_field = "username_normalized" if self._normalize_username else "username"
+        email_field = "email_normalized" if self._normalize_username else "email"
         if username_normalized in self.__users_by_username:
             user = self.__users_by_username[username_normalized]
-            if ("email_normalized" in user):
-                email = user["email_normalized"]
+            if (username_field in user):
+                email = user[email_field] # type: ignore
                 del self.__users_by_email[email]
                 del self.__secrets_by_email[email]
             del self.__users_by_username[username_normalized]
@@ -293,23 +304,25 @@ class InMemoryUserStorage(UserStorage):
     
     async def update_user(self, user: PartialUser, secrets: Optional[PartialUserSecrets] = None) -> None:
         new_user : PartialUser = {**user}
-        if ("username" in new_user):
+        username_field = "username_normalized" if self._normalize_username else "username"
+        if ("username" in new_user and self._normalize_username):
             new_user["username_normalized"] = UserStorage.normalize(new_user["username"])
         elif ("id" in new_user):
             id = new_user["id"]
             idstr = id if (type(id) == str) else str(id)
-            new_user["username_normalized"] = UserStorage.normalize(idstr)
-        if ("email" in new_user):
+            if (self._normalize_username):
+                new_user["username_normalized"] = UserStorage.normalize(idstr)
+        if ("email" in new_user and self._normalize_email):
             new_user["email_normalized"] = UserStorage.normalize(new_user["email"])
 
-        if ("username_normalized" in new_user and new_user["username_normalized"] in self.__users_by_username):
-            stored_user = self.__users_by_username[new_user["username_normalized"]]
+        if (username_field in new_user and new_user[username_field] in self.__users_by_username): # type: ignore
+            stored_user = self.__users_by_username[new_user[username_field]] # type: ignore
             for field in stored_user:
                 if (field in user):
                     stored_user[field] = user[field]
 
-        if (secrets is not None and "username_normalized" in new_user and new_user["username_normalized"] in self.__secrets_by_username):
-            stored_secrets = self.__secrets_by_username[new_user["username_normalized"]]
+        if (secrets is not None and username_field in new_user and new_user[username_field] in self.__secrets_by_username): # type: ignore
+            stored_secrets = self.__secrets_by_username[new_user[username_field]] # type: ignore
             for field in stored_secrets:
                 if (field in secrets):
                     stored_secrets[field] = secrets[field]

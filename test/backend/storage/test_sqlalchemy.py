@@ -235,7 +235,9 @@ class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
         ret = await user_storage.get_user_by("username", "bob")
         self.assertEqual(ret["user"]["id"], conn.id)
         self.assertEqual(ret["user"]["username"], "bob")
-        self.assertEqual(ret["user"]["username_normalized"], "bob")
+        self.assertTrue("username_normalized" in ret["user"])
+        if ("username_normalized" in ret["user"]):
+            self.assertEqual(ret["user"]["username_normalized"], "bob")
         self.assertEqual("email" in ret["user"] and ret["user"]["email"], "bob@bob.com")
         self.assertEqual("email_normalized" in ret["user"] and ret["user"]["email_normalized"], "bob@bob.com")
         self.assertEqual("password" in ret["secrets"] and ret["secrets"]["password"], "bobPass123")
@@ -260,6 +262,30 @@ class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
         user_storage = SqlAlchemyUserStorage(engine)
         ret = await user_storage.get_user_by_email("Bob@bob.com")
         self.assertEqual(ret["user"]["id"], conn.id)
+
+    async def test_get_user_by_username_unnormalized(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine, {"normalize_username": False})
+        ok = False
+        try:
+            await user_storage.get_user_by_username("Bob")
+            ok = True
+        except:
+            pass
+        self.assertFalse(ok)
+
+    async def test_get_user_by_email_unnormalized(self):
+        conn = await self.get_test_conn()
+        engine = conn.engine
+        user_storage = SqlAlchemyUserStorage(engine, {"normalize_email": False})
+        ok = False
+        try:
+            await user_storage.get_user_by_email("Bob@bob.com")
+            ok = True
+        except:
+            pass
+        self.assertFalse(ok)
 
     async def test_delete_user_by_username(self):
         conn = await self.get_test_conn()
@@ -299,7 +325,9 @@ class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
         }
         created_user = await user_storage.create_user(new_user)
         self.assertEqual(created_user["username"], "mary")
-        self.assertEqual(created_user["username_normalized"], "mary")
+        self.assertTrue("username_normalized" in created_user)
+        if ("username_normalized" in created_user):
+            self.assertEqual(created_user["username_normalized"], "mary")
         self.assertEqual("email" in created_user and created_user["email"], "mary@mary.com")
         self.assertEqual("email_normalized" in created_user and created_user["email_normalized"], "mary@mary.com")
         self.assertEqual("state" in created_user and created_user["state"], UserState.active)
@@ -319,7 +347,9 @@ class SqlAlchemyUserStorageTest(unittest.IsolatedAsyncioTestCase):
         }
         created_user = await user_storage.create_user(new_user, new_secrets)
         self.assertEqual(created_user["username"], "mary")
-        self.assertEqual(created_user["username_normalized"], "mary")
+        self.assertTrue("username_normalized" in created_user)
+        if ("username_normalized" in created_user):
+            self.assertEqual(created_user["username_normalized"], "mary")
         self.assertEqual("email" in created_user and created_user["email"], "mary@mary.com")
         self.assertEqual("email_normalized" in created_user and created_user["email_normalized"], "mary@mary.com")
         self.assertEqual("state" in created_user and created_user["state"], UserState.active)

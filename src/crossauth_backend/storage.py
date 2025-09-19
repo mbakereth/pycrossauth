@@ -20,29 +20,14 @@ class UserStorageGetOptions(TypedDict, total=False):
     Passed to get methods :class: UserStorage.
     """
 
-    skipEmailVerifiedCheck : bool
+    skip_email_verified_check : bool
     """
     If true, a valid user will be returned even if state is set to `awaitingemailverification`
     """
 
-    skipActiveCheck : bool
+    skip_active_check : bool
     """
     If true, a valid user will be returned even if state is not set to `active`
-    """
-
-    normalizeUsername : bool
-    """
-    If true, usernames will be matched as lowercase and with diacritics removed.
-    Default true,
-    
-    Note: this doesn't apply to the ID column
-    """
-
-    normalizeEmail : bool
-    """
-    If true, email addresses (in the email column not in the username column) 
-    will be matched as lowercase and with diacritics removed.
-    Default true.
     """
 
 class UserStorageOptions(TypedDict, total=False):
@@ -50,15 +35,30 @@ class UserStorageOptions(TypedDict, total=False):
     Options passed to :class: UserStorage constructor
     """
 
-    userEditableFields : List[str]
+    user_editable_fields : List[str]
     """
     Fields that users are allowed to edit.  Any fields passed to a create or
     update call that are not in this list will be ignored.
     """
 
-    adminEditableFields : List[str]
+    admin_editable_fields : List[str]
     """
     Fields that admins are allowed to edit (in addition to `userEditableFields`)
+    """
+
+    normalize_username : bool
+    """
+    If true, usernames will be matched as lowercase and with diacritics removed.
+    Default true,
+    
+    Note: this doesn't apply to the ID column
+    """
+
+    normalize_email : bool
+    """
+    If true, email addresses (in the email column not in the username column) 
+    will be matched as lowercase and with diacritics removed.
+    Default true.
     """
 
 class UserAndSecrets(TypedDict):

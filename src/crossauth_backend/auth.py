@@ -114,6 +114,13 @@ class Authenticator(ABC):
             can_update_secrets=self.can_update_secrets()
         )
 
+    def require_user_entry(self) -> bool:
+        """
+        If your authenticator doesn't need a user to be in the table (because
+        it can create one), override this and return false. Default is true
+        """
+        return True
+
 class PasswordAuthenticator(Authenticator):
     """
     base class for authenticators that validate passwords

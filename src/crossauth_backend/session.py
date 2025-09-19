@@ -5,11 +5,15 @@ from crossauth_backend.crypto import Crypto
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
-from crossauth_backend.common.interfaces import User, UserSecrets
+from crossauth_backend.common.interfaces import User, UserSecrets, UserInputFields, UserState, KeyPrefix
 from crossauth_backend.auth import Authenticator, AuthenticationParameters
 from typing import TypedDict, List, Mapping, NamedTuple, Any, Dict
 from datetime import datetime
 import json
+
+class UserIdAndData(NamedTuple):
+    userid: str
+    user_Data: Dict[str,Any]
 
 class SessionManagerOptions(TypedDict, total=False):
     """
@@ -109,14 +113,14 @@ class SessionManager:
     def __init__(self, key_storage : KeyStorage, authenticators : Mapping[str, Authenticator] , options : SessionManagerOptions = {}):
         """
         Constructor
-        :param crossauth_backend.KeyStorage key_storage:  the :class:`KeyStorage` instance to use, eg :class:`PrismaKeyStorage`.
+        :param crossauth_backend._key_storage key_storage:  the :class:`_key_storage` instance to use, eg :class:`Prisma_key_storage`.
         :param Mapping[str, Authenticator] authenticators: authenticators used to validate users, eg :class:`LocalPasswordAuthenticatorOptions`.
         :param SessionManagerOptions options: optional parameters for authentication. See :class:`SessionManagerOptions`.
 
         """
         self._user_storage = options.get('userStorage', None)
         self._key_storage = key_storage
-        self._email_token_storage : KeyStorage | None = None
+        self._email_token_storage : KeyStorage
         self._authenticators = authenticators
         for authentication_name in self._authenticators:
             self._authenticators[authentication_name].factor_name = authentication_name
@@ -146,10 +150,151 @@ class SessionManager:
         if self._user_storage and (self.__enable_email_verification or self.__enable_password_reset):
             raise CrossauthError(ErrorCode.NotImplemented, "email verification is not supported in this version")
 
-    async def login(self, username : str, params : AuthenticationParameters, extra_fields : Mapping[str,Any]|None=None, persist : bool=False, user : User|None=None, bypass_2fa : bool=False):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "login not implemented in this version")
     
+    async def login(self, username : str, 
+                    params : AuthenticationParameters, 
+                    extra_fields : Mapping[str,Any]|None=None, 
+                    persist : bool=False, 
+                    user : User|None=None, bypass_2fa : bool=False) -> Dict[str, Any]:
+        """
+        Performs a user login
+        
+        * Authenticates the username and password
+        * Creates a session key - if 2FA is enabled, this is an anonymous session,
+          otherwise it is bound to the user
+        * Returns the user (without the password hash) and the session cookie.
+        If the user object is defined, authentication (and 2FA) is bypassed
+        
+        :param username: the username to validate
+        :param params: user-provided credentials (eg password) to authenticate with
+        :param extra_fields: add these extra fields to the session key if authentication is successful
+        :param persist: if passed, overrides the persistSessionId setting.
+        :param user: if this is defined, the username and password are ignored and the given user is logged in.
+                  The 2FA step is also skipped
+            bypass2FA: if true, the 2FA step will be skipped
+            
+        :return
+            Dict containing the user, user secrets, and session cookie and CSRF cookie and token.
+            if a 2fa step is needed, it will be an anonymouos session, otherwise bound to the user
+            
+        :raise:
+            CrossauthError: with ErrorCode of Connection, UserNotValid, 
+                          PasswordNotMatch or UserNotExist.
+        """
+        
+        if extra_fields is None:
+            extra_fields = {}
+        
+        print("session.login")
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call login if no user storage provided")
+        
+        secrets: UserSecrets = UserSecrets(userid="")
+        defaultAuth = ""
+        
+        if not user:
+            user_input_fields: UserInputFields = {
+                "username": "", 
+                "state": UserState.active,
+                "factor1": ""
+            }
+            try:
+                user_and_secrets = await self._user_storage.get_user_by_username(
+                    username, 
+                    skipActiveCheck=True, 
+                    skipEmailVerifiedCheck=True
+                )
+                secrets = user_and_secrets["secrets"]
+                user = user_and_secrets["user"]
+                user_input_fields = user_and_secrets["user"]
+            except Exception as e:
+                ce = CrossauthError.as_crossauth_error(e)
+                if ce.code == ErrorCode.Connection:
+                    raise e
+                
+                for auth in self.authenticators:
+                    if not self.authenticators[auth].require_user_entry():
+                        user_input_fields: UserInputFields = {
+                            "username": "", 
+                            "state": UserState.active,
+                            "factor1": ""
+                        }
+                        defaultAuth = auth
+            
+            if user_input_fields["username"] == "":
+                raise CrossauthError(ErrorCode.UserNotExist)
+            
+            auth_key = user["factor1"] if user and "factor1" in user and user["factor1"] != "" else defaultAuth
+            await self.authenticators[auth_key].authenticate_user(user_input_fields, secrets, params)
+            
+            user_and_secrets = await self._user_storage.get_user_by_username(
+                username, 
+                skipActiveCheck=True, 
+                skipEmailVerifiedCheck=True
+            )
+            secrets = user_and_secrets.secrets
+            user = user_and_secrets.user
+        else:
+            user_and_secrets = await self._user_storage.get_user_by_username(
+                user["username"], 
+                skipActiveCheck=True, 
+                skipEmailVerifiedCheck=True
+            )
+            secrets = user_and_secrets.secrets
+
+        if (user is None):
+            raise(CrossauthError(ErrorCode.InvalidUsername)) # pathological - to make pylance happy
+
+        # create a session ID - bound to user if no 2FA and no password change required, anonymous otherwise
+        session_cookie: Cookie
+        
+        if user["state"] == UserState.password_change_needed:
+            # create an anonymous session and store the username and 2FA data in it
+            resp = await self.create_anonymous_session({
+                "data": json.dumps({"passwordchange": {"username": user["username"] if user else ""}})
+            })
+            session_cookie = resp.session_cookie
+        elif user["state"] == UserState.factor2_reset_needed:
+            resp = await self.create_anonymous_session({
+                "data": json.dumps({"factor2change": {"username": user["username"]}})
+            })
+            session_cookie = resp.session_cookie
+        elif not bypass_2fa and "factor2" in user and user["factor2"] != "":
+            # create an anonymous session and store the username and 2FA data in it
+            result = await self.initiate_two_factor_login(user)
+            session_cookie = result["session_cookie"]
+        else:
+            session_key = await self.session.create_session_key(user["id"], extra_fields)
+            #await self.sessionStorage.saveSession(user.id, session_key.value, session_key.dateCreated, session_key.expires)
+            session_cookie = self.session.make_cookie(session_key, persist)
+
+        # create a new CSRF token, since we have a new session
+        csrf_token = self.csrf_tokens.create_csrf_token()
+        csrf_cookie = self.csrf_tokens.make_csrf_cookie(csrf_token)
+        csrfFormOrHeaderValue = self.csrf_tokens.make_csrf_form_or_header_token(csrf_token)
+        
+        # delete any password reset tokens that still exist for this user.
+        try:
+            await self.email_token_storage.delete_all_for_user(
+                user["id"],
+                KeyPrefix.password_reset_token
+            )
+        except Exception as e:
+            CrossauthLogger.logger().warn(j({
+                "msg": "Couldn't delete password reset tokens while logging in", 
+                "user": username
+            }))
+            CrossauthLogger.logger().debug(j({"err": e}))
+
+        # send back the cookies and user details
+        return {
+            "session_cookie": session_cookie,
+            "csrf_cookie": csrf_cookie,
+            "csrfFormOrHeaderValue": csrfFormOrHeaderValue,
+            "user": user,
+            "secrets": secrets,
+        }
+
     async def create_anonymous_session(self, extra_fields: Mapping[str,Any]|None=None) -> AnonymousSession:
         if extra_fields is None:
             extra_fields = {}
@@ -160,16 +305,13 @@ class SessionManager:
         
 
     async def logout(self, session_id : str):
-        """ Not implemented """
         key = await self._session.get_session_key(session_id)
         return await self._key_storage.delete_key(SessionCookie.hash_session_id(key["value"]))
 
     async def logout_from_all(self, userid : str|int, except_id : str|None=None):
-        """ Not implemented """
         return await self._session.delete_all_for_user(userid, except_id)
 
     async def user_for_session_id(self, session_id : str):
-        """ Not implemented """
         return await self._session.get_user_for_session_id(session_id)
 
     async def data_string_for_session_id(self, session_id : str) -> str|None:
@@ -341,7 +483,6 @@ class SessionManager:
         return await self._key_storage.delete_key(self._session.hash_session_id(session_id))
 
     async def create_user(self, user: User, params: UserSecrets, repeat_params: UserSecrets|None = None, skip_email_verification: bool = False, empty_password: bool = False) -> User:
-        """ Not implemented """
         if not self._user_storage:
             raise Exception("Cannot call createUser if no user storage provided")
 
@@ -361,26 +502,239 @@ class SessionManager:
         return new_user
 
     async def delete_user_by_username(self, username: str) -> None:
-        """ Not implemented """
         if not self._user_storage:
             raise Exception("Cannot call deleteUser if no user storage provided")
         self._user_storage.delete_user_by_username(username)
 
-    async def initiate_two_factor_signup(self, user: User, params: UserSecrets, session_id: str, repeat_params: UserSecrets|None):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "Factor2 not implemented in this version")
+    async def initiate_two_factor_signup(self, 
+            user: User, 
+            params: UserSecrets, 
+            session_id: str, 
+            repeat_params: UserSecrets|None) -> UserIdAndData:
+        """Creates a user with 2FA enabled.
+        
+        The user storage entry will be createed, with the state set to
+        `awaitingtwofactorsetup`.   The passed session key will be updated to 
+        include the username and details needed by 2FA during the configure step.  
+        
+        :param user: details to save in the user table
+        :param params: params the parameters needed to authenticate with factor1
+                    (eg password)
+        :param session_id: the anonymous session cookie 
+        :param repeat_params: if passed, these will be compared with `params` and
+                    if they don't match, `PasswordMatch` is thrown.
+        
+        :return:
+            Dict containing:
+                userid: the id of the created user.  
+                userData: data that can be displayed to the user in the page to 
+                         complete 2FA set up (eg the secret key and QR codee for TOTP),
+        """
+        if ("factor1" not in user or "factor2" not in user):
+            raise CrossauthError(ErrorCode.Configuration, "factor1 and factor2 must be in user to use 2FA")
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call initiateTwoFactorSignup if no user storage provided")
+        if user["factor1"] not in self.authenticators:
+            raise CrossauthError(ErrorCode.Configuration, "Authenticator cannot create users")
+        if user["factor2"] not in self.authenticators:
+            raise CrossauthError(ErrorCode.Configuration, "Two factor authentication not enabled for user")
+        
+        authenticator = self.authenticators[user["factor2"]]
+        # const session_id = this.session.unsignCookie(sessionCookieValue);
+        factor2_data = await authenticator.prepare_configuration(user)
+        user_data = {} if factor2_data is None else factor2_data.get("userData", {})
+        session_data = {} if factor2_data is None else factor2_data.get("sessionData", {})
+
+        factor1_secrets = await self.authenticators[user["factor1"]].create_persistent_secrets(user["username"], params, repeat_params)
+        user["state"] = UserState.awaiting_two_factor_setup
+        await self.key_storage.update_data(
+            SessionCookie.hash_session_id(session_id), 
+            "2fa",
+            session_data)
+
+        new_user = await self._user_storage.create_user(user, factor1_secrets)
+        return UserIdAndData(new_user.id, user_data)
 
     async def initiate_two_factor_setup(self, user: User, new_factor2: str|None, session_id: str) -> Mapping[str, Any]:
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "Factor2 not implemented in this version")
+        """
+        Begins the process of setting up 2FA for a user which has already been 
+        created and activated.  Called when changing 2FA or changing its parameters.
+        
+        :param user: the logged in user
+        :param new_factor2: new second factor to change user to
+        :param session_id: the session cookie for the user
+            
+        :return
+            the 2FA data that can be displayed to the user in the configure 2FA
+            step (such as the secret and QR code for TOTP).
+        """
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call initiateTwoFactorSetup if no user storage provided")
+        
+        # const session_id = this.session.unsignCookie(sessionCookieValue);
+        if new_factor2 and new_factor2 != "none":
+            if new_factor2 not in self.authenticators:
+                raise CrossauthError(ErrorCode.Configuration, "Two factor authentication not enabled for user")
+            
+            authenticator = self.authenticators[new_factor2]
+            factor2_data = await authenticator.prepare_configuration(user)
+            userData = {} if factor2_data is None else factor2_data["userData"] or {}
+            sessionData = {} if factor2_data is None else factor2_data["sessionData"] or {}
+            
+            sessionData["userData"] = userData
 
+            await self._key_storage.update_data(
+                SessionCookie.hash_session_id(session_id),
+                "2fa",
+                sessionData)
+            return userData
+
+        # this part is for turning off 2FA
+        await self._user_storage.update_user({"id": user["id"], "factor2": new_factor2 or ""})
+        await self._key_storage.update_data(
+            SessionCookie.hash_session_id(session_id), 
+            "2fa",
+            None)
+        return {}
+    
     async def repeat_two_factor_signup(self, session_id: str) -> Mapping[str, Any]:
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "2FA is not implemented in this version")
+        """
+        This can be called if the user has finished signing up with factor1 but
+        closed the browser before completing factor2 setup.  Call it if the user
+        signs up again with the same factor1 credentials.
+        
+        :param session_id: the anonymous session ID for the user
+            
+        :return:
+            Dict containing:
+                userid: the id of the created user
+                userData: data that can be displayed to the user in the page to 
+                        complete 2FA set up (eg the secret key and QR code for TOTP),
+                secrets: data that is saved in the session for factor2.  In the
+                        case of TOTP, both `userData` and `secrets` contain the shared
+                        secret but only `userData` has the QR code, since it can be
+                        generated from the shared secret.
+        """
+        if not self._user_storage:
+            raise CrossauthError(
+                ErrorCode.Configuration, 
+                "Cannot call repeatTwoFactorSignup if no user storage provided"
+            )
+        
+        session_data = await self.data_for_session_id(session_id)
+        if (session_data is None):
+            raise CrossauthError(ErrorCode.InvalidSession, "No 2FA data found in session")
+        session_data = (session_data)["2fa"]
+        username = session_data["username"]
+        factor2 = session_data["factor2"]
+        
+        # const sessionId = this.session.unsignCookie(sessionId);
+        hashed_session_key = SessionCookie.hash_session_id(session_id)
+        session_key = await self.key_storage.get_key(hashed_session_key)
+        authenticator = self.authenticators[factor2]
 
+        resp = await authenticator.reprepare_configuration(username, session_key)
+        user_data = {} if resp is None else resp.get("userData", {})
+        secrets = {} if resp is None else resp.get("secrets", {})
+        new_session_data = {} if resp is None else resp.get("newSessionData", {})
+        
+        if new_session_data:
+            await self.key_storage.update_data(hashed_session_key, "2fa", new_session_data)
+
+        user_result = await self._user_storage.get_user_by_username(
+            username, 
+            skip_active_check=True, 
+            skip_email_verified_check=True
+        )
+        user = user_result["user"]
+        
+        return {
+            "userid": user["id"], 
+            "userData": user_data, 
+            "secrets": secrets
+        }
+    
     async def complete_two_factor_setup(self, params: AuthenticationParameters, session_id: str) -> User:
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "2FA is not implemented in this version")
+        """
+        Authenticates with the second factor.  
+        
+        If successful, the new user object is returned.  Otherwise an exception
+        is thrown,
+        :param params the parameters from user input needed to authenticate (eg TOTP code)
+        :param session_id the session cookie value (ie still signed)
+        :return the user object
+        :raise CrossauthError if authentication fails.
+        """
+        if not self.user_storage:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call completeTwoFactorSetup if no user storage provided")
+        
+        new_signup = False
+        
+        result = await self.session.get_user_for_session_id(session_id, {
+            "skip_active_check": True
+        })
+        user = result.user
+        key = result.key
+        
+        if user and (user["state"] != UserState.active and user["state"] != UserState.factor2_reset_needed):
+            raise CrossauthError(ErrorCode.UserNotActive)
+        
+        if not key:
+            raise CrossauthError(ErrorCode.InvalidKey, "Session key not found")
+        
+        if ("data" not in key):
+            raise CrossauthError(ErrorCode.InvalidSession, "No 2FA data in session")
+        data = KeyStorage.decode_data(key["data"])["2fa"]
+        # let data = getJsonData(key)["2fa"];
+        
+        if not data or not data.get("factor2") or not data.get("username"):
+            raise CrossauthError(ErrorCode.Unauthorized, "Two factor authentication not initiated")
+        
+        username = data["username"]
+        authenticator = self.authenticators[data["factor2"]]
+        
+        if not authenticator:
+            raise CrossauthError(ErrorCode.Configuration, "Unrecognised second factor authentication")
+        
+        new_secrets: Dict[str, Any] = {}
+        secret_names = authenticator.secret_names()
+        
+        for secret in data:
+            if secret in secret_names:
+                new_secrets[secret] = data[secret]
+        
+        await authenticator.authenticate_user(None, data, params)
+
+        if not user:
+            new_signup = True
+            resp = await self.user_storage.get_user_by_username(username, {
+                "skip_active_check": True, 
+                "skip_email_verified_check": True
+            })
+            user = resp["user"]
+        
+        skip_email_verification = authenticator.skip_email_verification_on_signup() == True
+        
+        if not user:
+            raise CrossauthError(ErrorCode.UserNotExist, "Couldn't fetch user")
+        
+        new_user = {
+            "id": user["id"],
+            "state": UserState.awaiting_email_verification if not skip_email_verification and self.__enable_email_verification else UserState.active,
+            "factor2": data["factor2"],
+        }
+        
+        if len(authenticator.secret_names()) > 0:
+            await self.user_storage.update_user(new_user, new_secrets)
+        else:
+            await self.user_storage.update_user(new_user)
+
+        if not skip_email_verification and new_signup and self.__enable_email_verification and self.__token_emailer:
+            await self.__token_emailer.send_email_verification_token(user.id, None)
+        
+        await self.key_storage.update_data(SessionCookie.hash_session_id(key.value), "2fa", None)
+        
+        return User(**{**user.__dict__, **new_user})
 
     async def initiate_two_factor_login(self, user: User) -> Mapping[str, Any]:
         """ Not implemented """

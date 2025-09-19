@@ -11,7 +11,7 @@ import re
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from jinja2 import Template
+from jinja2 import Environment , FileSystemLoader
 import secrets
 
 class EmailAuthenticatorOptions(AuthenticationOptions, total=False):
@@ -107,8 +107,10 @@ class EmailAuthenticator(Authenticator):
         set_parameter("smtp_use_tls", ParamType.Boolean, self, options, "SMTP_USE_TLS")
         set_parameter("email_authenticator_token_expires", ParamType.Integer, self, options, "EMAIL_AUTHENTICATOR_TOKEN_EXPIRES")
 
-        if ("render" in options):
+        if "render" in options:
             self.__render = options["render"]
+        else:
+            self.jinja_env = Environment(loader=FileSystemLoader(self.__views), autoescape=True)
 
     def mfa_type(self) -> Literal["none", "oob", "otp"]:
         """Used by the OAuth password_mfa grant type."""
@@ -145,7 +147,7 @@ class EmailAuthenticator(Authenticator):
             if self.__render:
                 text_body = self.__render(self.__views + "/" + self.__email_authenticator_text_body, data)
             else:
-                template = Template(self.__views + "/" + self.__email_authenticator_text_body)
+                template = self.jinja_env.get_template(self.__email_authenticator_text_body)
                 text_body = template.render(data)
             
             text_part = MIMEText(text_body, 'plain')
@@ -155,7 +157,7 @@ class EmailAuthenticator(Authenticator):
             if self.__render is not None:
                 html_body = self.__render(self.__views + "/" + self.__email_authenticator_html_body, data)
             else:
-                template = Template(self.__views + "/" + self.__email_authenticator_html_body)
+                template = self.jinja_env.get_template(self.__email_authenticator_html_body)
                 html_body = template.render(data)
             
             html_part = MIMEText(html_body, 'html')

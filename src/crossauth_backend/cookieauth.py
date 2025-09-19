@@ -2,7 +2,7 @@ from crossauth_backend.crypto import Crypto
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.interfaces import Key, PartialKey, KeyPrefix
-from crossauth_backend.storage import KeyStorage, UserStorage, UserAndSecrets
+from crossauth_backend.storage import KeyStorage, UserStorage, User
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.storage import UserStorage, UserStorageGetOptions
 from typing import Mapping, Any, TypedDict, Literal, NotRequired, Optional, Callable, NamedTuple
@@ -224,7 +224,7 @@ class DoubleSubmitCsrfToken:
             raise CrossauthError(ErrorCode.InvalidCsrf, "Invalid CSRF cookie")
 
 class UserAndKey(NamedTuple):
-    user: UserAndSecrets|None
+    user: User|None
     key: Key
 
 class SessionCookieOptions(CookieOptions, total=False): # Also inherit from TokenEmailerOptions
@@ -525,7 +525,8 @@ class SessionCookie:
         if not self.__user_storage:
             return UserAndKey(None, key)
         if 'userid' in key and type(key['userid']) is not NullType:
-            user = await self.__user_storage.get_user_by_id(key['userid'], options) # type: ignore
+            user_and_secrets = await self.__user_storage.get_user_by_id(key['userid'], options) # type: ignore
+            user : User = user_and_secrets["user"]
             return UserAndKey(user, key)
         else:
             return UserAndKey(None, key)

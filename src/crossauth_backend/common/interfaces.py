@@ -175,7 +175,7 @@ class User(UserInputFields):
     id : str | int
     """ ID fied, which may be auto-generated """
 
-    username_normalized : str
+    username_normalized : NotRequired[str]
     """ Username lowercased and non language-normalized """
 
     email_normalized : NotRequired[str]

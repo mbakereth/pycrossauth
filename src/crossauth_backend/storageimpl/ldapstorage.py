@@ -130,7 +130,7 @@ class LdapUserStorage(UserStorage):
         """
         ldap_client : Connection|None = None
         try:
-            sanitized_username = LdapUserStorage.sanitize_ldap_dn_for_serach(username)
+            sanitized_username = LdapUserStorage._sanitize_ldap_dn_for_serach(username)
             user_dn = f"{self.__ldap_username_attribute}={sanitized_username},{self.__ldap_user_search_base}"
             if password == "":
                 raise CrossauthError(ErrorCode.PasswordInvalid)
@@ -195,7 +195,7 @@ class LdapUserStorage(UserStorage):
                 
                 # Convert the first entry to our user format
                 entry = ldap_client.entries[0] # type: ignore
-                user = LdapUserStorage.search_result_to_user({
+                user = LdapUserStorage._search_result_to_user({
                     "objectName": entry.entry_dn, # type: ignore
                     "attributes": [
                         {"type": attr, "values": entry[attr].values if hasattr(entry[attr], 'values') else [entry[attr].value]} # type: ignore
@@ -214,11 +214,18 @@ class LdapUserStorage(UserStorage):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _search_sync)
           
+    def require_user_entry(self) -> bool:
+        """
+        Returns false
+        """
+        return False
+
     @staticmethod
-    def search_result_to_user(pojo: Dict[str, Any]) -> LdapUser:
+    def _search_result_to_user(pojo: Dict[str, Any]) -> LdapUser:
         """Convert search result to user object"""
+        dn = cast(str,pojo["objectName"])
         user : LdapUserWithState = {
-            "dn": cast(str,pojo["objectName"]),
+            "dn": dn,
             "state": UserState.active,
         }
         
@@ -231,7 +238,7 @@ class LdapUserStorage(UserStorage):
         return user
       
     @staticmethod
-    def sanitize_ldap_dn(dn: str) -> str:
+    def _sanitize_ldap_dn(dn: str) -> str:
         """
         Sanitises an LDAP dn for passing to bind (escaping special characters)
         :param dn: the dn to sanitise
@@ -247,13 +254,13 @@ class LdapUserStorage(UserStorage):
                  .strip())
 
     @staticmethod
-    def sanitize_ldap_dn_for_serach(dn: str) -> str:
+    def _sanitize_ldap_dn_for_serach(dn: str) -> str:
         """
         Sanitises an LDAP dn for passing to searches (escaping special characters)
         :param dn: the dn to sanitise
         :returns: a sanitized dn
         """
-        return (LdapUserStorage.sanitize_ldap_dn(dn)
+        return (LdapUserStorage._sanitize_ldap_dn(dn)
                  .replace("*", "\\*")
                  .replace("(", "\\(")
                  .replace(")", "\\)"))

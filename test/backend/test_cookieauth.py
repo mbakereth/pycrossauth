@@ -1,7 +1,7 @@
 import unittest
-from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage
 from crossauth_backend.cookieauth import SessionCookie, DoubleSubmitCsrfToken
 from crossauth_backend.crypto import Crypto
+from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage
 from nulltype import NullType
 
 class SessionKeyTest(unittest.IsolatedAsyncioTestCase):
@@ -49,4 +49,3 @@ class CsrfCookieTest(unittest.IsolatedAsyncioTestCase):
         except:
             pass
         self.assertTrue(valid)
-

@@ -363,6 +363,8 @@ class SqlAlchemyUserStorage(UserStorage):
 
 
     def __init__(self, engine : AsyncEngine, options: SqlAlchemyUserStorageOptions = {}):
+        super().__init__(options)
+        
         self.engine = engine
         self.__user_table = "User"
         self.__user_secrets_table = "UserSecrets"
@@ -395,11 +397,13 @@ class SqlAlchemyUserStorage(UserStorage):
     async def get_user_by_in_transaction(self, conn: AsyncConnection, field: str, value: Union[str, int]) -> UserAndSecrets:
 
         if (field == "username"):
-            value = self.normalize(value if type(value) == str else str(value))
-            field = "username_normalized"
+            if (self._normalize_username):
+                value = self.normalize(value if type(value) == str else str(value))
+                field = "username_normalized"
         elif (field == "email"):
-            value = self.normalize(value if type(value) == str else str(value))
-            field = "email_normalized"
+            if (self._normalize_email):
+                value = self.normalize(value if type(value) == str else str(value))
+                field = "email_normalized"
         elif (field != "id"):
             raise CrossauthError(ErrorCode.BadRequest, "Can only get user by username, id or email")
         query = f"select * from {self.__user_table} where {field} = :field"
@@ -436,9 +440,9 @@ class SqlAlchemyUserStorage(UserStorage):
     def _make_user_and_secrets(self, user_fields: Dict[str, Any], secrets_fields: Dict[str, Any]|None, relations_fields: Dict[str, Dict[str, Any]]) -> UserAndSecrets:
         id: Union[int, str]
         username: str
-        username_normalized: str
+        username_normalized: str = ""
         email: str
-        email_normalized: str
+        email_normalized: str = ""
         state: int
         factor1: Union[str, NullType] = Null
         factor2: Union[str, NullType] = Null
@@ -458,19 +462,21 @@ class SqlAlchemyUserStorage(UserStorage):
             username = user_fields["username"]
         else:
             raise CrossauthError(ErrorCode.InvalidUsername, "No username in user")
-        if "username_normalized" in user_fields:
-            username_normalized = user_fields["username_normalized"]
-        else:
-            raise CrossauthError(ErrorCode.InvalidUsername, "No username_normalized in user")
+        if (self._normalize_username):
+            if "username_normalized" in user_fields:
+                username_normalized = user_fields["username_normalized"]
+            else:
+                raise CrossauthError(ErrorCode.InvalidUsername, "No username_normalized in user")
 
         if "email" in user_fields:
             email = user_fields["email"]
         else:
             raise CrossauthError(ErrorCode.InvalidUsername, "No username in user")
-        if "email_normalized" in user_fields:
-            email_normalized = user_fields["email_normalized"]
-        else:
-            raise CrossauthError(ErrorCode.InvalidUsername, "No email_normalized in user")
+        if (self._normalize_email):
+            if "email_normalized" in user_fields:
+                email_normalized = user_fields["email_normalized"]
+            else:
+                raise CrossauthError(ErrorCode.InvalidUsername, "No email_normalized in user")
 
         if "state" in user_fields:
             state = user_fields["state"]
@@ -488,14 +494,17 @@ class SqlAlchemyUserStorage(UserStorage):
             **user_fields,
             "id": id, 
             "username": username,
-            "username_normalized": username_normalized,
             "email": email,
-            "email_normalized": email_normalized,
             "state": state,
             "factor1": factor1,
             "factor2": factor2,
 
         })
+        if (self._normalize_username):
+            user["username_normalized"] = username_normalized
+        if (self._normalize_email):
+            user["email_normalized"] = email_normalized
+
         for relation in relations_fields:
             fields = relations_fields[relation]
             if self.__userid_foreign_key_column in fields:
@@ -558,9 +567,9 @@ class SqlAlchemyUserStorage(UserStorage):
         email_normalized : str|None = None
 
         try:
-            if "email" in user and "email_normalized" not in user:
+            if "email" in user and "email_normalized" not in user and self._normalize_email:
                 email_normalized = self.normalize(user["email"])
-            if ("username_normalized" not in user):
+            if ("username_normalized" not in user and self._normalize_username):
                 username_normalized = self.normalize(user["username"])
         
             for field in user:
@@ -579,11 +588,11 @@ class SqlAlchemyUserStorage(UserStorage):
                 field_names.append(field)
                 field_placeholders.append(":"+field)
                 field_values[field] = user[field]
-            if ("username_normalized" not in field_values):
+            if ("username_normalized" not in field_values and self._normalize_username):
                 field_names.append("username_normalized")
                 field_placeholders.append(":username_normalized")
                 field_values["username_normalized"] = username_normalized
-            if (email_normalized and "email_normalized" not in field_values):
+            if (email_normalized and "email_normalized" not in field_values and self._normalize_email):
                 field_names.append("email_normalized")
                 field_placeholders.append(":email_normalized")
                 field_values["email_normalized"] = email_normalized
@@ -639,9 +648,9 @@ class SqlAlchemyUserStorage(UserStorage):
         id : str|int = user["id"]
 
         try:
-            if "email" in user and "email_normalized" not in user:
+            if "email" in user and "email_normalized" not in user and self._normalize_email:
                 email_normalized = self.normalize(user["email"])
-            if ("username" in user and "username_normalized" not in user):
+            if ("username" in user and "username_normalized" not in user and self._normalize_username):
                 username_normalized = self.normalize(user["username"])
         
             for field in user:
@@ -659,10 +668,10 @@ class SqlAlchemyUserStorage(UserStorage):
                 if (field != "id"):
                     field_placeholders.append(field + " = :"+field)
                     field_values[field] = user[field]
-            if ("username_normalized" not in field_values and "username" in user):
+            if ("username_normalized" not in field_values and "username" in user and self._normalize_username):
                 field_placeholders.append("username_normalized = :username_normalized")
                 field_values["username_normalized"] = username_normalized
-            if (email_normalized and "email_normalized" not in field_values and "email" in user):
+            if (email_normalized and "email_normalized" not in field_values and "email" in user and self._normalize_email):
                 field_placeholders.append("email_normalized = :email_normalized")
                 field_values["email_normalized"] = email_normalized
 
@@ -698,8 +707,14 @@ class SqlAlchemyUserStorage(UserStorage):
             raise ce
 
     async def delete_user_by_username(self, username: str) -> None:
-        query = f"delete from {self.__user_table} where username_normalized = :value"
-        values = {"value": self.normalize(username)}
+        query = ""
+        values : Dict[str,Any] = {}
+        if (self._normalize_username):
+            query = f"delete from {self.__user_table} where username_normalized = :value"
+            values = {"value": self.normalize(username)}
+        else:
+            query = f"delete from {self.__user_table} where username = :value"
+            values = {"value": username}
         CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
@@ -712,7 +727,31 @@ class SqlAlchemyUserStorage(UserStorage):
             await conn.execute(text(query), values) 
 
     async def get_users(self, skip: Optional[int] = None, take: Optional[int] = None) -> List[User]:
-        raise NotImplementedError
+        ret : List[User] = []
+        async with self.engine.begin() as conn:
+            order_by = "username_normalized" if self._normalize_username else "username"
+            query = f"select * from {self.__user_table} order by " + order_by
+            if (skip is not None):
+                query += " OFFSET " + str(int(skip))
+            if (take is not None):
+                query += " OFFSET " + str(int(take))
+            res = await conn.execute(text(query))
+            for row in res.mappings():
+                user_fields = dict(row)
+
+                relations_fields : Dict[str, Dict[str,Any]] = {}
+                for join in self.__joins:
+                    query = f"select * from {join} where {self.__userid_foreign_key_column} = :field"
+                    values = {"field": user_fields["id"]}
+                    res = await conn.execute(text(query), values)
+                    row = res.fetchone()
+                    if (row is not None):
+                        relations_fields[join] = self.to_dict(row)
+
+                user_and_secrets = self._make_user_and_secrets(user_fields, None, relations_fields)
+                ret.append(user_and_secrets["user"])
+
+        return ret    
     
 ####################################
 ## OAuthClientStorage
