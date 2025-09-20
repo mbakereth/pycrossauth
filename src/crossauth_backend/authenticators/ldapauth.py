@@ -98,13 +98,13 @@ class LdapAuthenticator(PasswordAuthenticator):
     async def create_persistent_secrets(self, 
         username: str, 
         params: AuthenticationParameters, 
-        repeat_params: AuthenticationParameters|None = None) -> Dict[str, Any]:
+        repeat_params: AuthenticationParameters|None = None) -> UserSecretsInputFields:
         """
         Does nothing in this class
         """
         return {}
     
-    async def create_one_time_secrets(self, user: User) -> Dict[str, Any]:
+    async def create_one_time_secrets(self, user: User) -> UserSecretsInputFields:
         """
         Does nothing in this class
         """

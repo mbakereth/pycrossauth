@@ -76,11 +76,11 @@ class Authenticator(ABC):
     async def create_persistent_secrets(self, 
         username: str, 
         params: AuthenticationParameters, 
-        repeat_params: AuthenticationParameters|None = None) -> Dict[str, Any]:
+        repeat_params: AuthenticationParameters|None = None) -> UserSecretsInputFields:
         pass
 
     @abstractmethod
-    async def create_one_time_secrets(self, user: User) -> Dict[str, Any]:
+    async def create_one_time_secrets(self, user: User) -> UserSecretsInputFields:
         pass
 
     @abstractmethod

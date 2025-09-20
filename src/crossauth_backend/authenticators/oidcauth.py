@@ -59,7 +59,7 @@ class OidcAuthenticator(Authenticator):
     async def create_persistent_secrets(self, 
         username: str, 
         params: AuthenticationParameters, 
-        repeat_params: AuthenticationParameters|None = None) -> Dict[str, Any]:
+        repeat_params: AuthenticationParameters|None = None) -> UserSecretsInputFields:
         """
         This will return p hash of the passed password.
         :param _username ignored
@@ -70,7 +70,7 @@ class OidcAuthenticator(Authenticator):
         """
         return {}
     
-    async def create_one_time_secrets(self, user: User) -> Dict[str, Any]:
+    async def create_one_time_secrets(self, user: User) -> UserSecretsInputFields:
         """
         Does nothing for this class.
         """

@@ -197,7 +197,7 @@ class LocalPasswordAuthenticator(PasswordAuthenticator):
     async def create_persistent_secrets(self, 
         username: str, 
         params: AuthenticationParameters, 
-        repeat_params: AuthenticationParameters|None = None) -> Dict[str, Any]:
+        repeat_params: AuthenticationParameters|None = None) -> UserSecretsInputFields:
 
         if ("password" not in params or "password"):
             raise CrossauthError(ErrorCode.Unauthorized, "No password provided")
@@ -206,7 +206,7 @@ class LocalPasswordAuthenticator(PasswordAuthenticator):
                 
         return {"password": await self.create_password_hash(params["password"])}
 
-    async def create_one_time_secrets(self, user: User) -> Dict[str, Any]:
+    async def create_one_time_secrets(self, user: User) -> UserSecretsInputFields:
         """ Does nothing for this class. """
         return {}
     

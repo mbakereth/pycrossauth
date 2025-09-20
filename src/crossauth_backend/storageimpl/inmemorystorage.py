@@ -30,6 +30,9 @@ class InMemoryKeyStorage(KeyStorage):
         self.__keys_by_user_id: Dict[str|int, List[Key]] = {}
         self.__non_user_keys: List[Key] = []
 
+    def print(self):
+        print("Key storage", self.__keys, self.__keys_by_user_id)
+
     async def get_key(self, key: str) -> Key:
         if key in self.__keys:
             return self.__keys[key]
@@ -82,7 +85,11 @@ class InMemoryKeyStorage(KeyStorage):
                      if ("userid" in v and v["userid"] != userid) or (except_key and k == except_key) or not k.startswith(prefix)}
         if userid:
             if userid in self.__keys_by_user_id:
-                del self.__keys_by_user_id[userid]
+                for key in self.__keys_by_user_id[userid]:
+                    new_keys : List[Key] = []
+                    if (not key["value"].startswith(prefix)):
+                        new_keys.append(key)
+                    self.__keys_by_user_id[userid] = new_keys
         else:
             self.__non_user_keys = []
 

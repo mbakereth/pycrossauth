@@ -4,17 +4,34 @@ from crossauth_backend.cookieauth import SessionCookieOptions, SessionCookie, Co
 from crossauth_backend.crypto import Crypto
 from crossauth_backend.emailtoken import TokenEmailer, TokenEmailerOptions
 from crossauth_backend.utils import set_parameter, ParamType
-from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
-from crossauth_backend.common.interfaces import User, UserSecrets, UserInputFields, UserState, KeyPrefix
+from crossauth_backend.common.error import CrossauthError, ErrorCode
+from crossauth_backend.common.interfaces import User, UserSecrets, UserInputFields, \
+    UserState, KeyPrefix, UserSecretsInputFields, PartialUser, PartialUserSecrets
 from crossauth_backend.auth import Authenticator, AuthenticationParameters
-from typing import List, Mapping, NamedTuple, Any, Dict
+from typing import List, Mapping, NamedTuple, Any, Dict, cast
 from datetime import datetime
 import json
 
 class UserIdAndData(NamedTuple):
-    userid: str
-    user_Data: Dict[str,Any]
+    userid: str|int
+    user_data: Dict[str,Any]
+    secrets: UserSecrets|None
+
+class SessionTokens(NamedTuple):
+    session_cookie: Cookie|None
+    csrf_cookie: Cookie|None
+    csrf_form_or_header_value: str|None
+    user: User|None
+    secrets: UserSecrets|None
+
+class Csrf(NamedTuple):
+    csrf_cookie: Cookie
+    csrf_form_or_header_value: str
+
+class TokensSent(NamedTuple):
+    email_verification_token_sent: bool
+    password_reset_token_sent: bool
 
 class SessionManagerOptions(TokenEmailerOptions, total=False):
     """
@@ -69,14 +86,6 @@ class SessionManagerOptions(TokenEmailerOptions, total=False):
     The name corresponds to the key you give when adding authenticators.
     See `authenticators` in SessionManager.constructor.
     """
-class AnonymousSession(NamedTuple):
-    session_cookie: Cookie
-    csrf_cookie: Cookie
-    csrf_form_or_header_value: str
-
-class Csrf(NamedTuple):
-    csrf_cookie: Cookie
-    csrf_form_or_header_value: str
 
 class SessionManager:
     """
@@ -119,16 +128,14 @@ class SessionManager:
         :param SessionManagerOptions options: optional parameters for authentication. See :class:`SessionManagerOptions`.
 
         """
-        self._user_storage = options.get('userStorage', None)
+        self._user_storage = options.get('user_storage', None)
         self._key_storage = key_storage
         self._email_token_storage : KeyStorage
         self._authenticators = authenticators
         for authentication_name in self._authenticators:
             self._authenticators[authentication_name].factor_name = authentication_name
 
-        soptions : SessionCookieOptions = {}
-        if "secret" in options:
-            soptions["secret"] = options["secret"]
+        soptions : SessionCookieOptions = {**options}
         if ("session_cookie_options" in options):
             soptions = {**soptions, **options["session_cookie_options"]}
         self._session = SessionCookie(self._key_storage, soptions)
@@ -156,9 +163,9 @@ class SessionManager:
     
     async def login(self, username : str, 
                     params : AuthenticationParameters, 
-                    extra_fields : Mapping[str,Any]|None=None, 
+                    extra_fields : Mapping[str,Any] = {}, 
                     persist : bool=False, 
-                    user : User|None=None, bypass_2fa : bool=False) -> Dict[str, Any]:
+                    user : User|None=None, bypass_2fa : bool=False) -> SessionTokens:
         """
         Performs a user login
         
@@ -184,11 +191,7 @@ class SessionManager:
             CrossauthError: with ErrorCode of Connection, UserNotValid, 
                           PasswordNotMatch or UserNotExist.
         """
-        
-        if extra_fields is None:
-            extra_fields = {}
-        
-        print("session.login")
+                
         if not self._user_storage:
             raise CrossauthError(ErrorCode.Configuration, "Cannot call login if no user storage provided")
         
@@ -204,9 +207,9 @@ class SessionManager:
             try:
                 user_and_secrets = await self._user_storage.get_user_by_username(
                     username, 
-                    skipActiveCheck=True, 
-                    skipEmailVerifiedCheck=True
-                )
+                    {"skip_active_check": True, 
+                    "skip_email_verified_check": True
+                    })
                 secrets = user_and_secrets["secrets"]
                 user = user_and_secrets["user"]
                 user_input_fields = user_and_secrets["user"]
@@ -232,21 +235,16 @@ class SessionManager:
             
             user_and_secrets = await self._user_storage.get_user_by_username(
                 username, 
-                skipActiveCheck=True, 
-                skipEmailVerifiedCheck=True
-            )
-            secrets = user_and_secrets.secrets
-            user = user_and_secrets.user
+                {"skip_active_check": True, 
+                "skip_email_verified_check": True})
+            secrets = user_and_secrets["secrets"]
+            user = user_and_secrets["user"]
         else:
             user_and_secrets = await self._user_storage.get_user_by_username(
                 user["username"], 
-                skipActiveCheck=True, 
-                skipEmailVerifiedCheck=True
-            )
-            secrets = user_and_secrets.secrets
-
-        if (user is None):
-            raise(CrossauthError(ErrorCode.InvalidUsername)) # pathological - to make pylance happy
+                {"skip_active_check": True, 
+                "skip_email_verified_check": True})
+            secrets = user_and_secrets["secrets"]
 
         # create a session ID - bound to user if no 2FA and no password change required, anonymous otherwise
         session_cookie: Cookie
@@ -256,16 +254,22 @@ class SessionManager:
             resp = await self.create_anonymous_session({
                 "data": json.dumps({"passwordchange": {"username": user["username"] if user else ""}})
             })
+            if (resp.session_cookie is None):
+                raise CrossauthError(ErrorCode.InvalidSession, "Sessing cookie is missing")
             session_cookie = resp.session_cookie
         elif user["state"] == UserState.factor2_reset_needed:
             resp = await self.create_anonymous_session({
                 "data": json.dumps({"factor2change": {"username": user["username"]}})
             })
+            if (resp.session_cookie is None):
+                raise CrossauthError(ErrorCode.InvalidSession, "Sessing cookie is missing")
             session_cookie = resp.session_cookie
         elif not bypass_2fa and "factor2" in user and user["factor2"] != "":
             # create an anonymous session and store the username and 2FA data in it
             result = await self.initiate_two_factor_login(user)
-            session_cookie = result["session_cookie"]
+            if (result.session_cookie is None):
+                raise CrossauthError(ErrorCode.InvalidSession, "Sessing cookie is missing")
+            session_cookie = result.session_cookie
         else:
             session_key = await self.session.create_session_key(user["id"], extra_fields)
             #await self.sessionStorage.saveSession(user.id, session_key.value, session_key.dateCreated, session_key.expires)
@@ -290,21 +294,21 @@ class SessionManager:
             CrossauthLogger.logger().debug(j({"err": e}))
 
         # send back the cookies and user details
-        return {
-            "session_cookie": session_cookie,
-            "csrf_cookie": csrf_cookie,
-            "csrfFormOrHeaderValue": csrfFormOrHeaderValue,
-            "user": user,
-            "secrets": secrets,
-        }
+        return SessionTokens(
+            session_cookie=session_cookie,
+            csrf_cookie=csrf_cookie,
+            csrf_form_or_header_value=csrfFormOrHeaderValue,
+            user=user,
+            secrets=secrets,
+        )
 
-    async def create_anonymous_session(self, extra_fields: Mapping[str,Any]|None=None) -> AnonymousSession:
+    async def create_anonymous_session(self, extra_fields: Mapping[str,Any]|None=None) -> SessionTokens:
         if extra_fields is None:
             extra_fields = {}
         key = await self._session.create_session_key(None, extra_fields)
         session_cookie = self._session.make_cookie(key, False)
         csrf_data = await self.create_csrf_token()
-        return AnonymousSession(session_cookie, csrf_data.csrf_cookie, csrf_data.csrf_form_or_header_value)
+        return SessionTokens(session_cookie, csrf_data.csrf_cookie, csrf_data.csrf_form_or_header_value, None, None)
         
 
     async def logout(self, session_id : str):
@@ -496,6 +500,7 @@ class SessionManager:
             skip_email_verification = True
 
         secrets = await self._authenticators[user['factor1']].create_persistent_secrets(user['username'], params, repeat_params) if not empty_password else None
+        secrets = secrets
         new_user = await self._user_storage.create_user(user, secrets) if not empty_password else await self._user_storage.create_user(user)
 
         if not skip_email_verification and self.__enable_email_verification and self.__token_emailer:
@@ -507,7 +512,7 @@ class SessionManager:
     async def delete_user_by_username(self, username: str) -> None:
         if not self._user_storage:
             raise Exception("Cannot call deleteUser if no user storage provided")
-        self._user_storage.delete_user_by_username(username)
+        await self._user_storage.delete_user_by_username(username)
 
     async def initiate_two_factor_signup(self, 
             user: User, 
@@ -549,6 +554,7 @@ class SessionManager:
         session_data = {} if factor2_data is None else factor2_data.get("sessionData", {})
 
         factor1_secrets = await self.authenticators[user["factor1"]].create_persistent_secrets(user["username"], params, repeat_params)
+        factor1_secrets = factor1_secrets
         user["state"] = UserState.awaiting_two_factor_setup
         await self.key_storage.update_data(
             SessionCookie.hash_session_id(session_id), 
@@ -556,7 +562,7 @@ class SessionManager:
             session_data)
 
         new_user = await self._user_storage.create_user(user, factor1_secrets)
-        return UserIdAndData(new_user.id, user_data)
+        return UserIdAndData(new_user["id"], user_data, None)
 
     async def initiate_two_factor_setup(self, user: User, new_factor2: str|None, session_id: str) -> Mapping[str, Any]:
         """
@@ -600,7 +606,7 @@ class SessionManager:
             None)
         return {}
     
-    async def repeat_two_factor_signup(self, session_id: str) -> Mapping[str, Any]:
+    async def repeat_two_factor_signup(self, session_id: str) -> UserIdAndData:
         """
         This can be called if the user has finished signing up with factor1 but
         closed the browser before completing factor2 setup.  Call it if the user
@@ -646,16 +652,11 @@ class SessionManager:
 
         user_result = await self._user_storage.get_user_by_username(
             username, 
-            skip_active_check=True, 
-            skip_email_verified_check=True
-        )
+            {"skip_active_check": True, 
+            "skip_email_verified_check": True})
         user = user_result["user"]
-        
-        return {
-            "userid": user["id"], 
-            "userData": user_data, 
-            "secrets": secrets
-        }
+        if (not user_data): user_data = {}
+        return UserIdAndData(user["id"], user_data, cast(UserSecrets, secrets))
     
     async def complete_two_factor_setup(self, params: AuthenticationParameters, session_id: str) -> User:
         """
@@ -668,7 +669,7 @@ class SessionManager:
         :return the user object
         :raise CrossauthError if authentication fails.
         """
-        if not self.user_storage:
+        if not self._user_storage:
             raise CrossauthError(ErrorCode.Configuration, "Cannot call completeTwoFactorSetup if no user storage provided")
         
         new_signup = False
@@ -699,7 +700,7 @@ class SessionManager:
         if not authenticator:
             raise CrossauthError(ErrorCode.Configuration, "Unrecognised second factor authentication")
         
-        new_secrets: Dict[str, Any] = {}
+        new_secrets: PartialUserSecrets = {}
         secret_names = authenticator.secret_names()
         
         for secret in data:
@@ -710,7 +711,7 @@ class SessionManager:
 
         if not user:
             new_signup = True
-            resp = await self.user_storage.get_user_by_username(username, {
+            resp = await self._user_storage.get_user_by_username(username, {
                 "skip_active_check": True, 
                 "skip_email_verified_check": True
             })
@@ -722,64 +723,568 @@ class SessionManager:
             raise CrossauthError(ErrorCode.UserNotExist, "Couldn't fetch user")
         
         state = UserState.awaiting_email_verification if not skip_email_verification and self.__enable_email_verification else UserState.active
-        new_user : Dict[str, Any]= {
+        new_user : PartialUser = {
             "id": user["id"],
             "state": state,
             "factor2": data["factor2"],
         }
         
         if len(authenticator.secret_names()) > 0:
-            await self.user_storage.update_user(new_user, new_secrets)
+            await self._user_storage.update_user(new_user, new_secrets)
         else:
-            await self.user_storage.update_user(new_user)
+            await self._user_storage.update_user(new_user)
 
-        if not skip_email_verification and new_signup and self.__enable_email_verification and self.__token_emailer:
+        if not skip_email_verification and new_signup and \
+            self.__enable_email_verification and self.__token_emailer:
             await self.__token_emailer.send_email_verification_token(user["id"], "")
         
         await self.key_storage.update_data(SessionCookie.hash_session_id(key["value"]), "2fa", None)
         
-        return User(**{**user.__dict__, **new_user})
+        return {**user, **new_user}
 
-    async def initiate_two_factor_login(self, user: User) -> Mapping[str, Any]:
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "2FA is not implemented in this version")
+    async def initiate_two_factor_login(self, user: User) -> SessionTokens:
+        """
+        Initiates the two factor login process.
+        
+        Creates an anonymous session and corresponding CSRF token
+        
+        Args:
+            user: the user, which should already have been authenticated with factor1
+            
+        Returns:
+            a new anonymous session cookie and corresponding CSRF cookie and token.
+        """
+        if "factor2" not in user:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot initiate 2FA as factor2 not in user")
+        authenticator = self._authenticators[user["factor2"]]
+        secrets = await authenticator.create_one_time_secrets(user)
+        
+        session_data : Dict[str, Any]= {
+            "2fa": {
+                "username": user["username"],
+                "twoFactorInitiated": True,
+                "factor2": user["factor2"],
+                **secrets
+            }
+        }
+        
+        session_result = await self.create_anonymous_session({"data": json.dumps(session_data)})
+        session_cookie = session_result.session_cookie
+        csrf_token = self.csrf_tokens.create_csrf_token()
+        csrf_cookie = self.csrf_tokens.make_csrf_cookie(csrf_token)
+        csrf_form_or_header_value = self.csrf_tokens.make_csrf_form_or_header_token(csrf_token)
+        
+        return SessionTokens(session_cookie, csrf_cookie, csrf_form_or_header_value, None, None)
+    
+    async def initiate_two_factor_page_visit(self, 
+                user: User, 
+                session_id: str, 
+                request_body: Mapping[str, Any], 
+                url: str|None=None, 
+                content_type: str|None = None) -> SessionTokens:
+        """
+        Initiates the two factor process when visiting a protected page.
+        
+        Creates an anonymous session and corresponding CSRF token
+        
+        :param user: the user, which should already have been authenticated with factor1
+        :param session_id: the logged in session associated with the user
+        :param request_body: the parameters from the request made before 
+            being redirected to factor2 authentication
+        :param url: the requested url, including path and query parameters
+            content_type: optional content type from the request
+            
+        :return
+            If a token was passed a new anonymous session cookie and 
+            corresponding CSRF cookie and token.
+        """
+        if ("factor2" not in user):
+            raise CrossauthError(ErrorCode.Configuration, 
+                    "Cannot initiate factor2 page visti as factor2 not in user")
+        authenticator = self._authenticators[user["factor2"]]
+        secrets = await authenticator.create_one_time_secrets(user)
 
-    async def initiate_two_factor_page_visit(self, user: User, session_id: str, request_body: Mapping[str, Any], url: str|None=None, content_type: str|None = None):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "2FA is not implemented in this version")
+        session_cookie: Cookie|None = None
+        csrf_cookie: Cookie|None = None
+        csrf_form_or_header_value: str|None = None
+        
+        # const sessionId = this.session.unsignCookie(sessionCookieValue);
+        hashed_session_id = SessionCookie.hash_session_id(session_id)
+        CrossauthLogger.logger().debug(
+            f"initiate_two_factor_page_visit {user["username"]} {session_id} {hashed_session_id}"
+        )
+        
+        new_data: Dict[str, Any] = {
+            "username": user["username"],
+            "factor2": user["factor2"],
+            "secrets": secrets,
+            "body": request_body,
+            "url": url
+        }
+        
+        if content_type:
+            new_data["content-type"] = content_type
+            
+        await self.key_storage.update_data(hashed_session_id, "pre2fa", new_data)
 
+        return SessionTokens(session_cookie, csrf_cookie, csrf_form_or_header_value, None, None)
+    
     async def complete_two_factor_page_visit(self, params : AuthenticationParameters, session_id : str):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "2FA is not implemented in this version")
+        """
+        Completes 2FA when visiting a protected page.  
+        
+        If successful, returns.  Otherwise an exception is thrown.
+        
+        :param params: the parameters from user input needed to authenticate 
+                   (eg TOTP code).  Passed to the authenticator
+        :param session_id: the session cookie value (ie still signed)
+            
+        :raise
+            CrossauthError: if authentication fails.
+        """
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, 
+                    "Cannot call completeTwoFactorPageVisit if no user storage provided")
+        
+        result = await self.session.get_user_for_session_id(session_id)
+        key = result.key
+        
+        if not key:
+            raise CrossauthError(ErrorCode.InvalidKey, "Session key not found")
+        
+        if ("data" not in key):
+            raise CrossauthError(ErrorCode.InvalidSession, 
+                    "Cannot complete 2FA page visit: 2FA data not in session")
+        data = KeyStorage.decode_data(key["data"])
+        # let data = getJsonData(key);
+        
+        if "pre2fa" not in data:
+            raise CrossauthError(ErrorCode.Unauthorized, "Two factor authentication not initiated")
+        
+        user_result = await self._user_storage.get_user_by_username(data["pre2fa"]["username"])
+        secrets = user_result.get('secrets')
 
-    async def cancel_two_factor_page_visit(self, session_id : str):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "2FA is not implemented in this version")
+        authenticator = self._authenticators.get(data["pre2fa"]["factor2"])
+        if not authenticator:
+            raise CrossauthError(ErrorCode.Configuration, "Unrecognised second factor authentication")
+        
+        new_secrets: UserSecretsInputFields = {}
+        secret_names = authenticator.secret_names()
+        
+        for secret in secrets:
+            #if (secretNames.includes(secret)) newSecrets[secret] = data[secret];
+            if secret in secret_names and secret in secrets:
+                new_secrets[secret] = secrets[secret]
+        
+        # Merge new_secrets with data.pre2fa.secrets, with data.pre2fa.secrets taking precedence
+        pre2fasecrets = cast(UserSecretsInputFields, data["pre2fa"]["secrets"])
+        combined_secrets : UserSecretsInputFields = {**new_secrets, **pre2fasecrets}
+        
+        await authenticator.authenticate_user(None, combined_secrets, params)
+        await self.key_storage.update_data(SessionCookie.hash_session_id(key["value"]), "pre2fa", None)
 
-    async def complete_two_factor_login(self, params : AuthenticationParameters, session_id : str, extra_fields:Mapping[str, Any]|None=None, persist:bool=False):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "Login is not implemented in this version")
 
-    async def request_password_reset(self, email : str):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "Password reset is not implemented in this version")
+    async def cancel_two_factor_page_visit(self, session_id : str) -> Dict[str,Any]:
+        """
+        Cancels the 2FA that was previously initiated but not completed..
+        
+        If successful, returns.  Otherwise an exception is thrown.
+        
+        :param session_id: the session id (unsigned)
+            
+        :return
+            Dict[str, Any]: the 2FA data that was created on initiation
+            
+        :raise
+            CrossauthError: of `Unauthorized` if 2FA was not initiated.
+        """
+        user_data = await self.session.get_user_for_session_id(session_id)
+        key = user_data.key
+        
+        if not key:
+            raise CrossauthError(ErrorCode.InvalidSession, "Session key not found")
+            
+        if ("data" not in key):
+            CrossauthLogger.logger().debug(j({"mag": "Cancelling 2FA page visit - no data in session.  Doing nothing"}))
+            return {}
+        
+        data = KeyStorage.decode_data(key["data"])
+        # data = get_json_data(key)
+        
+        if "pre2fa" not in data:
+            raise CrossauthError(ErrorCode.Unauthorized, "Two factor authentication not initiated")
+            
+        await self.key_storage.update_data(
+            SessionCookie.hash_session_id(key["value"]), 
+            "pre2fa", 
+            None
+        )
+        
+        return data["pre2fa"]
+    
+    async def complete_two_factor_login(self, 
+            params : AuthenticationParameters, 
+            session_id : str, 
+            extra_fields:Mapping[str, Any] = {}, 
+            persist:bool=False) -> SessionTokens:
+        """
+        Performs the second factor authentication as the second step of the login
+        process
+        
+        If authentication is successful, the user's state will be set to active
+        and a new session will be created, bound to the user.  The anonymous session
+        will be deleted.
+        
+        :param params: the user-provided parameters to authenticate with (eg TOTP code).
+        :param session_id: the user's anonymous session
+        :param extra_fields: extra fields to add to the user-bound new session table entry
+        :param persist: if true, the cookie will be perstisted (with an expiry value);
+                    otberwise it will be a session-only cookie.
 
-    async def apply_email_verification_token(self, token : str):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "Email verification is not implemented in this version")
+        :return AuthResult containing:
+                session_cookie: the new session cookie
+                csrf_cookie: the new CSRF cookie
+                csrf_form_or_header_value: the new CSRF token corresponding to the cookie
+                user: the newly-logged in user.
+        """
+            
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, 
+                               "Cannot call completeTwoFactorLogin if no user storage provided")
+        
+        key_result = await self.session.get_user_for_session_id(session_id)
+        key = key_result.key
+        
+        if not key or "data" not in key or key["data"] == "":
+            raise CrossauthError(ErrorCode.Unauthorized)
+        
+        data = KeyStorage.decode_data(key["data"])["2fa"]
+        # let data = getJsonData(key)["2fa"];
+        username = data["username"]
+        factor2 = data["factor2"]
+        
+        user_result = await self._user_storage.get_user_by_username(username)
+        user = user_result["user"]
+        secrets = user_result["secrets"]
+        
+        authenticator = self._authenticators.get(factor2)
+        if not authenticator:
+            raise CrossauthError(ErrorCode.Configuration, 
+                               f"Second factor {factor2} not enabled")
+        
+        # Merge secrets and data dictionaries for authentication
+        auth_data = cast(UserSecretsInputFields, {**secrets, **data})
+        await authenticator.authenticate_user(user, auth_data, params)
 
-    async def user_for_password_reset_token(self, token : str):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "Password reset  is not implemented in this version")
+        new_session_key = await self.session.create_session_key(user["id"], extra_fields)
+        await self.key_storage.delete_key(SessionCookie.hash_session_id(key["value"]))
+        session_cookie = self.session.make_cookie(new_session_key, persist)
 
-    async def update_user(self, current_user : User, new_user : User, skip_email_verification:bool=False, as_admin:bool=False):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "User update is not implemented in this version")
+        csrf_token = self.csrf_tokens.create_csrf_token()
+        csrf_cookie = self.csrf_tokens.make_csrf_cookie(csrf_token)
+        csrf_form_or_header_value = self.csrf_tokens.make_csrf_form_or_header_token(csrf_token)
+        
+        try:
+            await self.email_token_storage.delete_all_for_user(user["id"], 
+                            KeyPrefix.password_reset_token)
+        except Exception as e:
+            CrossauthLogger.logger().warn(j({"msg": "Couldn't delete password reset tokens while logging in", 
+                                          "user": username}))
+            CrossauthLogger.logger().debug(j({"err": str(e)}))
+        
+        return SessionTokens(
+            session_cookie=session_cookie,
+            csrf_cookie=csrf_cookie,
+            csrf_form_or_header_value=csrf_form_or_header_value,
+            user=user,
+            secrets=None
+        )
+    async def request_password_reset(self, email: str) -> None:
+        """
+        Sends a password reset token
+        :param email: the user's email (where the token will be sent)
+        """
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, 
+                    "Cannot call requestPasswordReset if no user storage provided")
+        
+        result = await self._user_storage.get_user_by_email(email, {"skip_active_check": True})
+        user = result["user"]
+        
+        if (user["state"] != UserState.active and 
+            user["state"] != UserState.password_reset_needed and 
+            user["state"] != UserState.password_and_factor2_reset_needed):
+            raise CrossauthError(ErrorCode.UserNotActive)
+        
+        if self.__token_emailer:
+            await self.__token_emailer.send_password_reset_token(user["id"])
 
-    async def reset_secret(self, token : str, factor_number:int, params:AuthenticationParameters, repeat_params:AuthenticationParameters|None=None):
-        """ Not implemented """
-        raise CrossauthError(ErrorCode.NotImplemented, "Password reset is not implemented in this version")
 
+    async def apply_email_verification_token(self, token: str) -> User:
+        """
+        Takes an email verification token as input and applies it to the user storage.
+        
+        The state is reset to active.  If the token was for changing the password, the new
+        password is saved to the user in user storage.
+        
+        Args:
+            token: the token to apply
+            
+        Returns:
+            the new user record
+        """
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call applyEmailVerificationToken if no user storage provided")
+        
+        CrossauthLogger.logger().debug(j({"msg": "applyEmailVerificationToken"}))
+        
+        if not self.__token_emailer:
+            raise CrossauthError(ErrorCode.Configuration, "Email verification not enabled")
+        
+        try:
+            # Verify the email verification token
+            token_result = await self.__token_emailer.verify_email_verification_token(token)
+            userid = token_result["userid"]
+            new_email = str(token_result["newEmail"])
+            
+            # Get user by ID
+            user_result = await self._user_storage.get_user_by_id(userid, {"skip_email_verified_check":True})
+            user = user_result["user"]
+            
+            # Handle old email logic
+            old_email: str|None = None
+            if "email" in user and user["email"] != "":
+                old_email = user["email"]
+            else:
+                old_email = user["username"]
+            
+            # Create new user partial object
+            new_user: PartialUser = {
+                "id": user["id"],
+            }
+            
+            # Update state if it was awaiting email verification
+            if user["state"] == UserState.awaiting_email_verification:
+                new_user["state"] = "active"
+            
+            # Update email if newEmail is not empty
+            if new_email != "":
+                new_user["email"] = new_email
+            else:
+                old_email = None
+            
+            # Update user in storage
+            await self._user_storage.update_user(new_user)
+            
+            # Delete the email verification token
+            await self.__token_emailer.delete_email_verification_token(token)
+            
+            # Return merged user object
+            merged_user = cast(User, {**user, **new_user, "oldEmail": old_email})
+            return merged_user  
+        
+        finally:
+            pass
+
+    async def user_for_password_reset_token(self, token: str) -> User:
+        """
+        Returns the user associated with a password reset token
+        
+        :param token: the token that was emailed
+            
+        :return: the user
+            
+        :raise CrossauthError: if the token is not valid.
+        """
+        if not self.__token_emailer:
+            raise CrossauthError(ErrorCode.Configuration, "Password reset not enabled")
+        return await self.__token_emailer.verify_password_reset_token(token)
+    
+    async def change_secrets(self,
+                           username: str,
+                           factor_number: int,  # 1 or 2
+                           new_params: AuthenticationParameters,
+                           repeat_params: AuthenticationParameters|None = None,
+                           old_params: AuthenticationParameters|None = None) -> User:
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call changeSecrets if no user storage provided")
+        
+        user_data = await self._user_storage.get_user_by_username(username)
+        user = user_data["user"]
+        secrets = user_data["secrets"]
+        
+        factor : str|None = None
+        if (factor_number == 1):
+            factor = user["factor1"]
+        elif ("factor2" in user and factor_number == 2):
+            factor = user["factor2"]
+        if (factor is None):
+            raise CrossauthError(ErrorCode.BadRequest, "Factor number requesting change for is not in user")
+        
+        if old_params is not None:
+            await self.authenticators[factor].authenticate_user(user, secrets, old_params)
+        
+        new_secrets = await self._authenticators[user["factor1"]].create_persistent_secrets(
+            user["username"], new_params, repeat_params
+        )
+
+        
+        await self._user_storage.update_user(
+            {"id": user["id"]},
+            cast(PartialUserSecrets,new_secrets)
+        )
+
+        # delete any password reset tokens
+        try:
+            await self.__email_token_storage.delete_all_for_user(
+                user["id"],
+                KeyPrefix.password_reset_token
+            )
+        except Exception as e:
+            CrossauthLogger.logger().warn(j({
+                "msg": "Couldn't delete password reset tokens while logging in",
+                "user": username
+            }))
+            CrossauthLogger.logger().debug(j({"err": str(e)}))
+
+        return user
+    
+    async def update_user(
+        self, 
+        current_user: User, 
+        new_user: User, 
+        skip_email_verification: bool = False, 
+        as_admin: bool = False
+    ) -> TokensSent:
+        """
+        Updates a user entry in storage
+        :param current_user the current user details
+        :param new_user the new user details
+        :return dict with emailVerificationTokenSent and passwordResetTokenSent booleans
+        """
+        new_email: str|None = None
+        
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call updateUser if no user storage provided")
+        
+        if "id" not in current_user:
+            raise CrossauthError(ErrorCode.UserNotExist, "Please specify a user id")
+        
+        if "username" not in current_user or current_user["username"] == "":
+            raise CrossauthError(ErrorCode.UserNotExist, "Please specify a userername")
+        
+        # Extract email, username, password and collect remaining fields
+        email = new_user["email"] if "email" in new_user else None
+        username = new_user["username"]
+        
+        # Create rest dictionary with all other fields except email, username, password
+        rest : PartialUser = {}
+        for key, value in vars(new_user).items():
+            if key not in ['email', 'username', 'password']:
+                rest[key] = value
+        
+        rest['userid'] = current_user["userid"] if "userid" in current_user else None # type: ignore
+        rest['id'] = current_user["id"] if "id" in current_user else ""
+        has_email = False
+        
+        if email:
+            new_email = email
+            TokenEmailer.validate_email(new_email)
+            has_email = True
+        elif username:
+            new_email = username
+            try:
+                TokenEmailer.validate_email(current_user["username"])
+                has_email = True
+            except:  # not in email format - can ignore
+                pass
+            if has_email:
+                TokenEmailer.validate_email(new_email)
+        
+        if (new_email is None):
+            raise CrossauthError(ErrorCode.UnknownError) # pathological
+        
+        if not skip_email_verification and self.__enable_email_verification and has_email:
+            if self.__token_emailer:
+                await self.__token_emailer.send_email_verification_token(current_user["id"], new_email)
+        else:
+            if email:
+                rest['email'] = email
+            if username:
+                rest['username'] = username
+        
+        if (new_user["state"] == UserState.password_reset_needed or 
+            new_user["state"] == UserState.password_and_factor2_reset_needed):
+            if self.__token_emailer:
+                await self.__token_emailer.send_password_reset_token(current_user["id"], {}, as_admin)
+        
+        await self._user_storage.update_user(rest)
+        
+        return TokensSent((not skip_email_verification and 
+                                self.__enable_email_verification and 
+                                has_email),
+                          (new_user["state"] == UserState.password_reset_needed or 
+                                new_user["state"] == UserState.password_and_factor2_reset_needed) )
+
+    async def reset_secret(self, 
+            token: str,
+            factror_number: int,  # 1 or 2
+            params: AuthenticationParameters,
+            repeat_params: AuthenticationParameters|None = None) -> User:
+        """
+        Resets the secret for factor1 or 2 (eg reset password)
+        
+        :param token: the reset password token that was emailed
+        :param factror_number: which factor to reset (1 or 2)
+        :param params: the new secrets entered by the user (eg new password)
+        :param repeat_params: optionally, repeat of the secrets. If passed, 
+                an exception will be thrown if they do not match
+                         
+        :return the user object
+            
+        :raise CrossauthError: if the repeat_params don't match params,
+                the token is invalid or the user storage cannot be updated.
+        """
+        if not self._user_storage:
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call resetSecret if no user storage provided")
+                
+        if not self.__token_emailer:
+            raise CrossauthError(ErrorCode.Configuration, "Password reset not enabled")
+        
+        user = await self.user_for_password_reset_token(token)
+        factor : str|None = None
+        if (factror_number == 1):
+            factor = user["factor1"]
+        elif (factror_number == 2 and "factor2" in user):
+            factor = user["factor2"]
+        if (factor is None):
+            raise CrossauthError(ErrorCode.BadRequest, "No factor2 for user but factor 2 reset requested")
+        
+        if not self.__token_emailer:
+            raise CrossauthError(ErrorCode.Configuration)
+        
+        new_state = (UserState.factor2_reset_needed 
+                   if user["state"] == UserState.password_and_factor2_reset_needed 
+                   else UserState.active)
+        
+        secrets = await self._authenticators[factor].create_persistent_secrets(user["username"], params, repeat_params)
+        await self._user_storage.update_user(
+            {"id": user["id"], "state": new_state},
+            cast(PartialUserSecrets,secrets))
+        
+        
+        # this.keyStorage.deleteKey(TokenEmailer.hashPasswordResetToken(token));
+        
+        # delete all password reset tokens
+        try:
+            await self.__email_token_storage.delete_all_for_user(user["id"], 
+                                                KeyPrefix.password_reset_token)
+        except Exception as e:
+            CrossauthLogger.logger().warn(j({"msg": "Couldn't delete password reset tokens while logging in", 
+                                           "user": user["username"]}))
+            CrossauthLogger.logger().debug(j({"err": str(e)}))
+        
+        return {**user, "state": new_state}
 
     @property
     def session_cookie_name(self):

@@ -268,11 +268,11 @@ class EmailAuthenticator(Authenticator):
     async def create_persistent_secrets(self, 
         username: str, 
         params: AuthenticationParameters, 
-        repeat_params: AuthenticationParameters|None = None) -> Dict[str, Any]:
+        repeat_params: AuthenticationParameters|None = None) -> UserSecretsInputFields:
         """Does nothing for this class"""
         return {}
 
-    async def create_one_time_secrets(self, user: User) -> Dict[str, Any]:
+    async def create_one_time_secrets(self, user: User) -> UserSecretsInputFields:
         """
         Creates and emails a new one-time code.
         @param user the user to create it for.  Uses the `email` field if 

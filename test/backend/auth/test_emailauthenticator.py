@@ -2,7 +2,7 @@ import unittest
 import unittest.mock
 from crossauth_backend.authenticators.emailauth import EmailAuthenticator
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryUserStorage
-from crossauth_backend.common.interfaces import UserState, UserInputFields, UserSecretsInputFields, Key
+from crossauth_backend.common.interfaces import UserState, UserInputFields, Key
 import time
 from typing import cast, Dict
 import json
@@ -102,11 +102,13 @@ class default_emailauth_validator_test(unittest.IsolatedAsyncioTestCase):
                 }
                 user = await user_storage.create_user(user_input)
                 secrets = await authenticator.create_one_time_secrets(user)
+                self.assertIn("otp", secrets)
+                if ("otp" not in secrets): return
                 secrets_otp = secrets["otp"]
                 emailed_otp = json.loads(smtp_data)["otp"]
                 self.assertEqual(secrets_otp, emailed_otp)
                 self.assertIn(smtp_data, smtp_body)
-                await authenticator.authenticate_user(user, cast(UserSecretsInputFields, secrets), {"otp": emailed_otp})
+                await authenticator.authenticate_user(user, secrets, {"otp": emailed_otp})
                 ok = True
             except Exception as e:
                 print(e)
@@ -130,11 +132,13 @@ class default_emailauth_validator_test(unittest.IsolatedAsyncioTestCase):
                     }
                     user = await user_storage.create_user(user_input)
                     secrets = await authenticator.create_one_time_secrets(user)
+                    self.assertIn("otp", secrets)
+                    if ("otp" not in secrets): return
                     secrets_otp = secrets["otp"]
                     emailed_otp = json.loads(smtp_data)["otp"]
                     self.assertEqual(secrets_otp, emailed_otp)
                     self.assertIn(smtp_data, smtp_body)
-                    await authenticator.authenticate_user(user, cast(UserSecretsInputFields, secrets), {"otp": emailed_otp})
+                    await authenticator.authenticate_user(user, secrets, {"otp": emailed_otp})
                     ok = True
                 except Exception as e:
                     print(e)

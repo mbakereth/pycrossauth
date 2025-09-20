@@ -5,6 +5,8 @@ from crossauth_backend.common.interfaces import Key, PartialKey, KeyPrefix
 from crossauth_backend.storage import KeyStorage, UserStorage, User
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.storage import UserStorage, UserStorageGetOptions
+from crossauth_backend.emailtoken import TokenEmailerOptions
+
 from typing import Mapping, Any, TypedDict, Literal, NotRequired, Optional, Callable, NamedTuple
 from datetime import datetime, timedelta
 from nulltype import NullType, Null
@@ -227,7 +229,7 @@ class UserAndKey(NamedTuple):
     user: User|None
     key: Key
 
-class SessionCookieOptions(CookieOptions, total=False): # Also inherit from TokenEmailerOptions
+class SessionCookieOptions(CookieOptions, TokenEmailerOptions, total=False): # Also inherit from TokenEmailerOptions
     """
     Options for double-submit csrf tokens
     """
