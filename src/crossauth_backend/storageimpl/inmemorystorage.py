@@ -56,8 +56,7 @@ class InMemoryKeyStorage(KeyStorage):
         if (data is not None): key["data"] = data
         if (extra_fields is not None):
             for name in extra_fields:
-                if (name in Key.__annotations__):
-                    key[name] = extra_fields[name]
+                key[name] = extra_fields[name]
 
         self.__keys[value] = key
         if userid is not None:

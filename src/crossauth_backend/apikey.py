@@ -1,10 +1,9 @@
 
 from typing import TypedDict, NamedTuple, Dict, Any, cast
-import re
 import datetime
 from nulltype import Null, NullType
 
-from crossauth_backend.common.interfaces import ApiKey, Key
+from crossauth_backend.common.interfaces import ApiKey, Key, KeyPrefix
 from crossauth_backend.crypto import Crypto
 from crossauth_backend.storage import KeyStorage
 from crossauth_backend.utils import set_parameter, ParamType
@@ -58,7 +57,7 @@ class ApiKeyManager:
         self.__secret = ""
         self.__key_length = 16
         self.__api_key_storage : KeyStorage = key_storage
-        self.prefix = ""
+        self.prefix = KeyPrefix.api_key
         self.auth_scheme = "ApiKey"
         set_parameter("secret", ParamType.String, self, options, "SECRET", required=True)
         set_parameter("key_length", ParamType.Integer, self, options, "APIKEY_LENGTH")
@@ -164,19 +163,17 @@ class ApiKeyManager:
         :raise CrossauthError: If the key is invalid
         """
         if self.auth_scheme != "" and signed_value.startswith(self.auth_scheme + " "):
-            regex = re.compile(f"^{re.escape(self.auth_scheme)} ")
-            signed_value = regex.sub("", signed_value)
+            signed_value = signed_value[7:]
         
         unsigned_value = self.__unsign_api_key_value(signed_value)
         hashed_value = ApiKeyManager.__hash_api_key_value(unsigned_value)
         key = await self.__api_key_storage.get_key(self.prefix + hashed_value)
-        
         if "name" not in key:
             raise CrossauthError(ErrorCode.InvalidKey, "Not a valid API key")
         
         return cast(NamedKey, {**key, "name": key["name"]})
 
-    async def validateToken(self, header_value: str) -> ApiKey:
+    async def validate_token(self, header_value: str) -> ApiKey:
         """
         Returns the ApiKey if the token is valid, throws an exception otherwise.
         
