@@ -79,3 +79,28 @@ class SessionManagerTest(unittest.IsolatedAsyncioTestCase):
             pass
         self.assertFalse(ok)
 
+    async def test_logoutFromAll(self):
+        key_storage = InMemoryKeyStorage()
+        user_storage = await get_test_user_storage()
+        authenticator = LocalPasswordAuthenticator(user_storage)
+        manager = SessionManager(key_storage, {"localpassword": authenticator}, {"user_storage": user_storage, "secret": "ABCDEFGHIJKLMNOPQRSTUVWX"})
+        bobret = await manager.login("bob", {"password": "bobPass123"})
+        bob = bobret.user
+        cookie = bobret.session_cookie
+        self.assertIsNotNone(bob)
+        self.assertIsNotNone(cookie)
+        if (not bob or not cookie): return
+        self.assertEqual(bob["username"], "bob")
+        sessionId = manager.get_session_id(cookie["value"])
+        userret = await manager.user_for_session_id(sessionId)
+        self.assertIsNotNone(userret.user)
+        if (userret.user is None): return
+        await manager.logout_from_all(userret.user["id"])
+        ok = False
+        try:
+            await manager.user_for_session_id(sessionId)
+            ok = True
+        except:
+            pass
+        self.assertFalse(ok)
+
