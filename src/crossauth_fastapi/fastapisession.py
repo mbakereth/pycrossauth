@@ -9,15 +9,16 @@ from starlette.datastructures import FormData
 from starlette.types import Message
 from crossauth_backend.session import SessionManagerOptions
 from crossauth_backend.cookieauth import  CookieOptions
-from crossauth_backend.common.interfaces import User, Key
+from crossauth_backend.common.interfaces import User, Key, UserInputFields, OAuthClient
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
-from crossauth_backend.storage import KeyStorage, KeyDataEntry
+from crossauth_backend.storage import KeyStorage, KeyDataEntry, UserStorage, OAuthClientStorage
 from crossauth_backend.auth import Authenticator
 from crossauth_backend.session import SessionManager
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.crypto import Crypto
 from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
+from nulltype import NullType
 
 class FastApiCookieOptions(TypedDict, total=True):
     max_age: int|None
@@ -147,6 +148,56 @@ class JsonOrFormData:
 class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     """ Options for :class:`FastApiSessionServer`. """
 
+    user_storage: UserStorage
+    """ If enabling user login, must provide the user storage """
+
+    authenticators : Dict[str, Authenticator]
+    """
+    Factor 1 and 2 authenticators.
+    
+    The key is what appears in the `factor1` and `factor2` filed in the
+    Users table.
+    """
+
+    prefix : str
+    """ All endpoint URLs will be prefixed with this.  Default `/` """
+
+    admin_prefix : str
+    """ Admin URLs will be prefixed with `this  Default `admin/` """
+
+    endpoints : List[str]
+    """ List of endpoints to add to the server ("login", "api/login", etc, 
+       prefixed by the `prefix` parameter.  Empty for allMinusOAuth.  Default allMinusOAuth.
+    """
+
+    login_redirect : str
+    """ Page to redirect to after successful login, default "/" """
+
+    logout_redirect : str
+    """ Page to redirect to after successful logout, default "/" """
+
+    validate_user_fn: Callable[[UserInputFields], List[str]]
+    """ Function that raises a :class: crossauth_backend.common.CrossauthError} 
+    with :class: crossauth_backend.common.ErrorCode `FormEnty` if the user 
+    doesn't confirm to local rules.  Doesn't validate passwords
+    """
+
+    create_user_fn: Callable[[Request, List[str], List[str]], UserInputFields]
+    """
+    Function that creates a user from form fields.
+    Default one takes fields that begin with `user_`, removing the `user_` 
+    prefix and filtering out anything not in the userEditableFields list in 
+    the user storage.
+    """
+
+    update_user_fn: Callable[[User, Request, List[str]], User]
+    """
+    Function that updates a user from form fields.
+    Default one takes fields that begin with `user_`, removing the `user_`
+     prefix and filtering out anything not in the userEditableFields list in 
+    the user storage.
+    """
+
     add_to_session: Callable[[Request], Mapping[str, str|int|float|datetime|None]]
     """
     Called when a new session token is going to be saved 
@@ -161,11 +212,205 @@ class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     Throw an exception if cecks fail    
     """
 
+    login_page : str
+    """
+    Template file containing the login page (with without error messages).  
+    See the class documentation for {@link FastifyServer} for more info.  
+    Defaults to "login.njk".
+    """
+
+    factor2_page: str
+    """
+    Template file containing the page for getting the 2nd factor for 2FA 
+    protected pages.  See the class documentation for {@link FastifyServer} 
+    for more info.  Defaults to "factor2.njk".
+    """
+
+    signup_page : str
+    """
+    Template file containing the signup page (with without error messages).  
+    See the class documentation for {@link FastifyServer} for more info. 
+    Defaults to "signup.njk".
+    Signup form should contain at least `username` and `password` and may
+    also contain `repeatPassword`.  If you have additional
+    fields in your user table you want to pass from your form, prefix 
+    them with `user_`, eg `user_email`.
+    If you want to enable email verification, set `enableEmailVerification` 
+    and set `checkEmailVerified` on the user storage.
+    """
+
+    configure_factor2_page: str
+    """ Page to set up 2FA after sign up """
+
+    delete_user_page: str
+    """ Confirm deleting a user """
+
+    """ Confirm deleting an OAuth client """
+    delete_client_page: str
+
     error_page : str
     """
     Page to render error messages, including failed login. 
     See the class documentation for :class:`FastApiServer` for more info.  
     Defaults to "error.jinja2".
+    """
+
+    change_password_page: str
+    """ Page to render for password changing.  
+    See the class documentation for {@link FastifyServer} for more info.  
+    efaults to "changepassword.njk".
+    """
+
+    change_factor2_page: str
+    """ Page to render for selecting a different 2FA.  
+    See the class documentation for {@link FastifyServer} for more info.  
+    efaults to "changepassword.njk".
+    """
+
+    update_user_page: str
+    """ Page to render for updating user details.  
+    See the class documentation for {@link FastifyServer} for more info.  
+    efaults to "updateuser.njk".
+    """
+
+    request_reset_password_page: str
+    """ Page to ask user for email and reset his/her password.  
+    See the class documentation for {@link FastifyServer} for more info.  
+    efaults to "requestpasswordreset.njk".
+    """
+
+    reset_password_page: str
+    """ Page to render for password reset, after the emailed token has been 
+    validated.  
+    ee the class documentation for {@link FastifyServer} for more info.  
+    efaults to "resetpassword.njk".
+    """
+
+    enable_email_verification: bool
+    """
+    Turns on email verification.  This will cause the verification tokens to 
+    e sent when the account
+    s activated and when email is changed.  Default false.
+    """
+
+    email_verified_page: str
+    """ Page to render for to confirm email has been verified.  Only created 
+    if `enableEmailVerification` is true.
+    ee the class documentation for {@link FastifyServer} for more info.  
+    efaults to "emailverified.njk"
+    """
+
+    factor2_protected_page_endpoints: List[str]
+    """
+    These page endpoints need the second factor to be entered.  Visiting
+    the page redirects the user to the factor2 page.
+        You probably want to do this for things like changing password.  The
+    default is
+     `/requestpasswordreset`,
+     `/updateuser`,
+     `/changepassword`,
+     `/resetpassword`,
+     `/changefactor2`,
+    """
+
+    factor2_protected_api_endpoints: List[str]
+    """
+    These page endpoints need the second factor to be entered.  Making
+    a call to these endpoints results in a response of 
+    {"ok": true, "factor2Required": true `}.  The user should then
+    make a call to `/api/factor2`.   If the credetials are correct, the
+    response will be that of the original request.
+        You probably want to do this for things like changing password.  The
+    default is
+     `/api/requestpasswordreset`,
+     `/api/updateuser`,
+     `/api/changepassword`,
+     `/api/resetpassword`,
+     `/api/changefactor2`,
+    """
+
+    edit_user_scope: str
+    """
+    This parameter affects users who are not logged in with a session ID
+    ut with an OAuth access token.  Such users can only update their user
+    ecord if the scoped named in this variable has been authorized by
+    hat user for the client.
+        y default, no scopes are authorized to edit the user.
+    """
+
+    ###################################
+    ## Admin pages
+
+    """
+    If true, all administrator endpoints will be enabled.
+    If you explicitly name which endpoints to enable with the `endpoints`
+    option, this is ignored.
+    default false.
+    """
+    enable_admin_endpoints: bool
+
+    enable_oauth_client_management: bool
+    """
+    If true, all endpoints for managing OAuth clients (including 
+    he admin ones if `enableAdminEndpoints` is also true).
+    If you explicitly name which endpoints to enable with the `endpoints`
+    option, this is ignored.
+    Default false
+    """
+
+    admin_create_user_page: str
+    """
+    The temaplte file for the admin create user page.
+        Default `admin/createuser.njk`
+    """
+
+    admin_select_user_page: str
+    """
+    The temaplte file for the admin selecting a user.
+    Default `admin/selectuser.njk`
+    """
+
+    admin_create_client_page: str
+    """
+    The temaplte file for the admin creating a user.
+    Default `admin/createuser.njk`
+    """
+
+    user_search_fn : Callable[[str, UserStorage], List[User]]
+    """
+    Admin pages provide functionality for searching for users.  By
+    default the search string must exactly match a username or
+    email address (depending on the storage, after normalizing
+    and lowercasing).  Override this behaviour with this function
+    :param searchTerm the search term 
+    :param userStorage the user storage to search
+    :return array of matching users
+    """
+
+    client_serach_dn: Callable[[str, OAuthClientStorage, str|int|NullType], List[OAuthClient]]
+    """
+    Admin pages provide functionality for searching for OAuth clients.  By
+    default the search string must exactly match the `client_name`.
+    Override this behaviour with this function
+    :param searchTerm the search term 
+    :param clientStorage the client storage to search
+    :param userid if defined and non null, only clients owned by that
+           user ID will be returned.  If `null`, only clients not owned
+           by a user will be returned.  If undefined, all matching clients
+           will be returned
+    :return array of matching clients
+    """
+
+    user_allowed_factor1: List[str]
+    """
+    When signing up themselves, users may choose any of these.
+    Default: ["localpassword"]
+    """
+
+    admin_allowed_factor1: List[str]
+    """
+    When admins create a user, they may choose any of these.
+    Default: ["localpassword"]
     """
 
 class FastApiSessionServer(FastApiSessionAdapter):
@@ -211,7 +456,15 @@ class FastApiSessionServer(FastApiSessionAdapter):
     @property
     def enable_csrf_protection(self):
         return self._enable_csrf_protection
+
+    @property
+    def user_allowed_factor1(self):
+        return self.__user_allowed_factor1
     
+    @property
+    def admin_allowed_factor1(self):
+        return self.__admin_allowed_factor1
+
     def __init__(self, app: FastAPI, 
                  key_storage: KeyStorage, 
                  authenticators: Mapping[str, Authenticator], 
@@ -237,12 +490,45 @@ class FastApiSessionServer(FastApiSessionAdapter):
         self.__add_to_session = options['add_to_session'] if "add_to_session" in options else None
         self.__validate_session = options['validate_session'] if "validate_session" in options else None
         self._enable_csrf_protection = True
+        self.__user_allowed_factor1 = ["localpassword"]
+        self.__admin_allowed_factor1 = ["localpassword"]
 
         self._session_manager = SessionManager(key_storage, authenticators, options)
 
         set_parameter("error_page", ParamType.String, self, options, "ERROR_PAGE", protected=True)
         set_parameter("prefix", ParamType.String, self, options, "PREFIX")
         if not self.__prefix.endswith("/"): self.__prefix += "/"
+
+        self.___endpoints : List[str] = []
+        self.__signup_page: str = "signup.njk"
+        self.__login_page: str = "login.njk"
+        self.__factor2_page: str = "factor2.njk"
+        self.__configure_factor2_page: str = "configurefactor2.njk"
+
+        #self.__user_endpoints: FastifyUserEndpoints
+        #self.__admin_endpoints: FastifyAdminEndpoints
+        #self.__admin_client_endpoints: Optional[FastifyAdminClientEndpoints] = None
+        #self.__user_client_endpoints: Optional[FastifyUserClientEndpoints] = None
+
+        self.__enable_email_verification: bool = True
+        self.__enable_password_reset: bool = True
+        self.__enable_admin_endpoints: Optional[bool] = False
+        self.__enable_oauth_client_management: Optional[bool] = False
+        self.__factor2_protected_page_endpoints: List[str] = [
+            "/requestpasswordreset",
+            "/updateuser",
+            "/changepassword",
+            "/resetpassword",
+            "/changefactor2",
+        ]
+        self.__factor2_protected_api_endpoints: List[str] = [
+            "/api/requestpasswordreset",
+            "/api/updateuser",
+            "/api/changepassword",
+            "/api/resetpassword",
+            "/api/changefactor2",
+        ]
+        self.__edit_user_scope: Optional[str] = None
 
         @app.middleware("http")
         async def pre_handler(request: Request, call_next): # type: ignore
@@ -327,7 +613,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                     ret = await self.session_manager.user_for_session_id(session_id)
                     if self.__validate_session:
                         user : User|None = None
-                        if (ret.user is not None): user = ret.user["user"]
+                        if (ret.user is not None): user = ret.user
                         self.__validate_session(ret.key, user, request)
                     request.state.session_id = session_id
                     CrossauthLogger.logger().debug(j({
@@ -405,6 +691,8 @@ class FastApiSessionServer(FastApiSessionAdapter):
         session_cookie = ret.session_cookie
         csrf_cookie = ret.csrf_cookie
         csrf_form_or_header_value = ret.csrf_form_or_header_value
+        if (session_cookie is None or csrf_cookie is None or csrf_form_or_header_value is None):
+            raise CrossauthError(ErrorCode.InvalidSession, "Failed to get session and/CSRF cookie")
         options = toFastApiCookieOptions(session_cookie["options"])
         response.set_cookie(session_cookie["name"], session_cookie["value"], **options)
         request.state.csrf_token = csrf_form_or_header_value
@@ -528,6 +816,9 @@ class FastApiSessionServer(FastApiSessionAdapter):
             data = JsonOrFormData()
             await data.load(request)
             token = data.getAsStr("csrfToken")
+            if (token is None):
+                token = data.getAsStr("csrf_token")
+
 
         if token:
             try:
@@ -652,3 +943,8 @@ class FastApiSessionServer(FastApiSessionAdapter):
             }))
             CrossauthLogger.logger().debug(j({"err": str(e)}))
         return None
+    
+    ############################3
+    ## page endpoints
+
+
