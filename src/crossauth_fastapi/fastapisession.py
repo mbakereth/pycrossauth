@@ -2,14 +2,15 @@
 from typing import Callable, Mapping, Optional, Dict, Any, List, cast, TypedDict, Literal
 from datetime import datetime
 from typing import Mapping, Tuple, Set
+from urllib.parse import quote 
 import json
-from fastapi import Request, FastAPI, Response
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, Response, Form, Query #, Depends, BaseModel
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 from starlette.datastructures import FormData
 from starlette.types import Message
 from crossauth_backend.session import SessionManagerOptions
 from crossauth_backend.cookieauth import  CookieOptions
-from crossauth_backend.common.interfaces import User, Key, UserInputFields, OAuthClient
+from crossauth_backend.common.interfaces import User, Key, UserInputFields, OAuthClient, UserState
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.storage import KeyStorage, KeyDataEntry, UserStorage, OAuthClientStorage
@@ -19,6 +20,9 @@ from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.crypto import Crypto
 from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
 from nulltype import NullType
+from fastapi.templating import Jinja2Templates
+from .sessionbodytypes import *
+from .endpoints import *
 
 class FastApiCookieOptions(TypedDict, total=True):
     max_age: int|None
@@ -160,7 +164,7 @@ class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     """
 
     prefix : str
-    """ All endpoint URLs will be prefixed with this.  Default `/` """
+    """ All endpoint URLs will be prefixed with self.  Default `/` """
 
     admin_prefix : str
     """ Admin URLs will be prefixed with `this  Default `admin/` """
@@ -465,6 +469,13 @@ class FastApiSessionServer(FastApiSessionAdapter):
     def admin_allowed_factor1(self):
         return self.__admin_allowed_factor1
 
+    @property
+    def allowed_factor2(self):
+        return self.__allowed_factor2
+
+    @property
+    def templates(self): return self._templates
+
     def __init__(self, app: FastAPI, 
                  key_storage: KeyStorage, 
                  authenticators: Mapping[str, Authenticator], 
@@ -492,8 +503,13 @@ class FastApiSessionServer(FastApiSessionAdapter):
         self._enable_csrf_protection = True
         self.__user_allowed_factor1 = ["localpassword"]
         self.__admin_allowed_factor1 = ["localpassword"]
+        self.__login_redirect = "/"
+        self.__logout_redirect = "/"
+        self.__allowed_factor2 : List[str] = []
 
         self._session_manager = SessionManager(key_storage, authenticators, options)
+
+        self.__template_dir = "templates"
 
         set_parameter("error_page", ParamType.String, self, options, "ERROR_PAGE", protected=True)
         set_parameter("prefix", ParamType.String, self, options, "PREFIX")
@@ -508,7 +524,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
         #self.__user_endpoints: FastifyUserEndpoints
         #self.__admin_endpoints: FastifyAdminEndpoints
         #self.__admin_client_endpoints: Optional[FastifyAdminClientEndpoints] = None
-        #self.__user_client_endpoints: Optional[FastifyUserClientEndpoints] = None
+        #self.__user_client_endpoints: Optional[fastify_user_client_endpoints] = None
 
         self.__enable_email_verification: bool = True
         self.__enable_password_reset: bool = True
@@ -529,6 +545,75 @@ class FastApiSessionServer(FastApiSessionAdapter):
             "/api/changefactor2",
         ]
         self.__edit_user_scope: Optional[str] = None
+
+        set_parameter("signup_page", ParamType.String, self, options, "SIGNUP_PAGE")
+        set_parameter("login_page", ParamType.String, self, options, "LOGIN_PAGE")
+        set_parameter("factor2_page", ParamType.String, self, options, "FACTOR2_PAGE")
+        set_parameter("configure_factor2_page", ParamType.String, self, options, "SIGNUP_FACTOR2_PAGE")
+        set_parameter("error_page", ParamType.String, self, options, "ERROR_PAGE", protected=True)
+        set_parameter("allowed_factor2", ParamType.JsonArray, self, options, "ALLOWED_FACTOR2")
+        set_parameter("enable_email_verification", ParamType.Boolean, self, options, "ENABLE_EMAIL_VERIFICATION")
+        set_parameter("enable_password_reset", ParamType.Boolean, self, options, "ENABLE_PASSWORD_RESET")
+        set_parameter("factor2_protected_page_endpoints", ParamType.JsonArray, self, options, "FACTOR2_PROTECTED_PAGE_ENDPOINTS")
+        set_parameter("factor2_protected_api_endpoints", ParamType.JsonArray, self, options, "FACTOR2_PROTECTED_API_ENDPOINTS")
+        set_parameter("enable_admin_endpoints", ParamType.Boolean, self, options, "ENABLE_ADMIN_ENDPOINTS")
+        set_parameter("enable_oauth_client_management", ParamType.Boolean, self, options, "ENABLE_OAUTH_CLIENT_MANAGEMENT")
+        set_parameter("edit_user_scope", ParamType.String, self, options, "EDIT_USER_SCOPE")
+        set_parameter("user_allowed_factor1", ParamType.JsonArray, self, options, "USER_ALLOWED_FACTOR1")
+        set_parameter("admin_allowed_factor1", ParamType.JsonArray, self, options, "ADMIN_ALLOWED_FACTOR1")
+        set_parameter("login_redirect", ParamType.JsonArray, self, options, "LOGIN_REDIRECT")
+        set_parameter("logout_redirect", ParamType.JsonArray, self, options, "LOGOUT_REDIRECT")
+        set_parameter("template_dir", ParamType.String, self, options, "TEMPLATE_DIR")
+        self._templates = Jinja2Templates(directory=self.__template_dir)
+
+        if ("validate_user_fn" in options): self.__validate_user_fn = options["validate_user_fn"]
+        if ("create_user_fn" in options): self.create_user_fn = options["create_user_fn"]
+        if ("update_user_fn" in options): self.update_user_fn = options["update_user_fn"]
+        if ("add_to_session" in options): self.add_to_session = options["add_to_session"]
+        if ("validate_session" in options): self.validate_session = options["validate_session"]
+
+        self.__endpoints : List[str] = [*SignupPageEndpoints, *SignupApiEndpoints]
+        self.__endpoints = [*self.__endpoints, *SessionPageEndpoints, *SessionApiEndpoints]
+        if (self.__enable_admin_endpoints): self.__endpoints = [*self.__endpoints, *SessionAdminPageEndpoints, *SessionAdminApiEndpoints]
+        if (self.__enable_oauth_client_management): self.__endpoints = [*self.__endpoints, *SessionClientPageEndpoints, *SessionClientApiEndpoints, *SessionAdminClientPageEndpoints, *SessionAdminClientApiEndpoints]
+        if (self.__enable_email_verification): self.__endpoints = [*self.__endpoints, *EmailVerificationPageEndpoints, *EmailVerificationApiEndpoints]
+        if (self.__enable_password_reset): self.__endpoints = [*self.__endpoints, *PasswordResetPageEndpoints, *PasswordResetApiEndpoints]
+        if ("endpoints" in options):
+            set_parameter("endpoints", ParamType.JsonArray, self, options, "SESSION_ENDPOINTS");
+            if (len(self.__endpoints) == 1 and self.__endpoints[0] == "all"): self.__endpoints = AllEndpoints
+            if (len(self.__endpoints) == 1 and self.__endpoints[0] == "allMinusOAuth"): self.__endpoints = AllEndpointsMinusOAuth
+        
+        if (len(self.__allowed_factor2) > 0): self.__endpoints = [*self.__endpoints, *Factor2PageEndpoints, *Factor2ApiEndpoints]
+
+        add_admin_client_endpoints = False
+        for endpoint in self.__endpoints:
+            if (endpoint in SessionAdminClientApiEndpoints or
+                endpoint in SessionAdminClientPageEndpoints):
+                    add_admin_client_endpoints = True
+                    break
+                
+        
+        if (add_admin_client_endpoints):
+            #self.__admin_client_endpoints = new FastifyAdminClientEndpoints(this, options);
+            pass
+        
+
+        add_user_client_endpoints = False
+        for endpoint in self.__endpoints:
+            if (endpoint in SessionClientApiEndpoints or
+                endpoint in SessionClientPageEndpoints):
+                    add_user_client_endpoints = True
+                    break
+                
+        
+        if (add_user_client_endpoints):
+            #self.__user_client_endpoints = new fastify_user_client_endpoints(self, options);
+            pass        
+
+        self.add_endpoints()
+
+
+        set_parameter("endpoints", ParamType.JsonArray, self, options, "ENDPOINTS")
 
         @app.middleware("http")
         async def pre_handler(request: Request, call_next): # type: ignore
@@ -719,7 +804,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
         if (type(request.state.user) is not dict): return None
         return request.state.user # type: ignore
 
-    def handle_error(self, e: Exception, request: Request, response: Response, error_fn: Callable[[Response, CrossauthError], None], password_invalid_ok: bool = False):
+    def handle_error(self, e: Exception, request: Request, body: BaseModel, error_fn: Callable[[BaseModel, CrossauthError], HTMLResponse], password_invalid_ok: bool = False) -> Response:
         """
         Calls your defined `error_fn`, first sanitising by changing 
         `UserNotExist` and `UsernameOrPasswordInvalid` messages to `UsernameOrPasswordInvalid`.
@@ -736,10 +821,10 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 "hash_of_session_id": self.get_hash_of_session_id(request),
                 "user": FastApiSessionServer.username(request)
             }))
-            return error_fn(response, ce)
+            return error_fn(body, ce)
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
-            return error_fn(response, CrossauthError(ErrorCode.UnknownError))
+            return error_fn(body, CrossauthError(ErrorCode.UnknownError))
 
     def get_session_cookie_value(self, request: Request) -> Optional[str]:
         """
@@ -944,7 +1029,141 @@ class FastApiSessionServer(FastApiSessionAdapter):
             CrossauthLogger.logger().debug(j({"err": str(e)}))
         return None
     
+    def add_endpoints(self):
+        pass
+
     ############################3
     ## page endpoints
 
 
+    def add_login_endpoints(self):
+        @self.app.get(self.__prefix + 'login')
+        async def get_login( # type: ignore
+            request: Request,
+            next_param: Optional[str] = Query(None, alias="next")
+        ):
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": "GET",
+                "url": self.__prefix + "login",
+                "ip": request.client.host if request.client is not None else ""
+            }))
+            
+            # Check if user is already logged in (assuming request.user is set via dependency or middleware)
+            user = getattr(request.state, 'user', None)
+            if user:
+                redirect_url = next_param or self.__login_redirect
+                return RedirectResponse(url=redirect_url, status_code=302)
+            
+            # Get CSRF token (assuming it's available via request state or dependency)
+            csrf_token = getattr(request.state, 'csrf_token', None)
+            
+            data: Dict[str, Any] = {
+                "urlPrefix": self.__prefix,
+                "csrfToken": csrf_token
+            }
+            
+            if next_param:
+                data["next"] = next_param
+            
+            return self.templates.TemplateResponse(self.__login_page, {"request": request, **data})
+
+        @self.app.post(self.__prefix + 'login')
+        async def post_login( # type: ignore
+            request: Request,
+            next_param: Optional[str] = Form(None, alias="next"),
+            persist: bool = Form(False),
+            username: str = Form("")
+        ):
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": "POST",
+                "url": self.__prefix + "login",
+                "ip": request.client.host if request.client else ""
+            }))
+            
+            next_redirect = (next_param if next_param and len(next_param) > 0 
+                           else self.__login_redirect)
+            
+            # Create request body equivalent
+            body = LoginBodyType(next=next_param, persist=persist, username=username,)
+            
+            try:
+                return await self.login(request, body, 
+                    lambda body1, user: self._handle_login_response(request, body, user, next_redirect))
+            except Exception as e:
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                return self.handle_error(e, request, body, 
+                    lambda error, ce: self._render_login_error_page(request, body, ce, next_redirect))
+
+    def _handle_login_response(self, request: Request, body: LoginBodyType, user: User, next_redirect: str) -> Response|None:
+        
+        if user["state"] == UserState.password_change_needed:
+            if "changepassword" in self.__endpoints:
+                CrossauthLogger.logger().debug(j({"msg": "Password change needed - sending redirect"}))
+                redirect_url = f"/changepassword?required=true&next={quote(f'login?next={next_redirect}')}"
+                return RedirectResponse(url=redirect_url, status_code=302)
+            else:
+                ce = CrossauthError(ErrorCode.PasswordChangeNeeded)
+                return self.handle_error(ce, request, body, 
+                    lambda error, ce: self._render_login_error_page(request, body, ce, next_redirect))
+
+        elif (user["state"] == UserState.password_reset_needed or 
+              user["state"] == UserState.password_and_factor2_reset_needed):
+            CrossauthLogger.logger().debug(j({"msg": "Password reset needed - sending error"}))
+            ce = CrossauthError(ErrorCode.PasswordResetNeeded)
+            return self.handle_error(ce, request, body, 
+                lambda error, ce: self._render_login_error_page(request, body, ce, next_redirect))
+
+        elif (len(self.allowed_factor2) > 0 and 
+              (user["state"] == UserState.factor2_reset_needed or 
+               not (user["factor2"] if "factor2" in user else "none") in self.allowed_factor2)):
+            CrossauthLogger.logger().debug(j({
+                "msg": f"Factor2 reset needed. Factor2 is {user["factor2"] if "factor2" in user else ""}, state is {user["state"]}, allowed factor2 is [{', '.join(self.allowed_factor2)}]",
+                "username": user["username"]
+            }))
+            if "changefactor2" in self.__endpoints:
+                CrossauthLogger.logger().debug(j({"msg": "Factor 2 reset needed - sending redirect"}))
+                redirect_url = f"/changefactor2?required=true&next={quote(f'login?next={next_redirect}')}"
+                return RedirectResponse(url=redirect_url, status_code=302)
+            else:
+                ce = CrossauthError(ErrorCode.Factor2ResetNeeded)
+                return self.handle_error(ce, request, body, 
+                    lambda error, ce: self._render_login_error_page(request, body, ce, next_redirect))
+
+        elif not "factor2" not in user or ("factor2" in user and len(user["factor2"])) == 0:
+            CrossauthLogger.logger().debug(j({"msg": "Successful login - sending redirect"}))
+            return RedirectResponse(url=next_redirect, status_code=302)
+        else:
+            data : Dict[str,Any]= {
+                "csrfToken": cast(str|None, getattr(request.state, 'csrf_token', None)),
+                "next": body.next or self.__login_redirect,
+                "persist": "on" if body.persist else "",
+                "urlPrefix": self.__prefix,
+                "factor2": user["factor2"] if "factor2" in user else "",
+                "action": "loginfactor2"
+            }
+            return self.templates.TemplateResponse(self.__factor2_page, {"request": request, **data})
+
+    def _render_login_error_page(self, request: Request, body: LoginBodyType, error: CrossauthError, next_redirect: str) -> HTMLResponse:
+        csrf_token = getattr(request.state, 'csrf_token', None)
+        return self.templates.TemplateResponse(self.__login_page, {
+            "request": request,
+            "errorMessage": error.message,
+            "errorMessages": error.messages,
+            "errorCode": error.code,
+            "errorCodeName": error.code.value,
+            "next": next_redirect,
+            "persist": body.persist,
+            "username": body.username,
+            "csrfToken": csrf_token,
+            "urlPrefix": self.__prefix
+        })
+
+    # These methods need to be implemented in your class:
+    async def login(self, request: Request, body: LoginBodyType, success_callback: Callable[[BaseModel, User], Response|None]) -> Any:
+        """
+        This method needs to be implemented with your actual login logic.
+        It should call success_callback(user) on successful authentication.
+        """
+        raise NotImplementedError("login method must be implemented")
