@@ -191,7 +191,7 @@ class SessionManager:
             CrossauthError: with ErrorCode of Connection, UserNotValid, 
                           PasswordNotMatch or UserNotExist.
         """
-                
+
         if not self._user_storage:
             raise CrossauthError(ErrorCode.Configuration, "Cannot call login if no user storage provided")
         
@@ -231,6 +231,8 @@ class SessionManager:
                 raise CrossauthError(ErrorCode.UserNotExist)
             
             auth_key = user["factor1"] if user and "factor1" in user and user["factor1"] != "" else defaultAuth
+            if (auth_key not in self.authenticators):
+                raise CrossauthError(ErrorCode.Configuration, "User " + username + " has unconfigured auth type " + auth_key)
             await self.authenticators[auth_key].authenticate_user(user_input_fields, secrets, params)
             
             user_and_secrets = await self._user_storage.get_user_by_username(

@@ -81,8 +81,6 @@ class FastApiServerOptions(FastApiSessionServerOptions,
     template_dir : str
     """ If this is passed, it is registered as a Jinja2 view folder """
 
-    authenticators : Mapping[str, Authenticator]
-
 class FastApiSessionServerParams(TypedDict, total=False):
     """
     Parameters that are used to create a session server

@@ -4,12 +4,12 @@ from datetime import datetime
 from typing import Mapping, Tuple, Set
 from urllib.parse import quote 
 import json
-from fastapi import FastAPI, Request, Response, Form, Query #, Depends, BaseModel
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi import FastAPI, Request, Response, Query #, Depends, BaseModel
+from fastapi.responses import JSONResponse
 from starlette.datastructures import FormData
-from starlette.types import Message
 from crossauth_backend.session import SessionManagerOptions
 from crossauth_backend.cookieauth import  CookieOptions
+from crossauth_backend.auth import AuthenticationParameters
 from crossauth_backend.common.interfaces import User, Key, UserInputFields, OAuthClient, UserState
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
@@ -23,6 +23,8 @@ from nulltype import NullType
 from fastapi.templating import Jinja2Templates
 from .sessionbodytypes import *
 from .endpoints import *
+import copy
+from starlette.types import Message # , ASGIApp, Scope, Receive, Send
 
 class FastApiCookieOptions(TypedDict, total=True):
     max_age: int|None
@@ -50,23 +52,56 @@ def toFastApiCookieOptions(options: CookieOptions):
     if "samesite" in options: ret["samesite"] = options["samesite"]
     return ret
 
+def redirect(url: str, response: Response, status_code: int=302) -> Response:
+    #resp =  RedirectResponse(url=redirect_url, status_code=status_code)
+    response.headers["Location"] = url
+    response.status_code = status_code
+    return response 
+
+async def set_body(request: Request, body: bytes):
+    async def receive() -> Message:
+        return {"type": "http.request", "body": body}
+    request._receive = receive # type: ignore
+
+async def get_body(request: Request) -> bytes:
+    body = await request.body()
+    await set_body(request, body)
+    return body
+
+async def create_body(request : Request) -> Message:
+    return {
+        'type': 'http.request',
+        'body': await get_body(request),
+        'more_body': False,
+    }
+
 class JsonOrFormData:
-    def __init__(self):
+    def __init__(self, request : Request, body: bytes|None = None):
+        self.__request = request
         self.__form : FormData | None = None
         self.__json : Dict[str, Any] = {}
 
-
-    async def load(self, request : Request):
-        content_type = request.headers['content-type'] if 'content-type' in request.headers else "text/plain"
-        body = await request.body()
-        async def receive() -> Message:
-            return {"type": "http.request", "body": body}
-        request._receive = receive # type: ignore
+    def to_dict(self) -> Dict[str,Any]:
+        if (self.__form):
+            return self.__form.__dict__["_dict"]
+        return self.__json
+            
+    # def __dict__(self) -> Dict[str,Any]:
+    #     if (self.__form): 
+    #         return self.__form.__dict__
+    #     return self.__json
+    
+    async def load(self):
+        content_type = self.__request.headers['content-type'] if 'content-type' in self.__request.headers else "text/plain"
+        # body = await request.body()
+        # async def receive() -> Message:
+        #     return {"type": "http.request", "body": body}
+        # request._receive = receive # type: ignore
         try:
             if (content_type == "application/x-www-form-urlencoded" or content_type == "multipart/form-data"):
-                self.__form = await request.form()
+                self.__form = await self.__request.form()
             else:
-                self.__json = await request.json()
+                self.__json = await self.__request.json()
         except: pass
 
     def get(self, name : str, default: Any|None = None):
@@ -79,6 +114,14 @@ class JsonOrFormData:
         elif (self.__json): 
             return self.__json[name] if name in self.__json else default
         return None
+
+    def has(self, name : str):
+        if (self.__form): 
+            if (name not in self.__form): return False
+            return True
+        elif (self.__json): 
+            return name in self.__json
+        return False
 
     def getAsStr(self, name : str, default: str|None = None) -> str|None:
         if (self.__form): 
@@ -93,6 +136,10 @@ class JsonOrFormData:
             if (type(ret) != str): return str(ret)
             return ret
         return None
+    
+    def getAsStr1(self, name : str, default: str) -> str:
+        val = self.getAsStr(name, default)
+        return val if val is not None else ""
 
     def getAsBool(self, name : str, default: bool|None = None) -> bool|None:
         if (self.__form): 
@@ -113,6 +160,10 @@ class JsonOrFormData:
             raise CrossauthError(ErrorCode.DataFormat, "Field " + name + " is unexpected type")
         return None
     
+    def getAsBool1(self, name : str, default: bool) -> bool:
+        val = self.getAsBool(name, default)
+        return val if val is not None else False
+
     def getAsInt(self, name : str, default: int|None = None) -> int|None:
         if (self.__form): 
             ret = default
@@ -131,6 +182,10 @@ class JsonOrFormData:
             raise CrossauthError(ErrorCode.DataFormat, "Field " + name + " is unexpected type")
         return None
 
+    def getAsInt1(self, name : str, default: int) -> int:
+        val = self.getAsInt(name, default)
+        return val if val is not None else 0
+
     def getAsFloat(self, name : str, default: float|None = None) -> float|None:
         if (self.__form): 
             ret = default
@@ -148,20 +203,12 @@ class JsonOrFormData:
                 return float(ret)
             raise CrossauthError(ErrorCode.DataFormat, "Field " + name + " is unexpected type")
         return None
+    def getAsFloat1(self, name : str, default: float) -> float:
+        val = self.getAsFloat(name, default)
+        return val if val is not None else 0.0
 
 class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     """ Options for :class:`FastApiSessionServer`. """
-
-    user_storage: UserStorage
-    """ If enabling user login, must provide the user storage """
-
-    authenticators : Dict[str, Authenticator]
-    """
-    Factor 1 and 2 authenticators.
-    
-    The key is what appears in the `factor1` and `factor2` filed in the
-    Users table.
-    """
 
     prefix : str
     """ All endpoint URLs will be prefixed with self.  Default `/` """
@@ -510,6 +557,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
         self._session_manager = SessionManager(key_storage, authenticators, options)
 
         self.__template_dir = "templates"
+        
 
         set_parameter("error_page", ParamType.String, self, options, "ERROR_PAGE", protected=True)
         set_parameter("prefix", ParamType.String, self, options, "PREFIX")
@@ -626,6 +674,16 @@ class FastApiSessionServer(FastApiSessionAdapter):
             delete_cookies : Set[str] = set()
             headers : Dict[str, str] = {}
 
+            await set_body(request, await request.body())
+ 
+            req = Request(
+                scope=request.scope,
+                receive=lambda : create_body(request),  # <-------- Pass it here
+            )
+
+            #form = JsonOrFormData(copy.deepcopy(request))
+            form = JsonOrFormData(req)
+
             session_cookie_value = self.get_session_cookie_value(request)
             report_session = {}
             if session_cookie_value:
@@ -681,7 +739,8 @@ class FastApiSessionServer(FastApiSessionAdapter):
             else:
                 if cookie_value:
                     try:
-                        await self.csrf_token(request, add_cookies=add_cookies, delete_cookies=delete_cookies, headers=headers)
+                        await form.load()
+                        await self.csrf_token(request, form, add_cookies=add_cookies, delete_cookies=delete_cookies, headers=headers)
                     except Exception as e:
                         CrossauthLogger.logger().error(j({
                             "msg": "Couldn't create CSRF token",
@@ -696,11 +755,12 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 try:
                     session_id = self.session_manager.get_session_id(session_cookie_value)
                     ret = await self.session_manager.user_for_session_id(session_id)
+                    user : User|None = None
                     if self.__validate_session:
-                        user : User|None = None
-                        if (ret.user is not None): user = ret.user
                         self.__validate_session(ret.key, user, request)
+                    if (ret.user is not None): user = ret.user
                     request.state.session_id = session_id
+                    request.state.user = user
                     CrossauthLogger.logger().debug(j({
                         "msg": "Valid session id",
                         "user": None
@@ -804,12 +864,13 @@ class FastApiSessionServer(FastApiSessionAdapter):
         if (type(request.state.user) is not dict): return None
         return request.state.user # type: ignore
 
-    def handle_error(self, e: Exception, request: Request, body: BaseModel, error_fn: Callable[[BaseModel, CrossauthError], HTMLResponse], password_invalid_ok: bool = False) -> Response:
+    def handle_error(self, e: Exception, request: Request, form: JsonOrFormData, response : Response, error_fn: Callable[[Dict[str,Any], Response, CrossauthError], Response], password_invalid_ok: bool = False) -> Response:
         """
         Calls your defined `error_fn`, first sanitising by changing 
         `UserNotExist` and `UsernameOrPasswordInvalid` messages to `UsernameOrPasswordInvalid`.
         Also logs the error
         """
+        body = form.to_dict()
         try:
             ce = CrossauthError.as_crossauth_error(e)
             if not password_invalid_ok:
@@ -821,10 +882,10 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 "hash_of_session_id": self.get_hash_of_session_id(request),
                 "user": FastApiSessionServer.username(request)
             }))
-            return error_fn(body, ce)
+            return error_fn(body, response, ce)
         except Exception as e:
             CrossauthLogger.logger().error(j({"err": str(e)}))
-            return error_fn(body, CrossauthError(ErrorCode.UnknownError))
+            return error_fn(body, response, CrossauthError(ErrorCode.UnknownError))
 
     def get_session_cookie_value(self, request: Request) -> Optional[str]:
         """
@@ -879,7 +940,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
         self.session_manager.validate_double_submit_csrf_token(self.get_csrf_cookie_value(request) or "", request.state.csrf_token)
         return self.get_csrf_cookie_value(request)
 
-    async def csrf_token(self, request: Request, headers: Dict[str,str]|None=None, add_cookies : Dict[str, Tuple[str, CookieOptions]]|None=None, delete_cookies : Set[str]|None=None, response : Response|None = None) -> Optional[str]:
+    async def csrf_token(self, request: Request, form: JsonOrFormData, headers: Dict[str,str]|None=None, add_cookies : Dict[str, Tuple[str, CookieOptions]]|None=None, delete_cookies : Set[str]|None=None, response : Response|None = None) -> Optional[str]:
         """
         Validates the CSRF token in the header or `csrfToken` form or JSON field
         and cookie value.
@@ -898,11 +959,11 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 token = header
 
         if token is None:
-            data = JsonOrFormData()
-            await data.load(request)
-            token = data.getAsStr("csrfToken")
+            #data = JsonOrFormData()
+            #await form.load(request)
+            token = form.getAsStr("csrfToken")
             if (token is None):
-                token = data.getAsStr("csrf_token")
+                token = form.getAsStr("csrf_token")
 
 
         if token:
@@ -1030,7 +1091,12 @@ class FastApiSessionServer(FastApiSessionAdapter):
         return None
     
     def add_endpoints(self):
-        pass
+
+        if ("login" in self.__endpoints):
+            self.add_login_endpoints()
+        if ("logout" in self.__endpoints):
+            self.add_logout_endpoints()
+        
 
     ############################3
     ## page endpoints
@@ -1040,6 +1106,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
         @self.app.get(self.__prefix + 'login')
         async def get_login( # type: ignore
             request: Request,
+            response: Response,
             next_param: Optional[str] = Query(None, alias="next")
         ):
             CrossauthLogger.logger().info(j({
@@ -1049,11 +1116,11 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 "ip": request.client.host if request.client is not None else ""
             }))
             
-            # Check if user is already logged in (assuming request.user is set via dependency or middleware)
+            # Check if user is already logged in (assuming request.state.user is set via dependency or middleware)
             user = getattr(request.state, 'user', None)
             if user:
                 redirect_url = next_param or self.__login_redirect
-                return RedirectResponse(url=redirect_url, status_code=302)
+                return redirect(url=redirect_url, response=response, status_code=302)
             
             # Get CSRF token (assuming it's available via request state or dependency)
             csrf_token = getattr(request.state, 'csrf_token', None)
@@ -1066,15 +1133,21 @@ class FastApiSessionServer(FastApiSessionAdapter):
             if next_param:
                 data["next"] = next_param
             
-            return self.templates.TemplateResponse(self.__login_page, {"request": request, **data})
+            return self.templates.TemplateResponse(self.__login_page, {
+                #"request": request,
+                **data
+                })
 
         @self.app.post(self.__prefix + 'login')
         async def post_login( # type: ignore
             request: Request,
-            next_param: Optional[str] = Form(None, alias="next"),
-            persist: bool = Form(False),
-            username: str = Form("")
+            response: Response,
+            #next_param: Optional[str] = Form(None, alias="next"),
+            #persist: bool = Form(False),
+            #username: str = Form("")
         ):
+            form = JsonOrFormData(request)
+            await form.load()
             CrossauthLogger.logger().info(j({
                 "msg": "Page visit",
                 "method": "POST",
@@ -1082,38 +1155,37 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 "ip": request.client.host if request.client else ""
             }))
             
-            next_redirect = (next_param if next_param and len(next_param) > 0 
-                           else self.__login_redirect)
+            next_redirect = form.getAsStr1("next", self.__login_redirect) 
             
             # Create request body equivalent
-            body = LoginBodyType(next=next_param, persist=persist, username=username,)
+            #body = LoginBodyType(next=next_param, persist=persist, username=username,)
             
             try:
-                return await self.login(request, body, 
-                    lambda body1, user: self._handle_login_response(request, body, user, next_redirect))
+                return await self.login(request, response, form,
+                    lambda body1, resp1, user: self._handle_login_response(request, form, response, user, next_redirect))
             except Exception as e:
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
-                return self.handle_error(e, request, body, 
-                    lambda error, ce: self._render_login_error_page(request, body, ce, next_redirect))
+                return self.handle_error(e, request, form, response,
+                    lambda error, resp1, ce: self._render_login_error_page(request, form, response, ce, next_redirect))
 
-    def _handle_login_response(self, request: Request, body: LoginBodyType, user: User, next_redirect: str) -> Response|None:
+    def _handle_login_response(self, request: Request, form: JsonOrFormData, response: Response, user: User, next_redirect: str) -> Response:
         
         if user["state"] == UserState.password_change_needed:
             if "changepassword" in self.__endpoints:
                 CrossauthLogger.logger().debug(j({"msg": "Password change needed - sending redirect"}))
                 redirect_url = f"/changepassword?required=true&next={quote(f'login?next={next_redirect}')}"
-                return RedirectResponse(url=redirect_url, status_code=302)
+                return redirect(url=redirect_url, response=response, status_code=302)
             else:
                 ce = CrossauthError(ErrorCode.PasswordChangeNeeded)
-                return self.handle_error(ce, request, body, 
-                    lambda error, ce: self._render_login_error_page(request, body, ce, next_redirect))
+                return self.handle_error(ce, request, form, response, 
+                    lambda error, resp1, ce: self._render_login_error_page(request, form, response, ce, next_redirect))
 
         elif (user["state"] == UserState.password_reset_needed or 
               user["state"] == UserState.password_and_factor2_reset_needed):
             CrossauthLogger.logger().debug(j({"msg": "Password reset needed - sending error"}))
             ce = CrossauthError(ErrorCode.PasswordResetNeeded)
-            return self.handle_error(ce, request, body, 
-                lambda error, ce: self._render_login_error_page(request, body, ce, next_redirect))
+            return self.handle_error(ce, request, form, response,
+                lambda error, resp1, ce: self._render_login_error_page(request, form, response, ce, next_redirect))
 
         elif (len(self.allowed_factor2) > 0 and 
               (user["state"] == UserState.factor2_reset_needed or 
@@ -1125,45 +1197,194 @@ class FastApiSessionServer(FastApiSessionAdapter):
             if "changefactor2" in self.__endpoints:
                 CrossauthLogger.logger().debug(j({"msg": "Factor 2 reset needed - sending redirect"}))
                 redirect_url = f"/changefactor2?required=true&next={quote(f'login?next={next_redirect}')}"
-                return RedirectResponse(url=redirect_url, status_code=302)
+                return redirect(url=redirect_url, response=response, status_code=302)
             else:
                 ce = CrossauthError(ErrorCode.Factor2ResetNeeded)
-                return self.handle_error(ce, request, body, 
-                    lambda error, ce: self._render_login_error_page(request, body, ce, next_redirect))
+                return self.handle_error(ce, request, form, response,
+                    lambda error, resp1, ce: self._render_login_error_page(request, form, response, ce, next_redirect))
 
         elif not "factor2" not in user or ("factor2" in user and len(user["factor2"])) == 0:
             CrossauthLogger.logger().debug(j({"msg": "Successful login - sending redirect"}))
-            return RedirectResponse(url=next_redirect, status_code=302)
+            return redirect(url=next_redirect, response=response, status_code=302)
         else:
             data : Dict[str,Any]= {
                 "csrfToken": cast(str|None, getattr(request.state, 'csrf_token', None)),
-                "next": body.next or self.__login_redirect,
-                "persist": "on" if body.persist else "",
+                "next": form.getAsStr1("next", self.__login_redirect),
+                "persist": "on" if form.getAsBool1("persist", False) else "",
                 "urlPrefix": self.__prefix,
                 "factor2": user["factor2"] if "factor2" in user else "",
                 "action": "loginfactor2"
             }
-            return self.templates.TemplateResponse(self.__factor2_page, {"request": request, **data})
+            return self.templates.TemplateResponse(self.__factor2_page, {
+                #"request": request, 
+                **data})
 
-    def _render_login_error_page(self, request: Request, body: LoginBodyType, error: CrossauthError, next_redirect: str) -> HTMLResponse:
+    def add_logout_endpoints(self):
+        @self.app.post(self.__prefix + 'logout')
+        async def logout_endpoint(request: Request, response: Response): # type: ignore
+            # Extract request body (in real FastAPI this would be handled differently)
+            form = JsonOrFormData(request)
+            await form.load()
+            next_redirect = form.getAsStr1("next", self.__login_redirect) 
+            
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": 'POST',
+                "url": self.__prefix + 'logout',
+                "ip": request.client.host if request.client else None,
+                "user": request.state.user["username"] if request.state.user else None
+            }))
+            
+            try:
+                return await self.logout(request, form, response, 
+                    lambda reply: redirect(form.getAsStr1("next", self.__logout_redirect), response))
+            except Exception as e:
+                ce = CrossauthError.as_crossauth_error(e)
+                CrossauthLogger.logger().error(j({
+                    "msg": "Logout failure",
+                    "user": request.state.user["username"] if request.state.user else None,
+                    "errorCodeName": ce.code_name,
+                    "errorCode": ce.code
+                }))
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                return self.handle_error(e, request, form, response, 
+                    lambda error, resp1, ce: self._render_login_error_page(request, form, response, ce, next_redirect))
+    
+    def _render_login_error_page(self, request: Request, form: JsonOrFormData, response: Response, error: CrossauthError, next_redirect: str) -> Response:
         csrf_token = getattr(request.state, 'csrf_token', None)
         return self.templates.TemplateResponse(self.__login_page, {
-            "request": request,
+            #"request": request,
             "errorMessage": error.message,
             "errorMessages": error.messages,
             "errorCode": error.code,
             "errorCodeName": error.code.value,
             "next": next_redirect,
-            "persist": body.persist,
-            "username": body.username,
+            "persist": form.getAsBool1("persist", False),
+            "username": form.getAsStr1("username", ""),
             "csrfToken": csrf_token,
             "urlPrefix": self.__prefix
         })
 
-    # These methods need to be implemented in your class:
-    async def login(self, request: Request, body: LoginBodyType, success_callback: Callable[[BaseModel, User], Response|None]) -> Any:
+    ##########################################
+    ## Shared between page and API endpoints
+
+    async def login(self, 
+                   request: Request, 
+                   resp: Response, 
+                   form : JsonOrFormData,
+                   success_fn: Callable[[Dict[str,Any], Response, User], Response]) -> Any:
         """
-        This method needs to be implemented with your actual login logic.
-        It should call success_callback(user) on successful authentication.
+        Private async method to handle user login
+        
+        :param request: The request object containing body with LoginBodyType
+        :param resp : The response object for setting cookies
+        :param success_fn: Callback function to handle successful login
+        
+        Returns:
+            Result of success_fn callback
         """
-        raise NotImplementedError("login method must be implemented")
+        
+        if request.state.user:
+            # already logged in - nothing to do
+            return success_fn(form.to_dict(), resp, request.state.user)
+
+        # get data from request body
+        username = form.getAsStr1("username", "")
+        persist = form.getAsBool1("persist", False)
+        persist = False
+
+        # throw an exception if the CSRF token isn't valid
+        # await self.validate_csrf_token(request)
+        if not request.state.csrf_token:
+            raise CrossauthError(ErrorCode.InvalidCsrf)
+
+        # keep the old session ID. If there was one, we will delete it after
+        old_session_id = self.get_session_cookie_value(request)
+
+        # call implementor-provided hook to add additional fields to session key
+        extra_fields : Mapping[str, str|int|float|datetime|None] = {}
+        if (self.__add_to_session):
+            extra_fields = self.__add_to_session(request)
+
+        # log user in and get new session cookie, CSRF cookie and user
+        # if 2FA is enabled, it will be an anonymous session
+        body = form.to_dict()
+        login_result = await self.session_manager.login(
+            username,cast(AuthenticationParameters, body), extra_fields, persist
+        )
+        session_cookie = login_result.session_cookie
+        csrf_cookie = login_result.csrf_cookie
+        user = login_result.user
+        if (user is None):
+            raise CrossauthError(ErrorCode.Unauthorized, "Login failed")
+
+
+        # Set the new cookies in the reply
+        CrossauthLogger.logger().debug(j({
+            "msg": f"Login: set session cookie {session_cookie["name"] if session_cookie else ""} opts {json.dumps(session_cookie["options"] if session_cookie else {})}",
+            "user": form.getAsStr1("username", "")
+        }))
+        if (session_cookie):
+            resp.set_cookie(session_cookie["name"],
+                        session_cookie["value"],
+                        **toFastApiCookieOptions(session_cookie["options"]))
+            
+        CrossauthLogger.logger().debug(j({
+            "msg": f"Login: set csrf cookie {csrf_cookie["name"] if csrf_cookie else ""} opts {json.dumps(session_cookie["options"] if session_cookie else {})}",
+            "user": form.getAsStr1("username", "")
+        }))
+        if (csrf_cookie):
+            resp.set_cookie(csrf_cookie["name"], csrf_cookie["value"], **toFastApiCookieOptions(csrf_cookie["options"]))
+        
+            request.state.csrf_token = await self.session_manager.create_csrf_form_or_header_value(
+                csrf_cookie["value"]
+            )
+
+        # delete the old session key if there was one
+        if old_session_id:
+            try:
+                await self.session_manager.delete_session(old_session_id)
+            except Exception as e:
+                CrossauthLogger.logger().warn(j({
+                    "msg": "Couldn't delete session ID from database",
+                    "hashOfSessionId": self.get_hash_of_session_id(request)
+                }))
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+            form = JsonOrFormData(copy.deepcopy(request))
+
+        return success_fn(body, resp, user)
+    
+    async def logout(self, request: Request, fomr: JsonOrFormData, response: Response, 
+                    success_fn: Callable[[Response], Any]):
+        """
+        Handle user logout process
+        
+        :param request: FastAPI request object
+        :param response: FastAPI response object  
+        :param success_fn: Function to call on successful logout
+        """
+        
+        # logout
+        if (request.state.session_id):
+            await self._session_manager.logout(request.state.session_id)
+        
+        # clear cookies
+        CrossauthLogger.logger().debug(j({
+            "msg": f"Logout: clear cookie {self._session_manager.session_cookie_name}"
+        }))
+        
+        response.delete_cookie(self._session_manager.session_cookie_name)
+        response.delete_cookie(self._session_manager.csrf_cookie_name)
+        
+        if (request.state.session_id):
+            try:
+                await self._session_manager.delete_session(request.state.session_id)
+            except Exception as e:
+                CrossauthLogger.logger().warn(j({
+                    "msg": "Couldn't delete session ID from database",
+                    "hashOfSessionId": self.get_hash_of_session_id(request)
+                }))
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+        
+        return success_fn(response)
+

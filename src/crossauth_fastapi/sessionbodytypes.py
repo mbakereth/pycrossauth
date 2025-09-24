@@ -3,10 +3,10 @@ from typing import TypedDict
 from typing import TypedDict, Optional
 from pydantic import BaseModel
 
-class CsrfBodyType(BaseModel, total=False):
+class CsrfBodyType(BaseModel):
     csrfToken: str
 
-class CsrfBaseBodyType(BaseModel, total=False):
+class CsrfBaseBodyType(BaseModel):
     csrfToken: Optional[str] = None
 
 ##############################################################################
@@ -16,7 +16,7 @@ class LoginBodyType(CsrfBaseBodyType):
     """
     Body parameters for the /login URL
     """
-    username: str|int|None
+    username: str
     password: Optional[str] = None
     persist: Optional[bool]
     next: Optional[str]

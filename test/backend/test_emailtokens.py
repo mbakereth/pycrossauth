@@ -2,12 +2,9 @@ import unittest
 import unittest.mock
 from crossauth_backend.emailtoken import TokenEmailer
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryUserStorage, InMemoryKeyStorage
-from crossauth_backend.common.interfaces import UserState, UserInputFields, UserSecretsInputFields, Key
-import time
+from crossauth_backend.common.interfaces import UserState, UserInputFields
 from typing import cast, Dict, Any
 import json
-from datetime import datetime
-from nulltype import Null
 
 smtp_data = ""
 smtp_body = ""
