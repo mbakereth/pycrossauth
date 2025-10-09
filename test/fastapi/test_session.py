@@ -160,3 +160,27 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(body["state"]["session_id"])
             self.assertIsNone(body["state"]["user"])
             self.assertNotIn("SESSIONID", body["cookies"])
+
+    async def test_get_login_2fa(self):
+        app = await make_app_with_options()
+        app.app.get("/")(state)
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            render_mock.side_effect = mock_TemplateResponse
+
+            client = TestClient(app.app)
+            client.get("/login")
+            self.assertIn("csrfToken", template_data)
+            csrfToken = template_data["csrfToken"]
+            resp = client.post("/login", json={
+                "csrfToken": csrfToken,
+                "username": "bob",
+                "password": "bobPass123"
+                })
+            self.assertEqual(resp.status_code, 200)
+            body = resp.json()
+            self.assertEqual(body["state"]["user"]["username"], "bob")
+            self.assertIn("session_id", body["state"])
+            self.assertIn("csrf_token", body["state"])
+            self.assertIn("SESSIONID", body["cookies"])
+            self.assertIn("CSRFTOKEN", body["cookies"])

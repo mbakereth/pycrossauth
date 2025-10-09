@@ -20,5 +20,15 @@ async def get_test_user_storage(pepper : str|None = None) -> InMemoryUserStorage
         "factor1": "localpassword"}, {
         "password": await authenticator.create_password_hash("alicePass123")
         } )
+
+    await user_storage.create_user({
+        "username": "mary", 
+        "email": "mary@maryPass123.com",
+        "state": "active",
+        "factor1": "localpassword", 
+        "factor2": "dummy"}, {
+        "password": await authenticator.create_password_hash("alicePass123")
+        } )
+    
     return user_storage
 
