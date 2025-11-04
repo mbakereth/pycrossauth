@@ -685,7 +685,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
             if (session_cookie_value and 
                 request.state.user and
                 "factor2" in request.state.user and
-                request.state.user["user"] != "" and
+                request.state.user["username"] != "" and
                 (request.url.path in self.__factor2_protected_page_endpoints or 
                 request.url.path in self.__factor2_protected_api_endpoints)):
                 
@@ -1276,7 +1276,9 @@ class FastApiSessionServer(FastApiSessionAdapter):
             self.add_login_endpoints()
         if ("logout" in self.__endpoints):
             self.add_logout_endpoints()
-        
+        if ("loginfactor2" in self.__endpoints):
+            self.add_login_factor2_endpoints()
+
 
     ############################3
     ## page endpoints
@@ -1399,6 +1401,10 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 #"request": request, 
                 **data})
 
+    def _handle_login_factor2_response(self, request: Request, form: JsonOrFormData, response: Response, user: User, next_redirect: str) -> Response:
+        
+        return redirect(url=next_redirect, response=response, status_code=302)
+
     def add_logout_endpoints(self):
         @self.app.post(self.__prefix + 'logout')
         async def logout_endpoint(request: Request, response: Response): # type: ignore
@@ -1427,8 +1433,27 @@ class FastApiSessionServer(FastApiSessionAdapter):
                     "errorCode": ce.code
                 }))
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
-                return self.handle_error(e, request, form, 
-                    lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
+                factor2 : str|None = None
+                try:
+                    if request.state.session_id:
+                        session_data = await self.session_manager.data_for_session_id(request.state.session_id)
+                        if (session_data):
+                            factor2 = session_data["factor2"]
+                except Exception as e2:
+                    ce2 = CrossauthError.as_crossauth_error(e2)
+                    CrossauthLogger.logger().error(j({
+                        "msg": "Logout failure",
+                        "user": request.state.user["username"] if request.state.user else None,
+                        "errorCodeName": ce2.code_name,
+                        "errorCode": ce2.code
+                    }))
+                    CrossauthLogger.logger().debug(j({"err": str(e2)}))
+                if (factor2 and factor2 in self.authenticators):
+                    return self.handle_error(e, request, form, 
+                        lambda error, ce: self._render_login_factor2_error_page(request, form, ce, next_redirect, factor2))
+                else:
+                    return self.handle_error(e, request, form, 
+                        lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
     
     def _render_login_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError, next_redirect: str) -> Response:
         csrf_token = getattr(request.state, 'csrf_token', None)
@@ -1444,6 +1469,55 @@ class FastApiSessionServer(FastApiSessionAdapter):
             "csrfToken": csrf_token,
             "urlPrefix": self.__prefix
         })
+
+    def _render_login_factor2_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError, next_redirect: str, factor2: str) -> Response:
+        csrf_token = getattr(request.state, 'csrf_token', None)
+        return self.templates.TemplateResponse(self.__login_page, {
+            #"request": request,
+            "errorMessage": error.message,
+            "errorMessages": error.messages,
+            "errorCode": error.code,
+            "errorCodeName": error.code.value,
+            "next": next_redirect,
+            "persist": form.getAsBool1("persist", False),
+            "username": form.getAsStr1("username", ""),
+            "csrfToken": csrf_token,
+            "urlPrefix": self.__prefix,
+            "action": "loginfactor2",
+            "factor2": factor2,
+        })
+
+    def add_login_factor2_endpoints(self):
+
+        @self.app.post(self.__prefix + 'loginfactor2')
+        async def post_loginfactor2( # type: ignore
+            request: Request,
+            response: Response,
+            #next_param: Optional[str] = Form(None, alias="next"),
+            #persist: bool = Form(False),
+            #username: str = Form("")
+        ):
+            form = JsonOrFormData(request)
+            await form.load()
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": "POST",
+                "url": self.__prefix + "loginfactor2",
+                "ip": request.client.host if request.client else ""
+            }))
+            
+            next_redirect = form.getAsStr1("next", self.__login_redirect) 
+            
+            # Create request body equivalent
+            #body = LoginBodyType(next=next_param, persist=persist, username=username,)
+            
+            try:
+                return await self.login_factor2(request, response, form,
+                    lambda body1, resp1, user: self._handle_login_factor2_response(request, form, response, user, next_redirect))
+            except Exception as e:
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                return self.handle_error(e, request, form,
+                    lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
 
     ##########################################
     ## Shared between page and API endpoints
@@ -1568,3 +1642,144 @@ class FastApiSessionServer(FastApiSessionAdapter):
         
         return success_fn(response)
 
+    async def login_factor2(self, 
+                   request: Request, 
+                   resp: Response, 
+                   form : JsonOrFormData,
+                   success_fn: Callable[[Dict[str,Any], Response, User], Response]) -> Any:
+        """
+        Private async method to handle user login
+        
+        :param request: The request object containing body with LoginBodyType
+        :param resp : The response object for setting cookies
+        :param success_fn: Callback function to handle successful login
+        
+        Returns:
+            Result of success_fn callback
+        """
+        
+        if request.state.user:
+            # already logged in - nothing to do
+            return success_fn(form.to_dict(), resp, request.state.user)
+
+        body = form.to_dict()
+        auth_params : AuthenticationParameters = cast(AuthenticationParameters, body)
+
+        # get data from request body
+        persist = form.getAsBool1("persist", False)
+        persist = False
+
+        # throw an exception if the CSRF token isn't valid
+        if (self.is_session_user(request) and not request.state.csrf_token):
+            raise CrossauthError(ErrorCode.InvalidCsrf)
+
+
+        session_id = request.state.session_id
+
+        # call implementor-provided hook to add additional fields to session key
+        extra_fields : Mapping[str, str|int|float|datetime|None] = {}
+        if (self.__add_to_session):
+            extra_fields = self.__add_to_session(request)
+        tokens = await self.session_manager.complete_two_factor_login(auth_params, session_id, extra_fields, persist)
+        session_cookie = tokens.session_cookie
+        csrf_cookie = tokens.csrf_cookie
+        user = tokens.user
+        CrossauthLogger.logger().debug(j({
+            "msg": "Login: set session cookie " + session_cookie["name"] if session_cookie else "" + " opts " + json.dumps(session_cookie["options"] if session_cookie else {}),
+            "user": user["username"] if user else ""
+        }))
+
+        if (user is None):
+            raise CrossauthError(ErrorCode.Unauthorized, "Login failed")
+
+
+        # Set the new cookies in the reply
+        if (session_cookie):
+            resp.set_cookie(session_cookie["name"],
+                        session_cookie["value"],
+                        **toFastApiCookieOptions(session_cookie["options"]))
+            
+        CrossauthLogger.logger().debug(j({
+            "msg": f"Login: set csrf cookie {csrf_cookie["name"] if csrf_cookie else ""} opts {json.dumps(session_cookie["options"] if session_cookie else {})}",
+            "user": form.getAsStr1("username", "")
+        }))
+        if (csrf_cookie):
+            resp.set_cookie(csrf_cookie["name"], csrf_cookie["value"], **toFastApiCookieOptions(csrf_cookie["options"]))
+        
+            request.state.csrf_token = await self.session_manager.create_csrf_form_or_header_value(
+                csrf_cookie["value"]
+            )
+
+
+        return success_fn(body, resp, user)
+    
+    async def cancel_factor2(self, 
+                   request: Request, 
+                   resp: Response, 
+                   success_fn: Callable[[Response], Response]) -> Any:
+        if (self.is_session_user(request) and not request.state.csrf_token):
+            raise CrossauthError(ErrorCode.InvalidCsrf)
+        session_cookie_value = self.get_csrf_cookie_value(request)
+        if (session_cookie_value):
+            await self.session_manager.cancel_two_factor_page_visit(session_cookie_value)
+        return success_fn(resp)
+
+    def is_session_user(self, request: Request):
+        """ 
+        Returns whether there is a user logged in with a cookie-based session
+        """
+        return request.state.user and request.state.auth_type == "cookie"
+    
+    async def login_with_user(self, 
+            user : User,
+            bypass_2fa: bool,
+            request: Request,
+            resp: Response,
+            success_fn: Callable[[Response, User], Response]) -> Any:
+        """
+        This is called after the user has been validated to log the user in
+        """
+
+        # get old session ID so we can delete it after
+        old_session_id = self.get_session_cookie_value(request)
+
+        # call implementor-provided hook to add custom fields to session key
+        extra_fields : Mapping[str,Any] = {}
+        if (self.__add_to_session):
+            extra_fields = self.__add_to_session(request)
+
+        # log user in - this doesn't do any authentication
+        tokens = await self.session_manager.login("", {}, extra_fields, False, user, bypass_2fa)
+
+        session_cookie = tokens.session_cookie
+        csrf_cookie = tokens.csrf_cookie
+
+        CrossauthLogger.logger().debug(j({
+            "msg": f"Login: set csrf cookie {csrf_cookie["name"] if csrf_cookie else ""} opts {json.dumps(session_cookie["options"] if session_cookie else {})}",
+        }))
+
+        # Set the new cookies in the reply
+        if (session_cookie):
+            resp.set_cookie(session_cookie["name"],
+                        session_cookie["value"],
+                        **toFastApiCookieOptions(session_cookie["options"]))
+        if (csrf_cookie):
+            resp.set_cookie(csrf_cookie["name"], csrf_cookie["value"], **toFastApiCookieOptions(csrf_cookie["options"]))
+        
+            request.state.csrf_token = await self.session_manager.create_csrf_form_or_header_value(
+                csrf_cookie["value"]
+            )
+
+        # delete the old session key if there was one
+        if old_session_id:
+            try:
+                await self.session_manager.delete_session(old_session_id)
+            except Exception as e:
+                CrossauthLogger.logger().warn(j({
+                    "msg": "Couldn't delete session ID from database",
+                    "hashOfSessionId": self.get_hash_of_session_id(request)
+                }))
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+
+        return success_fn(resp, user)
+    
