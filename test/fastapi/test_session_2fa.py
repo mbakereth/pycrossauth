@@ -107,6 +107,5 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
                     "otp": "0000"
                     })
             body = resp.json()
-            print(body)
             self.assertEqual(body["state"]["user"]["username"], "mary")
             self.assertIn("SESSIONID", body["cookies"])
