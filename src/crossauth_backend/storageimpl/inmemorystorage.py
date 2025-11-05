@@ -265,9 +265,9 @@ class InMemoryUserStorage(UserStorage):
             raise CrossauthError(ErrorCode.Configuration, username_field + " not in user")
         self.__users_by_username[new_user[username_field]] = new_user # type: ignore
         self.__secrets_by_username[new_user[username_field]] = new_secrets # type: ignore
-        if (email_field not in new_user):
+        if ("email" in new_user and email_field not in new_user):
             raise CrossauthError(ErrorCode.Configuration, email_field + " not in user")
-        if ("email_normalized" in new_user):
+        if (email_field in new_user):
             self.__users_by_email[new_user[email_field]] = new_user # type: ignore
             self.__secrets_by_email[new_user[email_field]] = new_secrets  # type: ignore
         

@@ -147,8 +147,8 @@ class SessionManager:
         self._csrf_tokens = DoubleSubmitCsrfToken(coptions)
 
         self._allowed_factor2 : List[str] = []
-        self.__enable_email_verification : bool = False
-        self.__enable_password_reset : bool = False
+        self.__enable_email_verification : bool = True
+        self.__enable_password_reset : bool = True
         self.__token_emailer : TokenEmailer|None = None
 
         set_parameter("allowed_factor2", ParamType.JsonArray, self, options, "ALLOWED_FACTOR2", protected=True)
@@ -491,20 +491,19 @@ class SessionManager:
         """
         return await self._key_storage.delete_key(self._session.hash_session_id(session_id))
 
-    async def create_user(self, user: User, params: UserSecrets, repeat_params: UserSecrets|None = None, skip_email_verification: bool = False, empty_password: bool = False) -> User:
+    async def create_user(self, user: UserInputFields, params: UserSecrets, repeat_params: UserSecrets|None = None, skip_email_verification: bool = False, empty_password: bool = False) -> User:
         if not self._user_storage:
             raise Exception("Cannot call createUser if no user storage provided")
 
         if user['factor1'] not in self._authenticators:
             raise Exception("Authenticator cannot create users")
-
+        
         if self._authenticators[user['factor1']].skip_email_verification_on_signup():
             skip_email_verification = True
 
         secrets = await self._authenticators[user['factor1']].create_persistent_secrets(user['username'], params, repeat_params) if not empty_password else None
         secrets = secrets
         new_user = await self._user_storage.create_user(user, secrets) if not empty_password else await self._user_storage.create_user(user)
-
         if not skip_email_verification and self.__enable_email_verification and self.__token_emailer:
             raise CrossauthError(ErrorCode.NotImplemented, "Email verification is not supported in this version")
             #await self.token_emailer.send_email_verification_token(new_user['id'], None)
@@ -517,7 +516,7 @@ class SessionManager:
         await self._user_storage.delete_user_by_username(username)
 
     async def initiate_two_factor_signup(self, 
-            user: User, 
+            user: UserInputFields, 
             params: UserSecrets, 
             session_id: str, 
             repeat_params: UserSecrets|None) -> UserIdAndData:

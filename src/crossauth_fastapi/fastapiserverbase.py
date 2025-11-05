@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from fastapi import Request, Response, FastAPI
 from crossauth_backend.common.error import CrossauthError
 from fastapi.templating import Jinja2Templates
+from crossauth_backend.common.interfaces import User
 
 class MaybeErrorResponse(NamedTuple):
     response: Response
@@ -12,6 +13,18 @@ type FastApiErrorFn = Callable[[FastApiServerBase,
     Request,
     Response,
     CrossauthError], Awaitable[Response]]
+
+def default_is_admin_fn(user : User) -> bool:
+    """
+    The function to determine if a user has admin rights can be set
+    externally.  This is the default function if none other is set.
+    It returns true iff the `admin` field in the passed user is set to true.
+
+    :param crossauth_backend.User user: the user to test
+
+    :return true or false
+    """
+    return "admin" in user and user["admin"] == True
 
 class FastApiServerBase(ABC):
     """
@@ -59,4 +72,7 @@ class FastApiServerBase(ABC):
     @property 
     @abstractmethod
     def error_page(self) -> str: pass
+
+    is_admin: Callable[[User], bool] = default_is_admin_fn
+
 

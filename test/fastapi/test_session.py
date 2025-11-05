@@ -16,7 +16,7 @@ from backend.testuserdata import get_test_user_storage
 template_page = ""
 template_data : Dict[str,Any] = {}
 def state(request : Request) -> Dict[str, Any]:
-    return {"state": request.state.__dict__["_state"], "cookies": request.cookies}
+    return {"state": request.state.__dict__["_state"], "cookies": request.cookies, "url": request.url.path}
 
 def mock_TemplateResponse(template: str, data: Dict[str,Any]):
     global template_data
@@ -65,7 +65,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["login", "logout"],
+        "endpoints": ["login", "logout", "signup"],
         **options
     })
 
@@ -163,3 +163,22 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(body["state"]["session_id"])
             self.assertIsNone(body["state"]["user"])
             self.assertNotIn("SESSIONID", body["cookies"])
+
+    async def test_signup(self):
+        app = await make_app_with_options({"enable_email_verification": False})
+        app.app.get("/")(state)
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            render_mock.side_effect = mock_TemplateResponse
+
+            client = TestClient(app.app)
+            client.get("/signup")
+            self.assertIn("csrfToken", template_data)
+            csrfToken = template_data["csrfToken"]
+        resp1 = client.post("/signup", json={
+            "csrfToken": csrfToken,
+            "username": "bob1",
+            "user_email": "bob1@bob1.com",
+            "password": "bobPass1231"
+            }, follow_redirects=False)
+        self.assertEqual(resp1.status_code, 302)

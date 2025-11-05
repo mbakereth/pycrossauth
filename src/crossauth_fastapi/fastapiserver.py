@@ -260,7 +260,7 @@ class FastApiServer(FastApiServerBase):
              value is an :class:`FastifySessionServerOptions` may also be
              provided.
            - `oauth_client` if present, an OAuth client will be created.
-             There must be a field called `auth_server_base_url` and is the 
+             There must be a field called `auth_seris_adminver_base_url` and is the 
              bsae URL for the authorization server.  When validating access
              tokens, the `iss` claim must match this.
            - `o_auth_clients` if present, an array of OAuth clients will be created.
@@ -298,7 +298,9 @@ class FastApiServer(FastApiServerBase):
         resserver_params = params["oauth_resserver"] if "oauth_resserver" in params else None
         if (session_adapter is not None and session_server_params is not None):
             raise CrossauthError(ErrorCode.Configuration, "Cannot have both a session server and session adapter")
-        
+        if ("is_admin_fn" in options):
+            FastApiServerBase.is_admin = options["is_admin_fn"]
+
         # Create OAuth client
         self._oauth_client : FastApiOAuthClient|None = None
         if (client_params is not None):
@@ -420,16 +422,4 @@ class FastApiServer(FastApiServerBase):
             return MaybeErrorResponse(response, True)                
         
     
-
-def default_is_admin_fn(user : User) -> bool:
-    """
-    The function to determine if a user has admin rights can be set
-    externally.  This is the default function if none other is set.
-    It returns true iff the `admin` field in the passed user is set to true.
-
-    :param crossauth_backend.User user: the user to test
-
-    :return true or false
-    """
-    return "admin" in user and user["admin"] == True
 

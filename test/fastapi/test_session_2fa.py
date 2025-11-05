@@ -31,7 +31,7 @@ class App(NamedTuple):
     server: FastApiSessionServer
     app: FastAPI
 
-async def make_app_with_options(options: FastApiSessionServerOptions = {}, factor2: str|None=None) -> App:
+async def make_app_with_options(options: FastApiSessionServerOptions = {}, factor2: str = "dummy") -> App:
     """
     Async function to create a Fastify server with options
     
@@ -42,7 +42,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         Dictionary containing userStorage, keyStorage, and server instances
     """
      
-    user_storage = await get_test_user_storage()
+    user_storage = await get_test_user_storage(factor2=factor2)
     key_storage = InMemoryKeyStorage()
     
     lp_authenticator = LocalPasswordAuthenticator(user_storage, {

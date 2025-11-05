@@ -199,7 +199,7 @@ class LocalPasswordAuthenticator(PasswordAuthenticator):
         params: AuthenticationParameters, 
         repeat_params: AuthenticationParameters|None = None) -> UserSecretsInputFields:
 
-        if ("password" not in params or "password"):
+        if ("password" not in params or params["password"] == ""):
             raise CrossauthError(ErrorCode.Unauthorized, "No password provided")
         if (repeat_params is not None and ("password" not in params or "password" not in repeat_params or repeat_params["password"] != params["password"])):
             raise CrossauthError(ErrorCode.PasswordMatch)

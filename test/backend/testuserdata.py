@@ -1,7 +1,7 @@
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryUserStorage
 from crossauth_backend.authenticators.passwordauth import LocalPasswordAuthenticator, LocalPasswordAuthenticatorOptions
 
-async def get_test_user_storage(pepper : str|None = None) -> InMemoryUserStorage:
+async def get_test_user_storage(pepper : str|None = None, factor2 : str="dummy") -> InMemoryUserStorage:
     user_storage = InMemoryUserStorage({"user_editable_fields": ["email", "dummyField"]})
     options : LocalPasswordAuthenticatorOptions = {"pbkdf2_iterations": 1_000}
     if (pepper is not None): options["secret"] = pepper
@@ -26,7 +26,7 @@ async def get_test_user_storage(pepper : str|None = None) -> InMemoryUserStorage
         "email": "mary@mary.com",
         "state": "active",
         "factor1": "localpassword", 
-        "factor2": "dummy"}, {
+        "factor2": factor2}, {
         "password": await authenticator.create_password_hash("maryPass123")
         } )
     
