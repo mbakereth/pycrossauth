@@ -813,8 +813,8 @@ class FastApiOAuthClient(OAuthClient):
                 if resp1.error:
                     return resp1.response
             try:
-                body = JsonOrFormData()
-                await body.load(request)
+                body = JsonOrFormData(request)
+                await body.load()
                 resp = await self.client_credentials_flow(body.getAsStr("scope", None))
                 if ("id_token" in resp):
                     # This token is intended for us, so validate it
@@ -854,8 +854,8 @@ class FastApiOAuthClient(OAuthClient):
                 return resp1.response
 
             # get refresh token from body if present, otherwise try to find in session
-            body = JsonOrFormData()
-            await body.load(request)
+            body = JsonOrFormData(request)
+            await body.load()
             refresh_token: Optional[str] = body.get("refresh_token")
             if not refresh_token and self.server.have_session_adapter:
                 if not self.server.have_session_adapter:
@@ -1259,8 +1259,8 @@ class FastApiOAuthClient(OAuthClient):
                 token_name1 = token_name.replace("_token", "")
                 decode_token = False
                 if (token_name1 in self._jwt_tokens):
-                    data = JsonOrFormData()
-                    await data.load(request)
+                    data = JsonOrFormData(request)
+                    await data.load()
                     decode_token = data.getAsBool("decode") or True
 
                 #if not request.headers.get("X-CSRF-Token"):
@@ -1305,8 +1305,8 @@ class FastApiOAuthClient(OAuthClient):
 
             try:
 
-                data = JsonOrFormData()
-                await data.load(request)
+                data = JsonOrFormData(request)
+                await data.load()
 
                 if (not hasattr(request.state, "csrf_token") or not request.state.csrf_token):
                     return JSONResponse(status_code=401, content={"ok": False, "msg": "No csrf token given"})
@@ -1586,8 +1586,8 @@ class FastApiOAuthClient(OAuthClient):
             resp1 = await self._server.error_if_csrf_invalid(request, response, self.__error_fn)
             if resp1.error:
                 return resp1.response
-        body = JsonOrFormData()
-        await body.load(request)
+        body = JsonOrFormData(request)
+        await body.load()
         try:
             if (body.getAsStr("username") is None or body.getAsStr("password") is None):
                 raise CrossauthError(ErrorCode.BadRequest, "Username and password must be given for the password flow")
@@ -1721,8 +1721,8 @@ class FastApiOAuthClient(OAuthClient):
         }
     
     async def _password_otp(self, is_api: bool, request : Request, response : Response) -> Response:
-        body = JsonOrFormData()
-        await body.load(request)
+        body = JsonOrFormData(request)
+        await body.load()
         if (body.getAsStr("mfa_token") is None or body.getAsStr("otp") is None):
             raise CrossauthError(ErrorCode.BadRequest, "mfa_token or otp missing in Password OTP request")
         resp = await self.mfa_otp_complete(body.getAsStr("mfa_token") or "", body.getAsStr("otp") or "")
@@ -1759,8 +1759,8 @@ class FastApiOAuthClient(OAuthClient):
         return await self.__receive_token_fn(resp, self, request, response) or response
 
     async def _password_oob(self, is_api: bool, request : Request, response : Response) -> Response:
-        body = JsonOrFormData()
-        await body.load(request)
+        body = JsonOrFormData(request)
+        await body.load()
         if (body.getAsStr("mfa_token") is None or body.getAsStr("oob_code") is None or body.getAsStr("binding_code") is None):
             raise CrossauthError(ErrorCode.BadRequest, "mfa_token, oob_code and binding_code required for OOB request")
         resp = await self.mfa_oob_complete(body.getAsStr("mfa_token") or "", body.getAsStr("oob_code") or "", body.getAsStr("binding_code") or "")
@@ -1805,8 +1805,8 @@ class FastApiOAuthClient(OAuthClient):
             if ret.error:
                 return ret.response
             
-        body = JsonOrFormData()
-        await body.load(request)
+        body = JsonOrFormData(request)
+        await body.load()
 
         try:
             if not request.state.csrf_token:
@@ -1900,8 +1900,8 @@ class FastApiOAuthClient(OAuthClient):
 
     async def _device_code_poll(self, is_api: bool, request: Request, response: Response) -> Response:
 
-        body = JsonOrFormData()
-        await body.load(request)
+        body = JsonOrFormData(request)
+        await body.load()
         device_code = body.getAsStr("device_code")
         if (device_code is None):
             raise CrossauthError(ErrorCode.BadRequest, "device_code not present")

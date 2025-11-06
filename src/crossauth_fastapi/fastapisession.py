@@ -882,7 +882,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
                                             "errorMessages": error.messages,
                                             "errorCode": error.code.value,
                                             "errorCodeName": error.code.name
-                                        }
+                                        },
                                     )
                     else:
                         # 2FA has not started - start it
@@ -1420,9 +1420,11 @@ class FastApiSessionServer(FastApiSessionAdapter):
             if next_param:
                 data["next"] = next_param
             
-            return self.templates.TemplateResponse(self.__login_page, {
-                #"request": request,
-                **data
+            return self.templates.TemplateResponse(
+                request,
+                self.__login_page, 
+                {
+                    **data
                 })
 
         @self.app.post(self.__prefix + 'login')
@@ -1502,9 +1504,12 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 "factor2": user["factor2"] if "factor2" in user else "",
                 "action": "loginfactor2"
             }
-            return self.templates.TemplateResponse(self.__factor2_page, {
-                #"request": request, 
-                **data})
+            return self.templates.TemplateResponse(
+                request,
+                self.__factor2_page, 
+                {
+                    **data
+                })
 
     def _handle_login_factor2_response(self, request: Request, form: JsonOrFormData, response: Response, user: User, next_redirect: str) -> Response:
         
@@ -1562,35 +1567,39 @@ class FastApiSessionServer(FastApiSessionAdapter):
     
     def _render_login_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError, next_redirect: str) -> Response:
         csrf_token = getattr(request.state, 'csrf_token', None)
-        return self.templates.TemplateResponse(self.__login_page, {
-            #"request": request,
-            "errorMessage": error.message,
-            "errorMessages": error.messages,
-            "errorCode": error.code,
-            "errorCodeName": error.code.value,
-            "next": next_redirect,
-            "persist": form.getAsBool1("persist", False),
-            "username": form.getAsStr1("username", ""),
-            "csrfToken": csrf_token,
-            "urlPrefix": self.__prefix
-        })
+        return self.templates.TemplateResponse(
+            request,
+            self.__login_page, 
+            {
+                "errorMessage": error.message,
+                "errorMessages": error.messages,
+                "errorCode": error.code,
+                "errorCodeName": error.code.value,
+                "next": next_redirect,
+                "persist": form.getAsBool1("persist", False),
+                "username": form.getAsStr1("username", ""),
+                "csrfToken": csrf_token,
+                "urlPrefix": self.__prefix
+            }, error.http_status)
 
     def _render_login_factor2_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError, next_redirect: str, factor2: str) -> Response:
         csrf_token = getattr(request.state, 'csrf_token', None)
-        return self.templates.TemplateResponse(self.__login_page, {
-            #"request": request,
-            "errorMessage": error.message,
-            "errorMessages": error.messages,
-            "errorCode": error.code,
-            "errorCodeName": error.code.value,
-            "next": next_redirect,
-            "persist": form.getAsBool1("persist", False),
-            "username": form.getAsStr1("username", ""),
-            "csrfToken": csrf_token,
-            "urlPrefix": self.__prefix,
-            "action": "loginfactor2",
-            "factor2": factor2,
-        })
+        return self.templates.TemplateResponse(
+            request,
+            self.__login_page, 
+            {
+                "errorMessage": error.message,
+                "errorMessages": error.messages,
+                "errorCode": error.code,
+                "errorCodeName": error.code.value,
+                "next": next_redirect,
+                "persist": form.getAsBool1("persist", False),
+                "username": form.getAsStr1("username", ""),
+                "csrfToken": csrf_token,
+                "urlPrefix": self.__prefix,
+                "action": "loginfactor2",
+                "factor2": factor2,
+            }, error.http_status)
 
     def add_login_factor2_endpoints(self):
 
@@ -1659,9 +1668,11 @@ class FastApiSessionServer(FastApiSessionAdapter):
             
             # Check if user is already logged in (assuming request.state.user is set via dependency or middleware)
             
-            return self.templates.TemplateResponse(self.__factor2_page, {
-                #"request": request,
-                **data
+            return self.templates.TemplateResponse(
+                request,
+                self.__factor2_page, 
+                {
+                    **data
                 })
 
     def allowed_factor2details(self) -> List[AuthenticatorDetails]:
@@ -1705,9 +1716,11 @@ class FastApiSessionServer(FastApiSessionAdapter):
                 "next": next_param
             }
             
-            return self.templates.TemplateResponse(self.__signup_page, {
-                #"request": request,
-                **data
+            return self.templates.TemplateResponse(
+                request,
+                self.__signup_page, 
+                {
+                    **data
                 })
 
         @self.app.post(self.__prefix + 'signup')
@@ -1737,21 +1750,25 @@ class FastApiSessionServer(FastApiSessionAdapter):
 
                 def signup_lambda(data: Dict[str,Any], resp : Response, user: User|None):
                     if "userData" in data and "factor2" in data["userData"] and data["userData"]["factor2"]:
-                        return self.templates.TemplateResponse(self.__configure_factor2_page, {
-                            #"request": request,
-                            "csrfToken": data["csrfToken"],
-                            **data["userData"]
+                        return self.templates.TemplateResponse(
+                            request,
+                            self.__configure_factor2_page, 
+                            {
+                                "csrfToken": data["csrfToken"],
+                                **data["userData"]
                             })
                     elif (self.__enable_email_verification):
-                        return self.templates.TemplateResponse(self.__signup_page, {
-                            #"request": request,
-                            "next": next_redirect,
-                            "csrfToken": data["csrfToken"],
-                            "message": "Please check your email to finish signing up.",
-                            "allowedFactor2": self.allowed_factor2details(),
-                            "urlPrefix": self.__prefix, 
-                            "factor2": body["factor2"] if "factor2" in body else None,
-                            **(data["userData"] if "userData" in data else {})
+                        return self.templates.TemplateResponse(
+                            request,
+                            self.__signup_page, 
+                            {
+                                "next": next_redirect,
+                                "csrfToken": data["csrfToken"],
+                                "message": "Please check your email to finish signing up.",
+                                "allowedFactor2": self.allowed_factor2details(),
+                                "urlPrefix": self.__prefix, 
+                                "factor2": body["factor2"] if "factor2" in body else None,
+                                **(data["userData"] if "userData" in data else {})
                             })
                     else:
                         #return RedirectResponse(url=self.__login_redirect, status_code=302)
@@ -1775,20 +1792,23 @@ class FastApiSessionServer(FastApiSessionAdapter):
                     for field in body:
                         if (field.startswith("user_")):
                             extra_fields[field] = body[field]
-                    return self.templates.TemplateResponse(self.__signup_page, {
-                        "errorMessage": error.message,
-                        "errorMessages": error.messages, 
-                        "errorCode": error.code, 
-                        "errorCodeName": error.code_name, 
-                        "next": next_redirect, 
-                        "persist": body["persist"] if "persist" in body else None,
-                        "username": body["username"] if "username" in body else None,
-                        "csrfToken": request.state.csrf_token,
-                        "factor2": body["factor2"] if "factor2" in body else None,
-                        "allowedFactor2": self.allowed_factor2details(),
-                        "urlPrefix": self.__prefix, 
-                        **extra_fields,
-                        })
+                    return self.templates.TemplateResponse(
+                        request, 
+                        self.__signup_page, 
+                        {
+                            "errorMessage": error.message,
+                            "errorMessages": error.messages, 
+                            "errorCode": error.code, 
+                            "errorCodeName": error.code_name, 
+                            "next": next_redirect, 
+                            "persist": body["persist"] if "persist" in body else None,
+                            "username": body["username"] if "username" in body else None,
+                            "csrfToken": request.state.csrf_token,
+                            "factor2": body["factor2"] if "factor2" in body else None,
+                            "allowedFactor2": self.allowed_factor2details(),
+                            "urlPrefix": self.__prefix, 
+                            **extra_fields,
+                        }, error.http_status)
                     
                 return self.handle_error(e, request, form,
                     lambda error, ce: handle_error_fn({}, ce))
@@ -1829,7 +1849,7 @@ class FastApiSessionServer(FastApiSessionAdapter):
         found = False
         for field in body:
             if field.startswith("repeat_"):
-                name = field[8:]
+                name = field[7:]
                 if name in secret_names:
                     repeat_secrets[name] = body[field]
                     found = True

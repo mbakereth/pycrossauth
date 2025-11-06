@@ -15,14 +15,17 @@ from backend.testuserdata import get_test_user_storage
 
 template_page = ""
 template_data : Dict[str,Any] = {}
+template_status: int=200
 def state(request : Request) -> Dict[str, Any]:
     return {"state": request.state.__dict__["_state"], "cookies": request.cookies, "url": request.url.path}
 
-def mock_TemplateResponse(template: str, data: Dict[str,Any]):
+def mock_TemplateResponse(request: Request, template: str, data: Dict[str,Any], status: int=200):
     global template_data
     global template_page
+    global template_status
     template_page = template
     template_data = data
+    template_status=status
     return template_data
 
 class App(NamedTuple):
@@ -182,3 +185,43 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
             "password": "bobPass1231"
             }, follow_redirects=False)
         self.assertEqual(resp1.status_code, 302)
+
+    async def test_signup_repeat_password(self):
+        app = await make_app_with_options({"enable_email_verification": False})
+        app.app.get("/")(state)
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            render_mock.side_effect = mock_TemplateResponse
+
+            client = TestClient(app.app)
+            client.get("/signup")
+            self.assertIn("csrfToken", template_data)
+            csrfToken = template_data["csrfToken"]
+        resp1 = client.post("/signup", json={
+            "csrfToken": csrfToken,
+            "username": "bob1",
+            "user_email": "bob1@bob1.com",
+            "password": "bobPass1231",
+            "repeat_password": "bobPass1231"
+            }, follow_redirects=False)
+        self.assertEqual(resp1.status_code, 302)
+
+    async def test_signup_repeat_password_wrong(self):
+        app = await make_app_with_options({"enable_email_verification": False})
+        app.app.get("/")(state)
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            render_mock.side_effect = mock_TemplateResponse
+
+            client = TestClient(app.app)
+            client.get("/signup")
+            self.assertIn("csrfToken", template_data)
+            csrfToken = template_data["csrfToken"]
+            client.post("/signup", json={
+                "csrfToken": csrfToken,
+                "username": "bob1",
+                "user_email": "bob1@bob1.com",
+                "password": "bobPass1231",
+                "repeat_password": ""
+                }, follow_redirects=False)
+            self.assertEqual(template_status, 401)
