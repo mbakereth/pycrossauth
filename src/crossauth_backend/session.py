@@ -505,8 +505,8 @@ class SessionManager:
         secrets = secrets
         new_user = await self._user_storage.create_user(user, secrets) if not empty_password else await self._user_storage.create_user(user)
         if not skip_email_verification and self.__enable_email_verification and self.__token_emailer:
-            raise CrossauthError(ErrorCode.NotImplemented, "Email verification is not supported in this version")
-            #await self.token_emailer.send_email_verification_token(new_user['id'], None)
+            #raise CrossauthError(ErrorCode.NotImplemented, "Email verification is not supported in this version")
+            await self.__token_emailer.send_email_verification_token(new_user['id'])
 
         return new_user
 

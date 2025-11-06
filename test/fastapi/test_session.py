@@ -1,6 +1,8 @@
 import unittest
 import unittest.mock
 from pathlib import Path
+import json
+from jinja2 import Template
 
 from typing import Dict, Any, NamedTuple
 from fastapi import FastAPI, Request
@@ -10,6 +12,7 @@ from crossauth_backend.authenticators.passwordauth import LocalPasswordAuthentic
 from crossauth_backend.authenticators.totpauth import TotpAuthenticator
 from crossauth_backend.authenticators.dummyfactor2 import DummyFactor2Authenticator
 from crossauth_fastapi.fastapisession import FastApiSessionServer, FastApiSessionServerOptions
+from email.mime.multipart import MIMEMultipart
 
 from backend.testuserdata import get_test_user_storage
 
@@ -27,6 +30,20 @@ def mock_TemplateResponse(request: Request, template: str, data: Dict[str,Any], 
     template_data = data
     template_status=status
     return template_data
+
+email_data : Dict[str,Any] = {}
+def mock_render(**kwargs: Dict[str,Any]):
+    global email_data    
+    email_data = kwargs
+    return json.dumps(kwargs)
+
+def mock_template(file : str):
+    return Template("")
+
+sendmessage_msg : MIMEMultipart
+def mock_sendmessage(msg: MIMEMultipart):
+    global sendmessage_msg
+    sendmessage_msg = msg
 
 class App(NamedTuple):
     userStorage : InMemoryUserStorage
@@ -225,3 +242,31 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                 "repeat_password": ""
                 }, follow_redirects=False)
             self.assertEqual(template_status, 401)
+
+    async def test_signup_verification(self):
+        app = await make_app_with_options({"enable_email_verification": True})
+        app.app.get("/")(state)
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            with unittest.mock.patch('smtplib.SMTP.send_message') as render_sendmessage:
+                with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                    with unittest.mock.patch('jinja2.Template.render') as render_render:
+                        render_mock.side_effect = mock_TemplateResponse
+                        render_sendmessage.side_effect = mock_sendmessage
+                        render_render.side_effect = mock_render
+                        render_get_template.side_effect = mock_template
+
+                        client = TestClient(app.app)
+                        client.get("/signup")
+                        self.assertIn("csrfToken", template_data)
+                        csrfToken = template_data["csrfToken"]
+
+                        client.post("/signup", json={
+                            "csrfToken": csrfToken,
+                            "username": "bob1",
+                            "user_email": "bob1@bob1.com",
+                            "password": "bobPass1231"
+                            }, follow_redirects=False)
+                        self.assertEqual(template_status, 200)
+                        self.assertEqual(template_data["message"], "Please check your email to finish signing up.")
+                        self.assertIn("token", email_data)
