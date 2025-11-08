@@ -3,6 +3,7 @@ import unittest.mock
 from pathlib import Path
 import json
 from jinja2 import Template
+from email.mime.multipart import MIMEMultipart
 
 from typing import Dict, Any, NamedTuple
 from fastapi import FastAPI, Request
@@ -12,7 +13,6 @@ from crossauth_backend.authenticators.passwordauth import LocalPasswordAuthentic
 from crossauth_backend.authenticators.totpauth import TotpAuthenticator
 from crossauth_backend.authenticators.dummyfactor2 import DummyFactor2Authenticator
 from crossauth_fastapi.fastapisession import FastApiSessionServer, FastApiSessionServerOptions
-from email.mime.multipart import MIMEMultipart
 
 from backend.testuserdata import get_test_user_storage
 

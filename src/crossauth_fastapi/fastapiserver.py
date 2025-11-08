@@ -13,51 +13,10 @@ from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
 from crossauth_fastapi.fastapisession import FastApiSessionServer, FastApiSessionServerOptions
 from crossauth_fastapi.fastapioauthclient import FastApiOAuthClientOptions, FastApiOAuthClient
 from crossauth_backend.utils import set_parameter, ParamType
-from crossauth_fastapi.fastapiserverbase import FastApiServerBase, FastApiErrorFn, MaybeErrorResponse
+from crossauth_fastapi.fastapiserverbase import *
 from crossauth_fastapi.fastapiresserver import FastApiOAuthResourceServerOptions, FastApiOAuthResourceServer
 from crossauth_backend.utils import set_parameter, ParamType
 
-ERROR_400 = """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title>400 Bad Request</title>
-</head><body>
-<h1>400 Bad Request</h1>
-<p>The server was unable to handle your request.</p>
-</body></html>
-"""
-
-ERROR_401 = """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title>401 Unauthorized</title>
-</head><body>
-<h1>401 Unauthorized</h1>
-<p>You are not authorized to access this URL.</p>
-</body></html>
-"""
-
-ERROR_403= """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title>403 Forbidden</title>
-</head><body>
-<h1>403 Forbidden</h1>
-<p>You are not authorized to make this request.</p>
-</body></html>
-"""
-
-ERROR_500 = """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head>
-<title>500 Server Error</title>
-</head><body>
-<h1>500 Error</h1>
-<p>Sorry, an unknown error has occured</p>
-</body></html>
-"""
-
-DEFAULT_ERROR = {
-    400: ERROR_400,
-    401: ERROR_401,
-    500: ERROR_500
-}
 
 class FastApiServerOptions(FastApiSessionServerOptions,
                            FastApiOAuthClientOptions, 
@@ -421,5 +380,3 @@ class FastApiServer(FastApiServerBase):
             response = HTMLResponse(ERROR_401, status_code=401)
             return MaybeErrorResponse(response, True)                
         
-    
-

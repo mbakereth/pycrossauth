@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 from .fastapiserverbase import FastApiServerBase, FastApiErrorFn
 from .fastapiserver import FastApiServer, FastApiServerOptions, FastApiSessionServerParams, FastApiOAuthClientParams, FastApiOAuthResServerParams, FastApiServerParams
-from .fastapisession import FastApiSessionServerOptions, FastApiSessionServer
+from .fastapisession import FastApiSessionServer
+from .fastapisessionserverbase import FastApiSessionServerOptions
 from .fastapisessionadapter import FastApiSessionAdapter
 from .fastapioauthclient import FastApiOAuthClient, FastApiOAuthClientOptions, BffEndpoint
 from .fastapiresserver import FastApiOAuthResourceServer, FastApiOAuthResourceServerOptions, ProtectedEndpoint
