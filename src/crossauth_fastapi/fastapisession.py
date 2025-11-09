@@ -992,6 +992,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.add_factor2_endpoints()
         if ("signup" in self.__endpoints):
             self.add_signup_endpoints()
+        if ("configurefactor2" in self.__endpoints):
+            self.__user_endpoints.add_configure_factor2endpoints()
 
 
     ############################3

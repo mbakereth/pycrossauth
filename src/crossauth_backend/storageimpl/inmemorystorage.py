@@ -170,6 +170,7 @@ class InMemoryUserStorage(UserStorage):
         field_value_normalized = UserStorage.normalize(value) if self._normalize_username else value
         users_by_field = self.__users_by_username
         secrets_by_field = self.__secrets_by_username
+
         if (field == "email"):
             users_by_field = self.__users_by_email
             secrets_by_field = self.__secrets_by_email
@@ -178,27 +179,27 @@ class InMemoryUserStorage(UserStorage):
             user = users_by_field[field_value_normalized]
             secrets = secrets_by_field[field_value_normalized]
 
-            if (optional_not_equals(options, "skipActiveCheck", True) and user["state"]==UserState.password_change_needed):
+            if (optional_not_equals(options, "skip_active_check", True) and user["state"]==UserState.password_change_needed):
                 CrossauthLogger.logger().debug(j({"msg": "Password change required"}))
                 raise CrossauthError(ErrorCode.PasswordChangeNeeded)
             
-            if (optional_not_equals(options, "skipActiveCheck", True) and (user["state"]==UserState.password_reset_needed  or user["state"]==UserState.password_and_factor2_reset_needed)):
+            if (optional_not_equals(options, "skip_active_check", True) and (user["state"]==UserState.password_reset_needed  or user["state"]==UserState.password_and_factor2_reset_needed)):
                 CrossauthLogger.logger().debug(j({"msg": "Password reset required"}))
                 raise CrossauthError(ErrorCode.PasswordResetNeeded)
             
-            if (optional_not_equals(options, "skipActiveCheck", True) and user["state"]==UserState.factor2_reset_needed):
+            if (optional_not_equals(options, "skip_active_check", True) and user["state"]==UserState.factor2_reset_needed):
                 CrossauthLogger.logger().debug(j({"msg": "2FA reset required"}))
                 raise CrossauthError(ErrorCode.Factor2ResetNeeded)
             
-            if (optional_not_equals(options, "skipActiveCheck", True) and user["state"]==UserState.awaiting_two_factor_setup):
+            if (optional_not_equals(options, "skip_active_check", True) and user["state"]==UserState.awaiting_two_factor_setup):
                 CrossauthLogger.logger().debug(j({"msg": "2FA setup is not complete"}))
                 raise CrossauthError(ErrorCode.TwoFactorIncomplete);
             
-            if (optional_not_equals(options, "skipEmailVerifiedCheck", True) and user['state'] == UserState.awaiting_email_verification):
+            if (optional_not_equals(options, "skip_email_verified_check", True) and user['state'] == UserState.awaiting_email_verification):
                 CrossauthLogger.logger().debug(j({"msg": "User email not verified"}))
                 raise CrossauthError(ErrorCode.EmailNotVerified)
             
-            if (optional_not_equals(options, "skipActiveCheck", True) and user['state'] == UserState.disabled):
+            if (optional_not_equals(options, "skip_active_check", True) and user['state'] == UserState.disabled):
                 CrossauthLogger.logger().debug(j({"msg": "User is deactivated"}))
                 raise CrossauthError(ErrorCode.UserNotActive)
             

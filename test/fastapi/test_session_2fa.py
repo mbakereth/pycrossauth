@@ -4,7 +4,6 @@ from pathlib import Path
 import json
 from jinja2 import Template
 from email.mime.multipart import MIMEMultipart
-
 from typing import Dict, Any, NamedTuple
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
@@ -87,7 +86,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["login", "logout", "loginfactor2", "signup"],
+        "endpoints": ["login", "logout", "loginfactor2", "signup", "configurefactor2"],
         **options
     })
 
@@ -150,8 +149,52 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
                 "password": "bobPass1231",
                 "factor2": "dummy",
                 }, follow_redirects=False)
-            self.assertEqual(template_status, 200)
-            body1 = resp1.json()
-            self.assertEqual(body1["username"], "bob1")
-            self.assertEqual(body1["factor2"], "dummy")
+            self.assertEqual(resp1.status_code, 200)
+            self.assertEqual(template_data["username"], "bob1")
+            self.assertEqual(template_data["factor2"], "dummy")
             self.assertEqual(template_page, "configurefactor2.njk")
+
+            # send confgure post
+            resp1 = client.post("/configurefactor2", json={
+                "csrfToken": csrfToken,
+                "next": "/",
+                "otp": "0000",
+                }, follow_redirects=False)
+
+            resp = client.get("/")
+            body = resp.json()
+            self.assertEqual(body["state"]["user"]["username"], "bob1")
+            self.assertEqual(body["state"]["user"]["state"], "active")
+
+    async def test_signup_factor2_email_verification(self):
+        app = await make_app_with_options({"enable_email_verification": True, "allowed_factor2": ["none", "dummy"]})
+        app.app.get("/")(state)
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            render_mock.side_effect = mock_TemplateResponse
+
+            client = TestClient(app.app)
+            client.get("/signup")
+            self.assertIn("csrfToken", template_data)
+            csrfToken = template_data["csrfToken"]
+            resp1 = client.post("/signup", json={
+                "csrfToken": csrfToken,
+                "username": "bob1",
+                "user_email": "bob1@bob1.com",
+                "password": "bobPass1231",
+                "factor2": "dummy",
+                }, follow_redirects=False)
+            self.assertEqual(resp1.status_code, 200)
+            self.assertEqual(template_data["username"], "bob1")
+            self.assertEqual(template_data["factor2"], "dummy")
+            self.assertEqual(template_page, "configurefactor2.njk")
+
+            # send confgure post
+            resp1 = client.post("/configurefactor2", json={
+                "csrfToken": csrfToken,
+                "next": "/",
+                "otp": "0000",
+                }, follow_redirects=False)
+
+            user = await app.userStorage.get_user_by_username("bob1", {"skip_active_check": True, "skip_email_verified_check": True})
+            self.assertEqual(user["user"]["state"], "awaitingemailverification")
