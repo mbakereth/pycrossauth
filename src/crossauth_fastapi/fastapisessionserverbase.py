@@ -1,7 +1,8 @@
 from abc import abstractmethod
 from datetime import datetime
 from fastapi import Request, FastAPI, Response
-from typing import Optional, Any, Dict, Callable, List, Mapping
+from fastapi.responses import JSONResponse
+from typing import Optional, Any, Dict, Callable, List, Mapping, Tuple, Literal
 from fastapi.templating import Jinja2Templates
 from nulltype import NullType
 from starlette.datastructures import FormData
@@ -277,11 +278,65 @@ class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     Default: ["localpassword"]
     """
 
+JSONHDR : List[str] = ['Content-Type', 'application/json; charset=utf-8']
+JSONHDRMAP = {'Content-Type': 'application/json; charset=utf-8'}
+
+def cookies_from_response(response : Response) -> Dict[str, str]:
+    headers = response.headers
+    cookies : Dict[str,str] = {}
+    if ('set-cookie' in headers):
+        for pair in headers.getlist('set-cookie'):
+            res = pair.split("=", 2)
+            cookies[res[0]] = res[1]
+    return cookies
+
+def json_response(content: Dict[str, Any], resp: Response, status_code : int = 200, headers : Dict[str,str]|None=None) -> JSONResponse:
+    r = JSONResponse(content, status_code=status_code)
+    if (headers is not None):
+        for h in headers:
+            r.headers[h] = headers[h]
+    else:
+        for h in JSONHDRMAP:
+            r.headers[h] = JSONHDRMAP[h]
+    cookies = cookies_from_response(resp)
+    for c in cookies:
+        r.set_cookie(c, cookies[c])
+    return r
+
 def redirect(url: str, response: Response, status_code: int=302) -> Response:
     #resp =  RedirectResponse(url=redirect_url, status_code=status_code)
     response.headers["Location"] = url
     response.status_code = status_code
     return response 
+
+class FastApiCookieOptions(TypedDict, total=True):
+    max_age: int|None
+    expires: datetime|str|int|None
+    path: str|None
+    domain: str|None
+    secure: bool
+    httponly: bool
+    samesite: Literal['lax', 'strict', 'none'] | None
+
+def template_response(templates: Jinja2Templates, request: Request, response: Response, page: str, body: Dict[str,Any], status:int|None = None ) -> Response:
+    if (status is None):
+        r = templates.TemplateResponse(request, page, body)
+    else:
+        r = templates.TemplateResponse(request, page, body, status)
+    cookies = cookies_from_response(response)
+    for c in cookies:
+        r.set_cookie(c, cookies[c])
+    return r
+
+def send_with_cookies(response : Response, request: Request) -> Response:
+    try:
+        if (request.state.set_cookies):
+            cookies: Dict[str, Tuple[str, FastApiCookieOptions]] = request.state.set_cookies
+            for name in cookies:
+                response.set_cookie(name, cookies[name][0], **(cookies[name][1]))
+    except:
+        pass
+    return response
 
 class JsonOrFormData:
     def __init__(self, request : Request, body: bytes|None = None):

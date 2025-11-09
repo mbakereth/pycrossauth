@@ -7,6 +7,7 @@ from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, NamedTuple
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from starlette.responses import HTMLResponse
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage, InMemoryUserStorage
 from crossauth_backend.authenticators.passwordauth import LocalPasswordAuthenticator
 from crossauth_backend.authenticators.totpauth import TotpAuthenticator
@@ -30,7 +31,7 @@ def mock_TemplateResponse(req : Request, template: str, data: Dict[str,Any], sta
     template_page = template
     template_data = data
     template_status=status
-    return template_data
+    return HTMLResponse(json.dumps(template_data), status_code=status)
 
 email_data : Dict[str,Any] = {}
 def mock_render(**kwargs: Dict[str,Any]):
@@ -111,16 +112,10 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
                     "csrfToken": csrfToken,
                     "username": "mary",
                     "password": "maryPass123"
-                    })
-            self.assertEqual(resp.status_code, 200)
-            body = resp.json()
-            self.assertIsNone(body["state"]["user"])
-            self.assertIn("session_id", body["state"])
-            self.assertIn("csrf_token", body["state"])
-            self.assertIn("SESSIONID", body["cookies"])
-            self.assertIn("CSRFTOKEN", body["cookies"])
+                    }, follow_redirects=False)
+            self.assertEqual(resp.status_code, 302)
 
-            client.cookies = body["cookies"]
+            client.cookies = resp.cookies
             csrfToken = template_data["csrfToken"]
             resp = client.post("/loginfactor2", 
                 json={
@@ -142,20 +137,20 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
             client.get("/signup")
             self.assertIn("csrfToken", template_data)
             csrfToken = template_data["csrfToken"]
-            resp1 = client.post("/signup", json={
+            client.post("/signup", json={
                 "csrfToken": csrfToken,
                 "username": "bob1",
                 "user_email": "bob1@bob1.com",
                 "password": "bobPass1231",
                 "factor2": "dummy",
                 }, follow_redirects=False)
-            self.assertEqual(resp1.status_code, 200)
+            self.assertEqual(template_status, 200)
             self.assertEqual(template_data["username"], "bob1")
             self.assertEqual(template_data["factor2"], "dummy")
             self.assertEqual(template_page, "configurefactor2.njk")
 
             # send confgure post
-            resp1 = client.post("/configurefactor2", json={
+            client.post("/configurefactor2", json={
                 "csrfToken": csrfToken,
                 "next": "/",
                 "otp": "0000",
@@ -174,9 +169,13 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
             render_mock.side_effect = mock_TemplateResponse
 
             client = TestClient(app.app)
-            client.get("/signup")
+            print("GET SIGNUP")
+            resp = client.get("/signup")
             self.assertIn("csrfToken", template_data)
             csrfToken = template_data["csrfToken"]
+            client.cookies = resp.cookies
+
+            print("SIGNUP")
             resp1 = client.post("/signup", json={
                 "csrfToken": csrfToken,
                 "username": "bob1",
@@ -188,8 +187,11 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(template_data["username"], "bob1")
             self.assertEqual(template_data["factor2"], "dummy")
             self.assertEqual(template_page, "configurefactor2.njk")
+            csrfToken = template_data["csrfToken"]
+
 
             # send confgure post
+            print("CONFIGURE")
             resp1 = client.post("/configurefactor2", json={
                 "csrfToken": csrfToken,
                 "next": "/",

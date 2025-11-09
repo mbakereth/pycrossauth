@@ -1,5 +1,5 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
-from typing import Callable, Mapping, Optional, Dict, Any, List, cast, TypedDict, Literal
+from typing import Callable, Mapping, Optional, Dict, Any, List, cast
 from datetime import datetime
 from typing import Mapping, Tuple, Set
 from urllib.parse import quote 
@@ -16,8 +16,7 @@ from crossauth_backend.auth import Authenticator
 from crossauth_backend.session import SessionManager
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.crypto import Crypto
-from crossauth_fastapi.fastapisessionserverbase import FastApiSessionServerOptions, FastApiSessionServerBase, JsonOrFormData, redirect
-from fastapi.templating import Jinja2Templates
+from crossauth_fastapi.fastapisessionserverbase import *
 from .sessionbodytypes import *
 from .sessionendpoints import *
 import copy
@@ -25,18 +24,6 @@ from starlette.types import Message # , ASGIApp, Scope, Receive, Send
 from .sessionendpoints import *
 from .fastapiserverbase import FastApiServerBase
 from .fastapiuserendpoints import FastApiUserEndpoints
-
-JSONHDR : List[str] = ['Content-Type', 'application/json; charset=utf-8']
-JSONHDRMAP = {'Content-Type': 'application/json; charset=utf-8'}
-
-class FastApiCookieOptions(TypedDict, total=True):
-    max_age: int|None
-    expires: datetime|str|int|None
-    path: str|None
-    domain: str|None
-    secure: bool
-    httponly: bool
-    samesite: Literal['lax', 'strict', 'none'] | None
 
 def toFastApiCookieOptions(options: CookieOptions):
     ret : FastApiCookieOptions = {
@@ -71,13 +58,6 @@ async def create_body(request : Request) -> Message:
         'body': await get_body(request),
         'more_body': False,
     }
-
-def send_with_cookies(response : Response, request: Request):
-    if (request.state.set_cookies):
-        cookies: Dict[str, Tuple[str, FastApiCookieOptions]] = request.state.set_cookies
-        for name in cookies:
-            response.set_cookie(name, cookies[name][0], **(cookies[name][1]))
-    return Response
 
 def default_create_user(
     request: Request,
@@ -468,7 +448,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
                                     CrossauthLogger.logger().debug(j({"err": str(e)}))
                                 
                                 self.handle_error(error, request, form,          
-                                    lambda error, ce: self._render_login_error_page(request, form, ce, ""))
+                                    lambda error, ce: self._render_login_error_page(request, response, form, ce, ""))
 
                                 # await set_body(request, json.dumps({
                                 #     **(session_data["pre2fa"]["body"]),
@@ -558,6 +538,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             request.state.csrf_token  = None
             request.state.session_id = None
             request.state.auth_type = None
+            request.state.set_cookies = {}
             add_cookies : Dict[str, Tuple[str, CookieOptions]] = {}
             delete_cookies : Set[str] = set()
             headers : Dict[str, str] = {}
@@ -729,11 +710,20 @@ class FastApiSessionServer(FastApiSessionServerBase):
         csrf_form_or_header_value = ret.csrf_form_or_header_value
         if (session_cookie is None or csrf_cookie is None or csrf_form_or_header_value is None):
             raise CrossauthError(ErrorCode.InvalidSession, "Failed to get session and/CSRF cookie")
-        options = toFastApiCookieOptions(session_cookie["options"])
-        response.set_cookie(session_cookie["name"], session_cookie["value"], **options)
+        soptions = toFastApiCookieOptions(session_cookie["options"])
+        response.set_cookie(session_cookie["name"], session_cookie["value"], **soptions)
         request.state.csrf_token = csrf_form_or_header_value
-        options = toFastApiCookieOptions(csrf_cookie["options"])
-        response.set_cookie(csrf_cookie["name"], csrf_cookie["value"], **options)
+        coptions = toFastApiCookieOptions(csrf_cookie["options"])
+        response.set_cookie(csrf_cookie["name"], csrf_cookie["value"], **coptions)
+        set_cookies : Dict[str, Any] = {}
+        try:
+            set_cookies = request.state.set_cookies
+        except:
+            pass
+
+        set_cookies[csrf_cookie["name"]] = (csrf_cookie["value"], coptions)
+        set_cookies[session_cookie["name"]] = (session_cookie["value"], soptions)
+        request.state.set_cookies = set_cookies
         request.state.user = None
         session_id = self.session_manager.get_session_id(session_cookie["value"])
         request.state.session_id = session_id
@@ -1036,12 +1026,12 @@ class FastApiSessionServer(FastApiSessionServerBase):
             if next_param:
                 data["next"] = next_param
             
-            return self.templates.TemplateResponse(
+            return send_with_cookies(self.templates.TemplateResponse(
                 request,
                 self.__login_page, 
                 {
                     **data
-                })
+                }), request)
 
         @self.app.post(self.__prefix + 'login')
         async def post_login( # type: ignore
@@ -1071,7 +1061,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             except Exception as e:
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
                 return self.handle_error(e, request, form,
-                    lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
+                    lambda error, ce: self._render_login_error_page(request, response, form, ce, next_redirect))
 
     def add_api_getcsrftoken_endpoints(self):
         @self.app.get(self.__prefix + 'api/getcsrftoken')
@@ -1119,7 +1109,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             except Exception as e:
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
                 return self.handle_error(e, request, form,
-                    lambda error, ce: self._render_api_login_error_page(request, form, ce))
+                    lambda error, ce: self._render_api_login_error_page(request, response, form, ce))
 
     def _handle_login_response(self, request: Request, form: JsonOrFormData, response: Response, user: User, next_redirect: str) -> Response:
         
@@ -1131,14 +1121,14 @@ class FastApiSessionServer(FastApiSessionServerBase):
             else:
                 ce = CrossauthError(ErrorCode.PasswordChangeNeeded)
                 return self.handle_error(ce, request, form, 
-                    lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
+                    lambda error, ce: self._render_login_error_page(request, response, form, ce, next_redirect))
 
         elif (user["state"] == UserState.password_reset_needed or 
               user["state"] == UserState.password_and_factor2_reset_needed):
             CrossauthLogger.logger().debug(j({"msg": "Password reset needed - sending error"}))
             ce = CrossauthError(ErrorCode.PasswordResetNeeded)
             return self.handle_error(ce, request, form,
-                lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
+                lambda error, ce: self._render_login_error_page(request, response, form, ce, next_redirect))
 
         elif (len(self.allowed_factor2) > 0 and 
               (user["state"] == UserState.factor2_reset_needed or 
@@ -1154,7 +1144,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             else:
                 ce = CrossauthError(ErrorCode.Factor2ResetNeeded)
                 return self.handle_error(ce, request, form,
-                    lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
+                    lambda error, ce: self._render_login_error_page(request, response, form, ce, next_redirect))
 
         elif not "factor2" not in user or ("factor2" in user and len(user["factor2"])) == 0:
             CrossauthLogger.logger().debug(j({"msg": "Successful login - sending redirect"}))
@@ -1168,26 +1158,26 @@ class FastApiSessionServer(FastApiSessionServerBase):
                 "factor2": user["factor2"] if "factor2" in user else "",
                 "action": "loginfactor2"
             }
-            return self.templates.TemplateResponse(
+            return send_with_cookies(self.templates.TemplateResponse(
                 request,
                 self.__factor2_page, 
                 {
                     **data
-                })
+                }), request)
 
     def _handle_api_login_response(self, request: Request, form: JsonOrFormData, response: Response, user: User) -> Response:
         
         if user["state"] == UserState.password_change_needed:
             ce = CrossauthError(ErrorCode.PasswordChangeNeeded)
             return self.handle_error(ce, request, form, 
-                lambda error, ce: self._render_api_login_error_page(request, form, ce))
+                lambda error, ce: self._render_api_login_error_page(request, response, form, ce))
 
         elif (user["state"] == UserState.password_reset_needed or 
               user["state"] == UserState.password_and_factor2_reset_needed):
             CrossauthLogger.logger().debug(j({"msg": "Password reset needed - sending error"}))
             ce = CrossauthError(ErrorCode.PasswordResetNeeded)
             return self.handle_error(ce, request, form,
-                lambda error, ce: self._render_api_login_error_page(request, form, ce))
+                lambda error, ce: self._render_api_login_error_page(request, response, form, ce))
 
         elif (len(self.allowed_factor2) > 0 and 
               (user["state"] == UserState.factor2_reset_needed or 
@@ -1198,14 +1188,14 @@ class FastApiSessionServer(FastApiSessionServerBase):
             }))
             ce = CrossauthError(ErrorCode.Factor2ResetNeeded)
             return self.handle_error(ce, request, form,
-                lambda error, ce: self._render_api_login_error_page(request, form, ce))
+                lambda error, ce: self._render_api_login_error_page(request, response, form, ce))
 
         elif "factor2" in user and user["factor2"] != "" and user["factor2"] in self.authenticators:
             CrossauthLogger.logger().debug(j({"msg": "Login - factor2 required"}))
-            return JSONResponse({"ok": True, "twoFactorRequired": True}, headers=JSONHDRMAP)
+            return send_with_cookies(JSONResponse({"ok": True, "twoFactorRequired": True}, headers=JSONHDRMAP), request)
         else:
             CrossauthLogger.logger().debug(j({"msg": "Successful login - sending ok"}))
-            return JSONResponse({"ok": True, "user": request.state.user}, headers=JSONHDRMAP)
+            return send_with_cookies(JSONResponse({"ok": True, "user": request.state.user}, headers=JSONHDRMAP), request)
 
     def add_logout_endpoints(self):
         @self.app.post(self.__prefix + 'logout')
@@ -1252,10 +1242,10 @@ class FastApiSessionServer(FastApiSessionServerBase):
                     CrossauthLogger.logger().debug(j({"err": str(e2)}))
                 if (factor2 and factor2 in self.authenticators):
                     return self.handle_error(e, request, form, 
-                        lambda error, ce: self._render_login_factor2_error_page(request, form, ce, next_redirect, factor2))
+                        lambda error, ce: self._render_login_factor2_error_page(request, response, form, ce, next_redirect, factor2))
                 else:
                     return self.handle_error(e, request, form, 
-                        lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
+                        lambda error, ce: self._render_login_error_page(request, response, form, ce, next_redirect))
 
     def add_api_logout_endpoints(self):
         @self.app.post(self.__prefix + 'api/logout')
@@ -1274,7 +1264,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             
             try:
                 return await self.__logout(request, form, response, 
-                    lambda reply: JSONResponse({"ok": True}, headers=JSONHDRMAP))
+                    lambda reply: send_with_cookies(JSONResponse({"ok": True}, headers=JSONHDRMAP), request))
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
                 CrossauthLogger.logger().error(j({
@@ -1283,17 +1273,17 @@ class FastApiSessionServer(FastApiSessionServerBase):
                     "errorCode": ce.code.value,
                     "errorCodeName": ce.code.name
                 }))
-                return JSONResponse({
+                return send_with_cookies(JSONResponse({
                     "ok": False,
                     "message": ce.message,
                     "messages": ce.messages,
                     "errorCode": ce.code.value,
                     "errorCodeName": ce.code.name
-                    }, headers=JSONHDRMAP)
+                    }, headers=JSONHDRMAP), request)
 
-    def _render_login_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError, next_redirect: str) -> Response:
+    def _render_login_error_page(self, request: Request, response: Response, form: JsonOrFormData, error: CrossauthError, next_redirect: str) -> Response:
         csrf_token = getattr(request.state, 'csrf_token', None)
-        return self.templates.TemplateResponse(
+        return send_with_cookies(self.templates.TemplateResponse(
             request,
             self.__login_page, 
             {
@@ -1306,20 +1296,20 @@ class FastApiSessionServer(FastApiSessionServerBase):
                 "username": form.getAsStr1("username", ""),
                 "csrfToken": csrf_token,
                 "urlPrefix": self.__prefix
-            }, error.http_status)
+            }, error.http_status), request)
 
-    def _render_api_login_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError) -> Response:
-        return JSONResponse({
+    def _render_api_login_error_page(self, request: Request, response: Response, form: JsonOrFormData, error: CrossauthError) -> Response:
+        return send_with_cookies(JSONResponse({
                 "ok": False, 
                 "errorMessage": error.message,
                 "errorMessages": error.messages,
                 "errorCode": error.code.value,
                 "errorCodeName": error.code.name,
-            },  headers=JSONHDRMAP)
+            },  headers=JSONHDRMAP), request)
 
-    def _render_login_factor2_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError, next_redirect: str, factor2: str) -> Response:
+    def _render_login_factor2_error_page(self, request: Request, response: Response, form: JsonOrFormData, error: CrossauthError, next_redirect: str, factor2: str) -> Response:
         csrf_token = getattr(request.state, 'csrf_token', None)
-        return self.templates.TemplateResponse(
+        return send_with_cookies(self.templates.TemplateResponse(
             request,
             self.__login_page, 
             {
@@ -1334,7 +1324,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
                 "urlPrefix": self.__prefix,
                 "action": "loginfactor2",
                 "factor2": factor2,
-            }, error.http_status)
+            }, error.http_status), request)
 
     def add_login_factor2_endpoints(self):
 
@@ -1369,7 +1359,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             except Exception as e:
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
                 return self.handle_error(e, request, form,
-                    lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
+                    lambda error, ce: self._render_login_error_page(request, response, form, ce, next_redirect))
 
     def add_factor2_endpoints(self):
 
@@ -1406,12 +1396,12 @@ class FastApiSessionServer(FastApiSessionServerBase):
             
             # Check if user is already logged in (assuming request.state.user is set via dependency or middleware)
             
-            return self.templates.TemplateResponse(
+            return send_with_cookies(self.templates.TemplateResponse(
                 request,
                 self.__factor2_page, 
-                {
-                    **data
-                })
+                    {
+                        **data
+                }), request)
 
     def allowed_factor2_details(self) -> List[AuthenticatorDetails]:
         """
@@ -1455,12 +1445,12 @@ class FastApiSessionServer(FastApiSessionServerBase):
                 "next": next_param
             }
             
-            return self.templates.TemplateResponse(
+            return send_with_cookies(self.templates.TemplateResponse(
                 request,
                 self.__signup_page, 
                 {
                     **data
-                })
+            }), request)
 
         @self.app.post(self.__prefix + 'signup')
         async def post_signup( # type: ignore
@@ -1487,17 +1477,17 @@ class FastApiSessionServer(FastApiSessionServerBase):
             body = form.to_dict()
             try:
 
-                def signup_lambda(data: Dict[str,Any], resp : Response, user: User|None):
+                def signup_lambda(data: Dict[str,Any], resp : Response, user: User|None) -> Response:
                     if "userData" in data and "factor2" in data["userData"] and data["userData"]["factor2"]:
-                        return self.templates.TemplateResponse(
+                        return send_with_cookies(self.templates.TemplateResponse(
                             request,
                             self.__configure_factor2_page, 
                             {
                                 "csrfToken": data["csrfToken"],
                                 **data["userData"]
-                            })
+                            }), request)
                     elif (self.__enable_email_verification):
-                        return self.templates.TemplateResponse(
+                        return send_with_cookies(self.templates.TemplateResponse(
                             request,
                             self.__signup_page, 
                             {
@@ -1508,7 +1498,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
                                 "urlPrefix": self.__prefix, 
                                 "factor2": body["factor2"] if "factor2" in body else None,
                                 **(data["userData"] if "userData" in data else {})
-                            })
+                            }), request)
                     else:
                         #return RedirectResponse(url=self.__login_redirect, status_code=302)
                         return redirect(url=self.__login_redirect, response=resp, status_code=302)
@@ -1531,8 +1521,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
                     for field in body:
                         if (field.startswith("user_")):
                             extra_fields[field] = body[field]
-                    return self.templates.TemplateResponse(
-                        request, 
+                    return send_with_cookies(self.templates.TemplateResponse(
+                        request,
                         self.__signup_page, 
                         {
                             "errorMessage": error.message,
@@ -1547,7 +1537,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
                             "allowedFactor2": self.allowed_factor2_details(),
                             "urlPrefix": self.__prefix, 
                             **extra_fields,
-                        }, error.http_status)
+                        }, error.http_status), request)
                     
                 return self.handle_error(e, request, form,
                     lambda error, ce: handle_error_fn({}, ce))

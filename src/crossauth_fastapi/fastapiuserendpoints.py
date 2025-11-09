@@ -1,7 +1,7 @@
 from typing import Optional, Any, Dict, Callable, cast
 from fastapi import Request, Response, Query
 
-from crossauth_fastapi.fastapisessionserverbase import FastApiSessionServerOptions, FastApiSessionServerBase, JsonOrFormData, redirect
+from crossauth_fastapi.fastapisessionserverbase import *
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.common.interfaces import User
 from crossauth_backend.common.error import CrossauthError, ErrorCode
@@ -82,13 +82,13 @@ class FastApiUserEndpoints():
             }))
             try:
                 def handle_success(data: Dict[str, Any], response: Response, _user: User|None) -> Response:
-                    return self.__session_server.templates.TemplateResponse(
-                        request, 
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                        request,
                         self.__signup_page, 
                         {
                             **data,
                             "next": next_param,
-                        })
+                        }), request)
                 
                 return await self.__reconfigure_factor2(request, response, handle_success)
             except Exception as e:
@@ -102,8 +102,8 @@ class FastApiUserEndpoints():
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
                 
                 def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
-                    return self.__session_server.templates.TemplateResponse(
-                        request, 
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                        request,
                         self.__signup_page, 
                         {
                             "errorMessage": error.message,
@@ -114,7 +114,7 @@ class FastApiUserEndpoints():
                             "csrfToken": request.state.csrf_token,
                             "allowedFactor2": self.__session_server.allowed_factor2_details(),
                             "urlPrefix": self.__prefix, 
-                        }, error.http_status)
+                        }, error.http_status), request)
                 
                 return self.__session_server.handle_error(e, request, None,
                     lambda error, ce: handle_error_fn({}, ce))
@@ -148,23 +148,23 @@ class FastApiUserEndpoints():
                         (authenticator is None or
                         authenticator.skip_email_verification_on_signup() != True)):
                         # email verification has been sent - tell user
-                        return self.__session_server.templates.TemplateResponse(
-                            request, 
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
                             self.__signup_page, 
                             {
                                 "next": next_page,
                                 "csrfToken": request.state.csrf_token,
                                 "urlPrefix": self.__prefix,
                                 "message": "Please check your email to finish signing up."
-                            })
+                            }), request)
                     else:
                         if not self.__session_server.is_session_user(request):
                             # we came here as part of login in - take user to orignally requested page
                             return redirect(next_page, response, 302)
                         else:
                             # we came here because the user asked to change 2FA - tell them it was successful
-                            return self.__session_server.templates.TemplateResponse(
-                                request, 
+                            return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                                request,
                                 self.__configure_factor2_page, 
                                 {
                                 "message": "Two-factor authentication updated",
@@ -172,7 +172,7 @@ class FastApiUserEndpoints():
                                 "next": next_page,
                                 "required": form.getAsBool1('required', False),
                                 "csrfToken": request.state.csrf_token,
-                                })
+                                }), request)
 
                 return await self.__configure_factor2(request, response, form, handle_success)
             except Exception as e:
@@ -193,15 +193,15 @@ class FastApiUserEndpoints():
                         CrossauthLogger.logger().error(j({
                             "msg": "Session not defined during two factor process"
                         }))
-                        return self.__session_server.templates.TemplateResponse(
-                            request, 
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
                             self.__session_server.error_page, 
                             {
                                 "status": 500,
                                 "errorMessage": "An unknown error occurred",
                                 "errorCode": ErrorCode.UnknownError.value,
                                 "errorCodeName": ErrorCode.UnknownError.name,
-                            }, ce.http_status)
+                            }, ce.http_status), request)
 
                     # normal error - wrong code, etc.  show the page again
                     data = await self.__session_server.session_manager.data_for_session_id(session_id)
@@ -215,8 +215,8 @@ class FastApiUserEndpoints():
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
-                        return self.__session_server.templates.TemplateResponse(
-                            request, 
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
                             self.__configure_factor2_page, 
                             {
                                 "errorMessage": error.message,
@@ -227,7 +227,7 @@ class FastApiUserEndpoints():
                                 "csrfToken": request.state.csrf_token,
                                 "allowedFactor2": self.__session_server.allowed_factor2_details(),
                                 "urlPrefix": self.__prefix, 
-                            }, error.http_status)
+                            }, error.http_status), request)
                     
                     return self.__session_server.handle_error(e, request, form,
                         lambda error, ce: handle_error_fn(response, ce))
@@ -235,14 +235,14 @@ class FastApiUserEndpoints():
                     # self is reached if there is an error processing the error
                     CrossauthLogger.logger().error(j({"err": str(e2)}))
                     response = Response(status_code=500)
-                    return self.__session_server.templates.TemplateResponse(
-                        request, 
-                        self.__session_server.error_page, {
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__session_server.error_page, {
                             "status": 500,
                             "errorMessage": "An unknown error occurred",
                             "errorCode": ErrorCode.UnknownError.value,
                             "errorCodeName": ErrorCode.UnknownError.name,
-                            })
+                            }), request)
 
     ##########################################
     ## Shared between page and API endpoints
