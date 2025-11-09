@@ -81,7 +81,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
 
 class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
 
-    async def test_get_login_get(self):
+    async def test_api_login_logout(self):
         app = await make_app_with_options()
 
         client = TestClient(app.app)
@@ -101,6 +101,13 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
         body = resp.json()
         self.assertEqual(body["ok"], True)
         self.assertEqual(body["user"]["username"], "bob")
+
+        resp =client.post("/api/logout", json={
+            "csrfToken": csrf_token,
+        })
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
 
     async def test_api_signup(self):
         app = await make_app_with_options({"enable_email_verification": False})
