@@ -1616,9 +1616,9 @@ class FastApiOAuthClient(OAuthClient):
                             'username': body.getAsStr("username"),
                             'scope': body.getAsStr("scope"),
                             'errorMessage': ce.message,
-                            'errorCode': ce.code,
-                            'errorCodeName': ce.code_name,
-                            'csrfToken': request.state.csrf_token
+                            "errorCode": ce.code.value,
+                            "errorCodeName": ce.code.name,
+                            'csrfToken': request.state.csrf_token,
                         })
                 return await self.__receive_token_fn(resp2, self, request, response)
 
@@ -1634,9 +1634,9 @@ class FastApiOAuthClient(OAuthClient):
                     'username': body.getAsStr("username"),
                     'scope': body.getAsStr("scope"),
                     'errorMessage': ce.message,
-                    'errorCode': ce.code,
-                    'errorCodeName': ce.code_name,
-                    'csrfToken': request.state.csrf_token
+                    "errorCode": ce.code.value,
+                    "errorCodeName": ce.code.name,
+                    'csrfToken': request.state.csrf_token,
                 })
             return await self.__receive_token_fn(resp, self, request, response)
         except Exception as e:
@@ -1657,8 +1657,8 @@ class FastApiOAuthClient(OAuthClient):
                 'username': body.getAsStr("username"),
                 'scope': body.getAsStr("scope"),
                 'errorMessage': ce.message,
-                'errorCode': ce.code,
-                'errorCodeName': ce.code_name,
+                "errorCode": ce.code.value,
+                "errorCodeName": ce.code.name,
                 'csrfToken': request.state.csrf_token
             })
 
@@ -1752,8 +1752,8 @@ class FastApiOAuthClient(OAuthClient):
                 'mfa_token': body.getAsBool("mfa_token"),
                 'challenge_type': body.getAsStr("challenge_type"),
                 'errorMessage': ce.message,
-                'errorCode': ce.code,
-                'errorCodeName': ce.code_name,
+                "errorCode": ce.code.value,
+                "errorCodeName": ce.code.name,
                 'csrfToken': request.state.csrf_token
             })
         return await self.__receive_token_fn(resp, self, request, response) or response
@@ -1792,9 +1792,9 @@ class FastApiOAuthClient(OAuthClient):
                 'challenge_type': body.getAsStr("challenge_type"),
                 'mfa_token': body.getAsStr("mfa_token"),
                 'errorMessage': ce.message,
-                'errorCode': ce.code,
-                'errorCodeName': ce.code_name,
-                'csrfToken': request.state.csrf_token
+                "errorCode": ce.code.value,
+                "errorCodeName": ce.code.name,
+                'csrfToken': request.state.csrf_token,
             })
         return await self.__receive_token_fn(resp, self, request, response) or response
 

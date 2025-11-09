@@ -96,8 +96,8 @@ class FastApiUserEndpoints():
                 CrossauthLogger.logger().error(j({
                     "msg": "Configure factor2 failure",
                     "user": request.state.user["username"] if hasattr(request.state.user, 'username') else None,
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code
+                    "errorCode": ce.code.value,
+                    "errorCodeName": ce.code.name
                 }))
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
                 
@@ -108,8 +108,8 @@ class FastApiUserEndpoints():
                         {
                             "errorMessage": error.message,
                             "errorMessages": error.messages, 
-                            "errorCode": error.code, 
-                            "errorCodeName": error.code_name, 
+                            "errorCode": error.code.value, 
+                            "errorCodeName": error.code.name, 
                             "next": next_param, 
                             "csrfToken": request.state.csrf_token,
                             "allowedFactor2": self.__session_server.allowed_factor2_details(),
@@ -187,8 +187,8 @@ class FastApiUserEndpoints():
                         ce = CrossauthError.as_crossauth_error(e)
                         CrossauthLogger.logger().error(j({
                             "msg": "Signup second factor failure",
-                            "errorCodeName": ce.code_name,
-                            "errorCode": ce.code
+                            "errorCodeName": ce.code.name,
+                            "errorCode": ce.code.value
                         }))
                         CrossauthLogger.logger().error(j({
                             "msg": "Session not defined during two factor process"
@@ -199,8 +199,8 @@ class FastApiUserEndpoints():
                             {
                                 "status": 500,
                                 "errorMessage": "An unknown error occurred",
-                                "errorCode": ErrorCode.UnknownError,
-                                "errorCodeName": "UnknownError"
+                                "errorCode": ErrorCode.UnknownError.value,
+                                "errorCodeName": ErrorCode.UnknownError.name,
                             }, ce.http_status)
 
                     # normal error - wrong code, etc.  show the page again
@@ -210,8 +210,8 @@ class FastApiUserEndpoints():
                     CrossauthLogger.logger().error(j({
                         "msg": "Signup two factor failure",
                         "user": data2fa.get('username') if data2fa and "username" in data2fa else None,
-                        "errorCodeName": ce.code_name,
-                        "errorCode": ce.code
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -221,8 +221,8 @@ class FastApiUserEndpoints():
                             {
                                 "errorMessage": error.message,
                                 "errorMessages": error.messages, 
-                                "errorCode": error.code, 
-                                "errorCodeName": error.code_name, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
                                 "next": next_page, 
                                 "csrfToken": request.state.csrf_token,
                                 "allowedFactor2": self.__session_server.allowed_factor2_details(),
@@ -240,8 +240,8 @@ class FastApiUserEndpoints():
                         self.__session_server.error_page, {
                             "status": 500,
                             "errorMessage": "An unknown error occurred",
-                            "errorCode": ErrorCode.UnknownError,
-                            "errorCodeName": "UnknownError"
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
                             })
 
     ##########################################

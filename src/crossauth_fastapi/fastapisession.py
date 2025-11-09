@@ -27,6 +27,7 @@ from .fastapiserverbase import FastApiServerBase
 from .fastapiuserendpoints import FastApiUserEndpoints
 
 JSONHDR : List[str] = ['Content-Type', 'application/json; charset=utf-8']
+JSONHDRMAP = {'Content-Type': 'application/json; charset=utf-8'}
 
 class FastApiCookieOptions(TypedDict, total=True):
     max_age: int|None
@@ -444,7 +445,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
                                 "cerr": str(e),
                                 "user": form.getAsStr1("username", ""),
                                 "errorCode": ce.code.value,
-                                "errorCodeName": ce.code_name
+                                "errorCodeName": ce.code.name
                             }))
                         
                         # restore original request body
@@ -995,6 +996,10 @@ class FastApiSessionServer(FastApiSessionServerBase):
         if ("configurefactor2" in self.__endpoints):
             self.__user_endpoints.add_configure_factor2endpoints()
 
+        if ("api/getcsrftoken" in self.__endpoints):
+            self.add_api_getcsrftoken_endpoints()
+        if ("api/login" in self.__endpoints):
+            self.add_api_login_endpoints()
 
     ############################3
     ## page endpoints
@@ -1068,6 +1073,54 @@ class FastApiSessionServer(FastApiSessionServerBase):
                 return self.handle_error(e, request, form,
                     lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
 
+    def add_api_getcsrftoken_endpoints(self):
+        @self.app.get(self.__prefix + 'api/getcsrftoken')
+        async def get_login( # type: ignore
+            request: Request,
+            response: Response,
+        ):
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": "GET",
+                "url": self.__prefix + "api/getcsrftoken",
+                "ip": request.client.host if request.client is not None else ""
+            }))
+            
+            return JSONResponse({"ok": True, "csrfToken": request.state.csrf_token}, headers=JSONHDRMAP)
+
+    def add_api_login_endpoints(self):
+
+        @self.app.post(self.__prefix + 'api/login')
+        async def post_api_login( # type: ignore
+            request: Request,
+            response: Response,
+            #next_param: Optional[str] = Form(None, alias="next"),
+            #persist: bool = Form(False),
+            #username: str = Form("")
+        ):
+
+            # Check if user is already logged in (assuming request.state.user is set via dependency or middleware)
+            user = getattr(request.state, 'user', None)
+            if user:
+                return JSONResponse({"ok": False, "user": request.state.user}, headers=JSONHDRMAP)
+
+            form = JsonOrFormData(request)
+            await form.load()
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": "POST",
+                "url": self.__prefix + "api/login",
+                "ip": request.client.host if request.client else ""
+            }))
+                                    
+            try:
+                return await self.__login(request, response, form,
+                    lambda body1, resp1, user: self._handle_api_login_response(request, form, response, user))
+            except Exception as e:
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                return self.handle_error(e, request, form,
+                    lambda error, ce: self._render_api_login_error_page(request, form, ce))
+
     def _handle_login_response(self, request: Request, form: JsonOrFormData, response: Response, user: User, next_redirect: str) -> Response:
         
         if user["state"] == UserState.password_change_needed:
@@ -1122,6 +1175,37 @@ class FastApiSessionServer(FastApiSessionServerBase):
                     **data
                 })
 
+    def _handle_api_login_response(self, request: Request, form: JsonOrFormData, response: Response, user: User) -> Response:
+        
+        if user["state"] == UserState.password_change_needed:
+            ce = CrossauthError(ErrorCode.PasswordChangeNeeded)
+            return self.handle_error(ce, request, form, 
+                lambda error, ce: self._render_api_login_error_page(request, form, ce))
+
+        elif (user["state"] == UserState.password_reset_needed or 
+              user["state"] == UserState.password_and_factor2_reset_needed):
+            CrossauthLogger.logger().debug(j({"msg": "Password reset needed - sending error"}))
+            ce = CrossauthError(ErrorCode.PasswordResetNeeded)
+            return self.handle_error(ce, request, form,
+                lambda error, ce: self._render_api_login_error_page(request, form, ce))
+
+        elif (len(self.allowed_factor2) > 0 and 
+              (user["state"] == UserState.factor2_reset_needed or 
+               not (user["factor2"] if "factor2" in user else "none") in self.allowed_factor2)):
+            CrossauthLogger.logger().debug(j({
+                "msg": f"Factor2 reset needed. Factor2 is {user["factor2"] if "factor2" in user else ""}, state is {user["state"]}, allowed factor2 is [{', '.join(self.allowed_factor2)}]",
+                "username": user["username"]
+            }))
+            ce = CrossauthError(ErrorCode.Factor2ResetNeeded)
+            return self.handle_error(ce, request, form,
+                lambda error, ce: self._render_api_login_error_page(request, form, ce))
+
+        elif "factor2" in user and user["factor2"] != "" and user["factor2"] in self.authenticators:
+            CrossauthLogger.logger().debug(j({"msg": "Login - factor2 required"}))
+            return JSONResponse({"ok": True, "twoFactorRequired": True}, headers=JSONHDRMAP)
+        else:
+            CrossauthLogger.logger().debug(j({"msg": "Successful login - sending ok"}))
+            return JSONResponse({"ok": True, "user": request.state.user}, headers=JSONHDRMAP)
 
     def add_logout_endpoints(self):
         @self.app.post(self.__prefix + 'logout')
@@ -1147,8 +1231,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
                 CrossauthLogger.logger().error(j({
                     "msg": "Logout failure",
                     "user": request.state.user["username"] if request.state.user else None,
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code
+                    "errorCode": ce.code.value,
+                    "errorCodeName": ce.code.name
                 }))
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
                 factor2 : str|None = None
@@ -1162,8 +1246,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
                     CrossauthLogger.logger().error(j({
                         "msg": "Logout failure",
                         "user": request.state.user["username"] if request.state.user else None,
-                        "errorCodeName": ce2.code_name,
-                        "errorCode": ce2.code
+                        "errorCode": ce2.code.value,
+                        "errorCodeName": ce2.code.name
                     }))
                     CrossauthLogger.logger().debug(j({"err": str(e2)}))
                 if (factor2 and factor2 in self.authenticators):
@@ -1172,7 +1256,41 @@ class FastApiSessionServer(FastApiSessionServerBase):
                 else:
                     return self.handle_error(e, request, form, 
                         lambda error, ce: self._render_login_error_page(request, form, ce, next_redirect))
-    
+
+    def add_api_logout_endpoints(self):
+        @self.app.post(self.__prefix + 'api/logout')
+        async def api_logout_endpoint(request: Request, response: Response): # type: ignore
+            # Extract request body (in real FastAPI this would be handled differently)
+            form = JsonOrFormData(request)
+            await form.load()
+            
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": 'POST',
+                "url": self.__prefix + 'api/logout',
+                "ip": request.client.host if request.client else None,
+                "user": request.state.user["username"] if request.state.user else None
+            }))
+            
+            try:
+                return await self.__logout(request, form, response, 
+                    lambda reply: JSONResponse({"ok": True}, headers=JSONHDRMAP))
+            except Exception as e:
+                ce = CrossauthError.as_crossauth_error(e)
+                CrossauthLogger.logger().error(j({
+                    "msg": "Logout failure",
+                    "user": request.state.user["username"] if request.state.user else None,
+                    "errorCode": ce.code.value,
+                    "errorCodeName": ce.code.name
+                }))
+                return JSONResponse({
+                    "ok": False,
+                    "message": ce.message,
+                    "messages": ce.messages,
+                    "errorCode": ce.code.value,
+                    "errorCodeName": ce.code.name
+                    }, headers=JSONHDRMAP)
+
     def _render_login_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError, next_redirect: str) -> Response:
         csrf_token = getattr(request.state, 'csrf_token', None)
         return self.templates.TemplateResponse(
@@ -1181,7 +1299,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             {
                 "errorMessage": error.message,
                 "errorMessages": error.messages,
-                "errorCode": error.code,
+                "errorCode": error.code.value,
                 "errorCodeName": error.code.value,
                 "next": next_redirect,
                 "persist": form.getAsBool1("persist", False),
@@ -1189,6 +1307,15 @@ class FastApiSessionServer(FastApiSessionServerBase):
                 "csrfToken": csrf_token,
                 "urlPrefix": self.__prefix
             }, error.http_status)
+
+    def _render_api_login_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError) -> Response:
+        return JSONResponse({
+                "ok": False, 
+                "errorMessage": error.message,
+                "errorMessages": error.messages,
+                "errorCode": error.code.value,
+                "errorCodeName": error.code.name,
+            },  headers=JSONHDRMAP)
 
     def _render_login_factor2_error_page(self, request: Request, form: JsonOrFormData, error: CrossauthError, next_redirect: str, factor2: str) -> Response:
         csrf_token = getattr(request.state, 'csrf_token', None)
@@ -1198,8 +1325,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             {
                 "errorMessage": error.message,
                 "errorMessages": error.messages,
-                "errorCode": error.code,
-                "errorCodeName": error.code.value,
+                "errorCode": error.code.value,
+                "errorCodeName": error.code.name,
                 "next": next_redirect,
                 "persist": form.getAsBool1("persist", False),
                 "username": form.getAsStr1("username", ""),
@@ -1394,7 +1521,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
                     "msg": "Signup failure",
                     "user": body["username"],
                     "errorCodeName": ce.code_name,
-                    "errorCode": ce.code
+                    "errorCode": ce.code.value
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
@@ -1410,8 +1537,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
                         {
                             "errorMessage": error.message,
                             "errorMessages": error.messages, 
-                            "errorCode": error.code, 
-                            "errorCodeName": error.code_name, 
+                            "errorCode": error.code.value,
+                            "errorCodeName": error.code.name,
                             "next": next_redirect, 
                             "persist": body["persist"] if "persist" in body else None,
                             "username": body["username"] if "username" in body else None,
@@ -1518,7 +1645,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
 
         return success_fn(body, resp, user)
     
-    async def __logout(self, request: Request, fomr: JsonOrFormData, response: Response, 
+    async def __logout(self, request: Request, form: JsonOrFormData, response: Response, 
                     success_fn: Callable[[Response], Any]) -> Response:
         """
         Handle user logout process
