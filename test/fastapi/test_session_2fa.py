@@ -169,13 +169,11 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
             render_mock.side_effect = mock_TemplateResponse
 
             client = TestClient(app.app)
-            print("GET SIGNUP")
             resp = client.get("/signup")
             self.assertIn("csrfToken", template_data)
             csrfToken = template_data["csrfToken"]
             client.cookies = resp.cookies
 
-            print("SIGNUP")
             resp1 = client.post("/signup", json={
                 "csrfToken": csrfToken,
                 "username": "bob1",
@@ -191,7 +189,6 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
 
 
             # send confgure post
-            print("CONFIGURE")
             resp1 = client.post("/configurefactor2", json={
                 "csrfToken": csrfToken,
                 "next": "/",

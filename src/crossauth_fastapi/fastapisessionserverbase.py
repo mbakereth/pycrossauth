@@ -515,7 +515,7 @@ class FastApiSessionServerBase(FastApiSessionAdapter):
         pass
 
     @abstractmethod
-    def send_json_error(self, response: Response, status: int, error: Optional[str] = None, e: Optional[Exception] = None) -> Response:
+    def send_json_error(self, request: Request, response: Response, status: int, error: Optional[str] = None, e: Optional[Exception] = None) -> Response:
         pass
 
     @abstractmethod
