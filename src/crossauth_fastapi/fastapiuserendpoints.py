@@ -59,7 +59,7 @@ class FastApiUserEndpoints():
         set_parameter("signup_page", ParamType.String, self, options, "SIGNUP_PAGE")
         set_parameter("delete_user_page", ParamType.String, self, options, "DELETE_USER_PAGE")
 
-    ############################3
+    ############################
     ## page endpoints
 
 
@@ -242,7 +242,159 @@ class FastApiUserEndpoints():
                             "errorMessage": "An unknown error occurred",
                             "errorCode": ErrorCode.UnknownError.value,
                             "errorCodeName": ErrorCode.UnknownError.name,
-                            }), request)
+                            }, status_code=500), request)
+
+    ############################
+    ## API endpoints
+
+
+    def add_api_configure_factor2endpoints(self) -> None:
+        """
+        Adds the `configurefactor2` GET and POST endpoints.
+        """
+
+        @self.app.get(self.__prefix + 'api/configurefactor2')
+        async def get_api_configure_factor2( # type: ignore
+            request: Request,
+            response: Response,
+        ) -> Response:
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": 'GET',
+                "url": self.__prefix + 'capi/onfigurefactor2',
+                "ip": request.client.host if request.client else None
+            }))
+            try:
+                def handle_success(data: Dict[str, Any], response: Response, _user: User|None) -> Response:
+                    return send_with_cookies(JSONResponse(
+                        {
+                            "ok": True,
+                            **data,
+                        }, headers=JSONHDRMAP), request)
+                
+                return await self.__reconfigure_factor2(request, response, handle_success)
+            except Exception as e:
+                ce = CrossauthError.as_crossauth_error(e)
+                CrossauthLogger.logger().error(j({
+                    "msg": "Configure factor2 failure",
+                    "user": request.state.user["username"] if hasattr(request.state.user, 'username') else None,
+                    "errorCode": ce.code.value,
+                    "errorCodeName": ce.code.name
+                }))
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                
+                def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
+                    return send_with_cookies(JSONResponse(
+                        {
+                            "errorMessage": error.message,
+                            "errorMessages": error.messages, 
+                            "errorCode": error.code.value, 
+                            "errorCodeName": error.code.name, 
+                            "csrfToken": request.state.csrf_token,
+                            "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                            "urlPrefix": self.__prefix, 
+                        }, status_code=error.http_status, headers=JSONHDRMAP), request)
+                
+                return self.__session_server.handle_error(e, request, None,
+                    lambda error, ce: handle_error_fn({}, ce))
+
+        @self.app.post(self.__prefix + 'api/configurefactor2')
+        async def post_api_configure_factor2(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": 'POST',
+                "url": self.__prefix + 'api/configurefactor2',
+                "ip": request.client.host if request.client else None
+            }))
+            
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()            
+            
+            try:
+                def handle_success(reply: Response, user: User) -> Response:
+                    # success
+
+                    authenticator = self.__session_server.authenticators[user["factor2"]] if user and "factor2" in user and cast(Dict[str,Any],user)["factor2"] is not None and user["factor2"] != "" else None
+                    
+                    resp : Dict[str, Any] = {
+                        "csrfToken": request.state.csrf_token,
+                        "urlPrefix": self.__prefix,
+                        "message": "Please check your email to finish signing up."
+
+                    }
+                    if (not self.__session_server.is_session_user(request) and
+                        self.__session_server.enable_email_verification and
+                        (authenticator is None or
+                        authenticator.skip_email_verification_on_signup() != True)):
+                            # email verification has been sent - tell user
+                            resp["emailVerificationNeeded"] = self.__session_server.enable_email_verification
+                    return send_with_cookies(JSONResponse(
+                        {
+                        }, headers=JSONHDRMAP), request)
+
+                return await self.__configure_factor2(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+                    session_id = request.state.session_id
+                    if not session_id:
+                        # self shouldn't happen - user's cannot call self URL without having a session,
+                        # user or anonymous.  However, just in case...
+                        ce = CrossauthError.as_crossauth_error(e)
+                        CrossauthLogger.logger().error(j({
+                            "msg": "Signup second factor failure",
+                            "errorCodeName": ce.code.name,
+                            "errorCode": ce.code.value
+                        }))
+                        CrossauthLogger.logger().error(j({
+                            "msg": "Session not defined during two factor process"
+                        }))
+                        return send_with_cookies(JSONResponse(
+                            {
+                                "status": 500,
+                                "errorMessage": "An unknown error occurred",
+                                "errorCode": ErrorCode.UnknownError.value,
+                                "errorCodeName": ErrorCode.UnknownError.name,
+                            }, headers=JSONHDRMAP, status_code=ce.http_status), request)
+
+                    # normal error - wrong code, etc.  show the page again
+                    data = await self.__session_server.session_manager.data_for_session_id(session_id)
+                    data2fa = data["2fa"] if data and "2fa" in data else None
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "msg": "Signup two factor failure",
+                        "user": data2fa.get('username') if data2fa and "username" in data2fa else None,
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(JSONResponse(
+                            {
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                                "urlPrefix": self.__prefix, 
+                            }, headers=JSONHDRMAP, status_code=error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(JSONResponse({
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, headers=JSONHDRMAP, status_code=500), request)
 
     ##########################################
     ## Shared between page and API endpoints
