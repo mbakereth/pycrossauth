@@ -90,6 +90,10 @@ def default_create_user(
     
     if "factor1" in body and body["factor1"] in allowableFactor1:
         user["factor1"] = body["factor1"]
+    elif len(allowableFactor1) == 1:
+        user["factor1"] = allowableFactor1[0]
+    else:
+        raise CrossauthError(ErrorCode.BadRequest, "factor1 not given in user")
     
     if "factor2" in body:
         user["factor2"] = "" if body["factor2"] is None else body["factor2"] 
@@ -986,6 +990,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
         if ("configurefactor2" in self.__endpoints):
             self.__user_endpoints.add_configure_factor2endpoints()
 
+        if ("api/userforsessionkey" in self.__endpoints):
+            self.add_api_user_for_session_key_endpoints()
         if ("api/getcsrftoken" in self.__endpoints):
             self.add_api_getcsrftoken_endpoints()
         if ("api/login" in self.__endpoints):
@@ -1434,6 +1440,27 @@ class FastApiSessionServer(FastApiSessionServerBase):
             }))
             
             return send_with_cookies(JSONResponse({"ok": True, "csrfToken": request.state.csrf_token}, headers=JSONHDRMAP), request)
+
+    def add_api_user_for_session_key_endpoints(self):
+        @self.app.get(self.__prefix + 'api/userforsessionkey')
+        async def get_api_user_for_session( # type: ignore
+            request: Request,
+            response: Response,
+        ):
+        
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": "GET",
+                "url": self.__prefix + "api/userforsessionkey",
+                "ip": request.client.host if request.client is not None else ""
+            }))
+            
+            user : User|None = None
+            if (request.state.session_id):
+                resp = await self.session_manager.user_for_session_id(request.state.session_id)
+                user = resp.user
+    
+            return send_with_cookies(JSONResponse({"ok": True, "user": user}, headers=JSONHDRMAP), request)
 
     def add_api_login_endpoints(self):
 
@@ -1894,6 +1921,14 @@ class FastApiSessionServer(FastApiSessionServerBase):
             resp.set_cookie(session_cookie["name"],
                         session_cookie["value"],
                         **toFastApiCookieOptions(session_cookie["options"]))
+            set_cookies : Dict[str,Any] = {}
+            try:
+                set_cookies = request.state.set_cookies
+            except:
+                pass
+            set_cookies[session_cookie["name"]] = (session_cookie["value"],
+                        toFastApiCookieOptions(session_cookie["options"]))
+            request.state.set_cookies = set_cookies
             
         CrossauthLogger.logger().debug(j({
             "msg": f"Login: set csrf cookie {csrf_cookie["name"] if csrf_cookie else ""} opts {json.dumps(session_cookie["options"] if session_cookie else {})}",

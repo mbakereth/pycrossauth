@@ -73,7 +73,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["api/login", "api/logout", "api/loginfactor2", "api/signup", "api/configurefactor2"],
+        "endpoints": ["api/login", "api/logout", "api/loginfactor2", "api/signup", "api/configurefactor2", "api/userforsessionkey"],
         **options
     })
 
@@ -112,6 +112,13 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
                 "csrfToken": csrf_token,
                 "otp": "0000"
                 })
+        body = resp.json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "mary")
+
+        # get user
+        resp = client.get("/api/userforsessionkey")
         body = resp.json()
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(body["ok"], True)
