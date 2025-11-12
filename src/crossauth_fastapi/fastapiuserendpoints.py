@@ -3,6 +3,7 @@ from fastapi import Request, Response, Query
 
 from crossauth_fastapi.fastapisessionserverbase import *
 from crossauth_backend.utils import set_parameter, ParamType
+from crossauth_backend.crypto import Crypto
 from crossauth_backend.common.interfaces import User, UserState
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
@@ -283,7 +284,6 @@ class FastApiUserEndpoints():
 
             next_page = form.getAsStr1('next', self.__session_server.login_redirect) 
             
-            
             try:
                 CrossauthLogger.logger().debug(j({"msg": "Next page " + next_page}))
 
@@ -438,6 +438,75 @@ class FastApiUserEndpoints():
                             "errorCodeName": ErrorCode.UnknownError.name,
                             }, status_code=500), request)
 
+    def add_verify_email_endpoints(self) -> None:
+
+        @self.app.get(self.__prefix + 'verifyemail/{token}')
+        async def get_verify_email( # type: ignore
+            request: Request,
+            response: Response,
+            token: str,
+        ) -> Response:
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": 'GET',
+                "url": self.__prefix + 'verifyemail',
+                "ip": request.client.host if request.client else None
+            }))
+
+            try:
+
+                def success_fn(response: Response, user: User) -> Response:
+                    send_with_cookies(self.__session_server.templates.TemplateResponse(
+                                            request,
+                                            self.__email_verified_page, 
+                                            {
+                                                "urlPrefix": self.__prefix,
+                                                "user": user,
+                                            }), request)                    
+                return await self.__verify_email(token, request, response, success_fn)
+                
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "msg": "Verify email failed",
+                        "hashedToken": Crypto.hash(token),
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__email_verified_page, 
+                            {
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "urlPrefix": self.__prefix, 
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, None,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__session_server.error_page, {
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
+
     ############################
     ## API endpoints
 
@@ -455,7 +524,7 @@ class FastApiUserEndpoints():
             CrossauthLogger.logger().info(j({
                 "msg": "API visit",
                 "method": 'GET',
-                "url": self.__prefix + 'capi/onfigurefactor2',
+                "url": self.__prefix + 'api/onfigurefactor2',
                 "ip": request.client.host if request.client else None
             }))
             try:
@@ -727,6 +796,65 @@ class FastApiUserEndpoints():
                             "errorCodeName": ErrorCode.UnknownError.name,
                             }, status_code=500), request)
 
+    def add_api_verify_email_endpoints(self) -> None:
+
+        @self.app.get(self.__prefix + 'api/verifyemail/{token}')
+        async def get_verify_email( # type: ignore
+            request: Request,
+            response: Response,
+            token: str,
+        ) -> Response:
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": 'GET',
+                "url": self.__prefix + 'verifyemail',
+                "ip": request.client.host if request.client else None
+            }))
+
+            try:
+
+                return await self.__verify_email(token, request, response, lambda response, user: send_with_cookies(JSONResponse(
+                        {
+                            "urlPrefix": self.__prefix,
+                            "user": user,
+                        }, headers=JSONHDRMAP), request))
+                
+            except Exception as e:
+                # error
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "msg": "Verify email failed",
+                        "hashedToken": Crypto.hash(token),
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(JSONResponse({
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "urlPrefix": self.__prefix, 
+                            }, error.http_status, headers=JSONHDRMAP), request)
+                    
+                    return self.__session_server.handle_error(e, request, None,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(JSONResponse({
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500, headers=JSONHDRMAP), request)
+
     ##########################################
     ## Shared between page and API endpoints
 
@@ -878,7 +1006,7 @@ class FastApiUserEndpoints():
 
         # get secrets from the request body
         # there should be new_{secret} and repeat_{secret}
-        if ("factor1" not in self.__session_server.authenticators):
+        if (user["factor1"] not in self.__session_server.authenticators):
             raise CrossauthError(ErrorCode.Unauthorized, "Unrecognised factor1")
         authenticator = self.__session_server.authenticators[user["factor1"]]
         secret_names = authenticator.secret_names()
@@ -892,10 +1020,9 @@ class FastApiUserEndpoints():
                     repeat_secrets[name] = body[field]
                     found = True
             elif field.startswith("new_"):
-                name = field[7:]
+                name = field[4:]
                 if name in secret_names:
                     new_secrets[name] = body[field]
-                    found = True
         if (not found):
             repeat_secrets = None
 
@@ -911,3 +1038,20 @@ class FastApiUserEndpoints():
             return await self.__session_server.login_with_user(user1, True, request, response, success_fn)
 
         return success_fn(response, None)
+    
+    async def __verify_email(self, token: str, request: Request, 
+        response: Response, 
+        success_fn : Callable[[Response, User], Response]) -> Response:
+
+        # this has to be enabled in configuration
+        if not self.__session_server.enable_email_verification:
+            raise CrossauthError(ErrorCode.Configuration, 
+                "Email verification reset not enabled")
+
+        # get the email verification token
+
+        # validate the token and log the user in
+        user = \
+            await self.__session_server.session_manager.apply_email_verification_token(token)
+        return await self.__session_server.login_with_user(user, True, request, response, success_fn)
+    

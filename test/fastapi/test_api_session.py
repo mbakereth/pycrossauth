@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 from jinja2 import Template
 from email.mime.multipart import MIMEMultipart
+import asyncio
 
 from typing import Dict, Any, NamedTuple
 from fastapi import FastAPI, Request
@@ -20,9 +21,12 @@ def state(request : Request) -> Dict[str, Any]:
     return {"state": request.state.__dict__["_state"], "cookies": request.cookies, "url": request.url.path}
 
 email_data : Dict[str,Any] = {}
-def mock_render(**kwargs: Dict[str,Any]):
+def mock_render(param: Any=None, **kwargs: Dict[str,Any]):
     global email_data    
-    email_data = kwargs
+    if (param):
+        email_data = param
+    else:
+        email_data = {**kwargs}
     return json.dumps(kwargs)
 
 def mock_template(file : str):
@@ -73,7 +77,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["api/login", "api/logout", "api/signup", "api/getcsrfftoken"],
+        "endpoints": ["api/login", "api/logout", "api/signup", "api/getcsrfftoken", "api/requestpasswordreset", "api/resetpassword", "api/verifyemail"],
         **options
     })
 
@@ -194,3 +198,50 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(resp.status_code, 200)
                     self.assertEqual(body["ok"], True)
                     self.assertEqual(body["emailVerificationNeeded"], True)
+                    self.assertIn("token", email_data)
+
+                    token = email_data["token"]
+                    resp = client.get("/api/verifyemail/"+token, 
+                            follow_redirects=False)
+                    body = resp.json()
+
+    async def test_reset_password(self):
+        app = await make_app_with_options({"enable_email_verification": False})
+        global email_data
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        with unittest.mock.patch('smtplib.SMTP.send_message') as render_sendmessage:
+            with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                with unittest.mock.patch('jinja2.Template.render') as render_render:
+                    render_sendmessage.side_effect = mock_sendmessage
+                    render_render.side_effect = mock_render
+                    render_get_template.side_effect = mock_template
+
+                    resp = client.post("/api/requestpasswordreset", json={
+                        "csrfToken": csrf_token,
+                        "email": "bob@bob.com",
+                        }, follow_redirects=False)
+                    body = resp.json()
+                    self.assertEqual(resp.status_code, 200)
+                    self.assertEqual(body["ok"], True)
+                    self.assertIn("token", email_data)
+                    token = email_data["token"]
+
+                    resp = client.post("/api/resetpassword", json={
+                        "csrfToken": csrf_token,
+                        "token": token,
+                        "new_password": "bobPass124",
+                        }, follow_redirects=False)
+                    body = resp.json()
+                    self.assertEqual(resp.status_code, 200)
+                    self.assertEqual(body["ok"], True)
+                    self.assertEqual(body["user"]["username"], "bob")
+
+                    

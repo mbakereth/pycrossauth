@@ -32,10 +32,13 @@ def mock_TemplateResponse(request: Request, template: str, data: Dict[str,Any], 
     return template_data
 
 email_data : Dict[str,Any] = {}
-def mock_render(**kwargs: Dict[str,Any]):
+def mock_render(param: Any|None=None, **kwargs: Dict[str,Any]):
     global email_data    
-    email_data = kwargs
-    return json.dumps(kwargs)
+    if (param):
+        email_data = param
+    else:
+        email_data = {**kwargs}
+    return json.dumps(email_data)
 
 def mock_template(file : str):
     return Template("")
@@ -85,7 +88,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["login", "logout", "signup"],
+        "endpoints": ["login", "logout", "signup", "requestpasswordreset", "resetpassword", "verifyemail"],
         **options
     })
 
@@ -272,3 +275,49 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(template_status, 200)
                         self.assertEqual(template_data["message"], "Please check your email to finish signing up.")
                         self.assertIn("token", email_data)
+
+                        token = email_data["token"]
+                        resp = client.get("/verifyemail/"+token, 
+                                follow_redirects=False)
+                        body = resp.json()    
+                        self.assertEqual(resp.status_code, 200)
+                        self.assertEqual(template_data["user"]["username"], "bob1")
+
+    async def test_reset_password(self):
+        app = await make_app_with_options({"enable_email_verification": False})
+        global email_data
+        app.app.get("/")(state)
+
+        client = TestClient(app.app)
+
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            with unittest.mock.patch('smtplib.SMTP.send_message') as render_sendmessage:
+                with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                    with unittest.mock.patch('jinja2.Template.render') as render_render:
+                        render_mock.side_effect = mock_TemplateResponse
+                        render_sendmessage.side_effect = mock_sendmessage
+                        render_render.side_effect = mock_render
+                        render_get_template.side_effect = mock_template
+
+                        client = TestClient(app.app)
+                        client.get("/requestpasswordreset")
+                        self.assertIn("csrfToken", template_data)
+                        csrfToken = template_data["csrfToken"]
+
+                        resp = client.post("/requestpasswordreset", json={
+                            "csrfToken": csrfToken,
+                            "email": "bob@bob.com",
+                            }, follow_redirects=False)
+                        body = resp.json()
+                        self.assertEqual(template_status, 200)
+                        self.assertIn("token", email_data)
+                        token = email_data["token"]
+
+                        resp = client.post("/resetpassword", json={
+                            "csrfToken": csrfToken,
+                            "token": token,
+                            "new_password": "bobPass124",
+                            }, follow_redirects=False)
+                        self.assertEqual(resp.status_code, 200)
+                        self.assertEqual(template_data["user"]["username"], "bob")

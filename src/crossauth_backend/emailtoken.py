@@ -303,7 +303,8 @@ class TokenEmailer:
             expires = cast(datetime.datetime, stored_token["expires"])
             result = await self.user_storage.get_user_by_id(userid, {'skip_email_verified_check': True})
             user = result['user']
-            email = (getattr(user, 'email', None) or getattr(user, 'username')).lower()
+            email = user["email"] if "email" in user else user["username"]
+            email = email.lower()
             
             if email:
                 TokenEmailer.validate_email(email)

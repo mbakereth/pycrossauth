@@ -993,6 +993,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_request_password_reset_endpoints()
         if ("resetpassword" in self.__endpoints):
             self.__user_endpoints.add_password_reset_endpoints()
+        if ("verifyemail" in self.__endpoints):
+            self.__user_endpoints.add_verify_email_endpoints()
 
         if ("api/userforsessionkey" in self.__endpoints):
             self.add_api_user_for_session_key_endpoints()
@@ -1014,6 +1016,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_api_request_password_reset_endpoints()
         if ("api/resetpassword" in self.__endpoints):
             self.__user_endpoints.add_api_password_reset_endpoints()
+        if ("api/verifyemail" in self.__endpoints):
+            self.__user_endpoints.add_api_verify_email_endpoints()
 
     ############################3
     ## page endpoints
@@ -1410,10 +1414,10 @@ class FastApiSessionServer(FastApiSessionServerBase):
                             "errorCode": error.code.value,
                             "errorCodeName": error.code.name,
                             "next": next_redirect, 
-                            "persist": body["persist"] if "persist" in body else None,
-                            "username": body["username"] if "username" in body else None,
+                            "persist": body["persist"] if body and "persist" in body else None,
+                            "username": body["username"] if body and "username" in body else None,
                             "csrfToken": request.state.csrf_token,
-                            "factor2": body["factor2"] if "factor2" in body else None,
+                            "factor2": body["factor2"] if body and "factor2" in body else None,
                             "allowedFactor2": self.allowed_factor2_details(),
                             "urlPrefix": self.__prefix, 
                             **extra_fields,

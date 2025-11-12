@@ -392,7 +392,7 @@ class CrossauthError(Exception):
         if (message != None and type(message) is str):
             _message = message  
             self.messages = [message]  
-        elif (type(message) is list[str]):
+        elif (type(message) == list):
             _message = ".".join(message)
             self.messages = message
 
