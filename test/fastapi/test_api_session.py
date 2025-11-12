@@ -124,11 +124,15 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
             "csrfToken": csrf_token,
             "username": "bob1",
             "user_email": "bob1@bob1.com",
-            "password": "bobPass1231"
+            "password": "bobPass1231",
+            "factor2": "none",
             }, follow_redirects=False)
         body = resp1.json()
         self.assertEqual(resp1.status_code, 200)
         self.assertEqual(body["user"]["username"], "bob1")
+
+        user = await app.userStorage.get_user_by_username("bob1", {"skip_active_check": True, "skip_email_verified_check": True})
+        self.assertEqual(user["user"]["state"], "active")
 
     async def test_api_signup_email_verification(self):
         app = await make_app_with_options({"enable_email_verification": True})
@@ -159,27 +163,8 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIsNone(body["user"])
                     self.assertEqual(body["emailVerificationNeeded"], True)
 
-    async def test_api_signup(self):
-        app = await make_app_with_options({"enable_email_verification": False})
-
-        client = TestClient(app.app)
-
-        # Get CSRF Token
-        resp =client.get("/api/getcsrftoken")
-        client.cookies = resp.cookies
-        body = resp.json()
-        csrf_token = body["csrfToken"]
-
-        resp1 = client.post("/api/signup", json={
-            "csrfToken": csrf_token,
-            "username": "bob1",
-            "user_email": "bob1@bob1.com",
-            "password": "bobPass1231",
-            }, follow_redirects=False)
-        body = resp1.json()
-        self.assertEqual(resp1.status_code, 200)
-        self.assertEqual(body["ok"], True)
-        self.assertEqual(body["user"]["username"], "bob1")
+                    self.assertIn("token", email_data)
+                    token = email_data["token"]
 
     async def test_signup_verification(self):
         app = await make_app_with_options({"enable_email_verification": True})

@@ -7,7 +7,6 @@ from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, NamedTuple
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-from starlette.responses import HTMLResponse
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage, InMemoryUserStorage
 from crossauth_backend.authenticators.passwordauth import LocalPasswordAuthenticator
 from crossauth_backend.authenticators.totpauth import TotpAuthenticator
@@ -74,6 +73,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
     }, {
         "user_storage": user_storage,
         "endpoints": ["api/login", "api/logout", "api/loginfactor2", "api/signup", "api/configurefactor2", "api/userforsessionkey"],
+        "allowed_factor2": ["dummy", "totp"],
         **options
     })
 
@@ -123,3 +123,79 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(body["ok"], True)
         self.assertEqual(body["user"]["username"], "mary")
+
+    async def test_api_signup_2fa(self):
+        app = await make_app_with_options({"enable_email_verification": False})
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        resp1 = client.post("/api/signup", json={
+            "csrfToken": csrf_token,
+            "username": "bob1",
+            "user_email": "bob1@bob1.com",
+            "password": "bobPass1231",
+            "factor2": "dummy",
+            }, follow_redirects=False)
+        body = resp1.json()
+        self.assertEqual(resp1.status_code, 200)
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["emailVerificationNeeded"], False)
+        self.assertEqual(body["factor2"], "dummy")
+
+        resp1 = client.post("/api/configurefactor2", json={
+            "csrfToken": csrf_token,
+            "otp": "0000",
+            }, follow_redirects=False)
+        body = resp1.json()
+        self.assertEqual(resp1.status_code, 200)
+        self.assertEqual(body["user"]["username"], "bob1")
+        user = await app.userStorage.get_user_by_username("bob1", {"skip_active_check": True, "skip_email_verified_check": True})
+        self.assertEqual(user["user"]["state"], "active")
+
+    async def test_api_signup_2fa_verification(self):
+        app = await make_app_with_options({"enable_email_verification": True})
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        with unittest.mock.patch('smtplib.SMTP.send_message') as render_sendmessage:
+            with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                with unittest.mock.patch('jinja2.Template.render') as render_render:
+                    render_sendmessage.side_effect = mock_sendmessage
+                    render_render.side_effect = mock_render
+                    render_get_template.side_effect = mock_template
+
+
+                    resp1 = client.post("/api/signup", json={
+                        "csrfToken": csrf_token,
+                        "username": "bob1",
+                        "user_email": "bob1@bob1.com",
+                        "password": "bobPass1231",
+                        "factor2": "dummy",
+                        }, follow_redirects=False)
+                    body = resp1.json()
+                    self.assertEqual(resp1.status_code, 200)
+                    self.assertEqual(body["ok"], True)
+                    self.assertEqual(body["emailVerificationNeeded"], True)
+                    self.assertEqual(body["factor2"], "dummy")
+
+                    resp1 = client.post("/api/configurefactor2", json={
+                        "csrfToken": csrf_token,
+                        "otp": "0000",
+                        }, follow_redirects=False)
+                    body = resp1.json()
+                    self.assertEqual(resp1.status_code, 200)
+                    self.assertEqual(body["user"]["username"], "bob1")
+                    user = await app.userStorage.get_user_by_username("bob1", {"skip_active_check": True, "skip_email_verified_check": True})
+                    self.assertEqual(user["user"]["state"], "awaitingemailverification")

@@ -989,6 +989,10 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.add_signup_endpoints()
         if ("configurefactor2" in self.__endpoints):
             self.__user_endpoints.add_configure_factor2endpoints()
+        if ("requestpasswordreset" in self.__endpoints):
+            self.__user_endpoints.add_request_password_reset_endpoints()
+        if ("resetpassword" in self.__endpoints):
+            self.__user_endpoints.add_password_reset_endpoints()
 
         if ("api/userforsessionkey" in self.__endpoints):
             self.add_api_user_for_session_key_endpoints()
@@ -1006,6 +1010,10 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.add_api_signup_endpoints()
         if ("api/configurefactor2" in self.__endpoints):
             self.__user_endpoints.add_api_configure_factor2endpoints()
+        if ("api/requestpasswordreset" in self.__endpoints):
+            self.__user_endpoints.add_api_request_password_reset_endpoints()
+        if ("api/resetpassword" in self.__endpoints):
+            self.__user_endpoints.add_api_password_reset_endpoints()
 
     ############################3
     ## page endpoints
@@ -2002,11 +2010,10 @@ class FastApiSessionServer(FastApiSessionServerBase):
         # awaitingemailverification
         # depending on settings for next step
         user["state"] = "active"
-        if ("factor2" in body and body["factor2"] != "none"):
+        if ("factor2" in body and body["factor2"] != "none" and body["factor2"] != "" and body["factor2"] is not None):
             user["state"] = "awaitingtwofactor"
         elif (self.__enable_email_verification):
             user["state"] = "awaitingemailverification"
-
 
         # call the implementor-provided hook to validate the user fields
         user_errors = self.validate_user_fn(user)

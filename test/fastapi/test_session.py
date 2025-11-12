@@ -202,6 +202,8 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
             "password": "bobPass1231"
             }, follow_redirects=False)
         self.assertEqual(resp1.status_code, 302)
+        user = await app.userStorage.get_user_by_username("bob1", {"skip_active_check": True, "skip_email_verified_check": True})
+        self.assertEqual(user["user"]["state"], "active")
 
     async def test_signup_repeat_password(self):
         app = await make_app_with_options({"enable_email_verification": False})

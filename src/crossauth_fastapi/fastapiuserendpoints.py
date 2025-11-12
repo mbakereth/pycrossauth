@@ -3,7 +3,7 @@ from fastapi import Request, Response, Query
 
 from crossauth_fastapi.fastapisessionserverbase import *
 from crossauth_backend.utils import set_parameter, ParamType
-from crossauth_backend.common.interfaces import User
+from crossauth_backend.common.interfaces import User, UserState
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.auth import AuthenticationParameters
@@ -190,9 +190,6 @@ class FastApiUserEndpoints():
                             "errorCodeName": ce.code.name,
                             "errorCode": ce.code.value
                         }))
-                        CrossauthLogger.logger().error(j({
-                            "msg": "Session not defined during two factor process"
-                        }))
                         return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
                             self.__session_server.error_page, 
@@ -224,6 +221,203 @@ class FastApiUserEndpoints():
                                 "errorCode": error.code.value, 
                                 "errorCodeName": error.code.name, 
                                 "next": next_page, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                                "urlPrefix": self.__prefix, 
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__session_server.error_page, {
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
+
+    def add_request_password_reset_endpoints(self) -> None:
+
+        @self.app.get(self.__prefix + 'requestpasswordreset')
+        async def get_request_password_reset( # type: ignore
+            request: Request,
+            response: Response,
+            next_param: Optional[str] = Query(None, alias="next"),
+            required_param: Optional[str] = Query(None, alias="required")
+        ) -> Response:
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": 'GET',
+                "url": self.__prefix + 'requestpasswordreset',
+                "ip": request.client.host if request.client else None
+            }))
+            return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                request,
+                self.__request_password_reset_page, 
+                {
+                    "csrfToken": request.state.csrf_token,
+                    "next": next_param,
+                    "required": required_param is not None and len(required_param) > 0 and required_param[:1].lower() in ("t", "y", "1"),
+                }), request)
+                
+        @self.app.post(self.__prefix + 'requestpasswordreset')
+        async def post_request_password_reset(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": 'POST',
+                "url": self.__prefix + 'requestpasswordreset',
+                "ip": request.client.host if request.client else None
+            }))
+            message = "If a user with exists with the email you entered, a message with " \
+                + " a link to reset your password has been sent."; 
+            
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()
+            email = form.getAsStr("email")
+
+            next_page = form.getAsStr1('next', self.__session_server.login_redirect) 
+            
+            
+            try:
+                CrossauthLogger.logger().debug(j({"msg": "Next page " + next_page}))
+
+                def handle_success(reply: Response) -> Response:
+                    # success
+
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__request_password_reset_page, 
+                            {
+                                "next": next_page,
+                                "csrfToken": request.state.csrf_token,
+                                "message": message,
+                                "urlPrefix": self.__prefix,
+                                "email": email,
+                            }), request)
+                
+                return await self.__request_password_reset(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "msg": "Request password reset failure",
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__request_password_reset_page, 
+                            {
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "next": next_page, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                                "urlPrefix": self.__prefix, 
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__session_server.error_page, {
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
+
+    def add_password_reset_endpoints(self) -> None:
+
+        @self.app.get(self.__prefix + 'resetpassword')
+        async def get_password_reset( # type: ignore
+            request: Request,
+            response: Response,
+            token: str,
+        ) -> Response:
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": 'GET',
+                "url": self.__prefix + 'resetpassword',
+                "ip": request.client.host if request.client else None
+            }))
+            return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                request,
+                self.__reset_password_page, 
+                {
+                    "csrfToken": request.state.csrf_token,
+                    "token": token,
+                }), request)
+                
+        @self.app.post(self.__prefix + 'resetpassword')
+        async def post_password_reset(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "msg": "Page visit",
+                "method": 'POST',
+                "url": self.__prefix + 'resetpassword',
+                "ip": request.client.host if request.client else None
+            }))
+            
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()            
+            
+            try:
+                def handle_success(reply: Response, user: User|None) -> Response:
+                    # success
+
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__reset_password_page, 
+                            {
+                                "csrfToken": request.state.csrf_token,
+                                "message": "Your password has been changed.",
+                                "urlPrefix": self.__prefix,
+                                "user": user,
+                            }), request)
+                
+                return await self.__reset_password(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "msg": "Password reset failure",
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__reset_password_page, 
+                            {
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "token": form.getAsStr("token"), 
                                 "csrfToken": request.state.csrf_token,
                                 "allowedFactor2": self.__session_server.allowed_factor2_details(),
                                 "urlPrefix": self.__prefix, 
@@ -331,6 +525,8 @@ class FastApiUserEndpoints():
                             resp["emailVerificationNeeded"] = self.__session_server.enable_email_verification
                     return send_with_cookies(JSONResponse(
                         {
+                            "ok": True,
+                            "user" : user,    
                         }, headers=JSONHDRMAP), request)
 
                 return await self.__configure_factor2(request, response, form, handle_success)
@@ -395,6 +591,141 @@ class FastApiUserEndpoints():
                             "errorCode": ErrorCode.UnknownError.value,
                             "errorCodeName": ErrorCode.UnknownError.name,
                             }, headers=JSONHDRMAP, status_code=500), request)
+
+    def add_api_request_password_reset_endpoints(self) -> None:
+                
+        @self.app.post(self.__prefix + 'api/requestpasswordreset')
+        async def post_request_password_reset(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": 'POST',
+                "url": self.__prefix + 'api/requestpasswordreset',
+                "ip": request.client.host if request.client else None
+            }))
+            message = "If a user with exists with the email you entered, a message with " \
+                + " a link to reset your password has been sent."; 
+            
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()            
+            email = form.getAsStr("email")
+            
+            try:
+
+                def handle_success(reply: Response) -> Response:
+                    # success
+
+                        return send_with_cookies(JSONResponse(
+                            {
+                                "ok": True,
+                                "email": email,
+                                "message": message,
+                                "urlPrefix": self.__prefix,
+                            }), request)
+                
+                return await self.__request_password_reset(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "msg": "Request password reset failure",
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(JSONResponse(
+                            {
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                                "urlPrefix": self.__prefix, 
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(JSONResponse({
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
+
+    def add_api_password_reset_endpoints(self) -> None:
+                
+        @self.app.post(self.__prefix + 'api/resetpassword')
+        async def post_request_password_reset(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "msg": "API visit",
+                "method": 'POST',
+                "url": self.__prefix + 'api/resetpassword',
+                "ip": request.client.host if request.client else None
+            }))
+
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()            
+            
+            try:
+
+                def handle_success(reply: Response, user: User|None) -> Response:
+                    # success
+
+                        return send_with_cookies(JSONResponse(
+                            {
+                                "ok": True,
+                                "user": user,
+                            }), request)
+                
+                return await self.__reset_password(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "msg": "Request password reset failure",
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(JSONResponse(
+                            {
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                                "urlPrefix": self.__prefix, 
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(JSONResponse({
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
 
     ##########################################
     ## Shared between page and API endpoints
@@ -486,3 +817,97 @@ class FastApiUserEndpoints():
             "csrf_token": request.state.csrf_token,
         }
         return success_fn(data, response, None)
+
+    async def __request_password_reset(
+        self,
+        request: Request,  
+        response: Response,    
+        form: JsonOrFormData,
+        success_fn: Callable[[Response], Response]
+    ) -> Response:
+        
+        # this has to be enabled in configuration
+        if (not self.__enable_password_reset):
+            raise CrossauthError(ErrorCode.Configuration,
+                 "password reset not enabled")
+
+        # validate CSRF token
+        if (not request.state.csrf_token ):
+            raise CrossauthError(ErrorCode.InvalidCsrf)
+
+        # send password reset mail
+        email = form.getAsStr("email")
+        if (email is None or email == ""):
+            raise CrossauthError(ErrorCode.BadRequest, "Must provide email address")
+        try:
+            await self.__session_server.session_manager.request_password_reset(email)
+        except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            if (ce.code == ErrorCode.UserNotExist):
+                # fail silently - don't let user know email doesn't exist
+                CrossauthLogger.logger().warn(j({"msg": "Password reset requested for invalid email", "email": email}))
+            else:
+                CrossauthLogger.logger().error(j({"msg": "Couldn't send password reset email", "email": email}))
+                raise ce
+
+        return success_fn(response)
+
+    async def __reset_password(
+        self,
+        request: Request,  
+        response: Response,    
+        form: JsonOrFormData,
+        success_fn: Callable[[Response, User|None], Response]
+    ) -> Response:
+        
+        # this has to be enabled in configuration
+        if (not self.__enable_password_reset):
+            raise CrossauthError(ErrorCode.Configuration,
+                 "password reset not enabled")
+
+        # validate CSRF token
+        if (not request.state.csrf_token ):
+            raise CrossauthError(ErrorCode.InvalidCsrf)
+
+        # get token and associated user
+        token = form.getAsStr("token")
+        if (not token):
+            raise CrossauthError(ErrorCode.BadRequest, "Must provide token")
+        user = await self.__session_server.session_manager.user_for_password_reset_token(token)
+        body = form.to_dict()
+
+        # get secrets from the request body
+        # there should be new_{secret} and repeat_{secret}
+        if ("factor1" not in self.__session_server.authenticators):
+            raise CrossauthError(ErrorCode.Unauthorized, "Unrecognised factor1")
+        authenticator = self.__session_server.authenticators[user["factor1"]]
+        secret_names = authenticator.secret_names()
+        new_secrets : AuthenticationParameters|None = {}
+        repeat_secrets : AuthenticationParameters|None = {}
+        found = False
+        for field in body:
+            if field.startswith("repeat_"):
+                name = field[7:]
+                if name in secret_names:
+                    repeat_secrets[name] = body[field]
+                    found = True
+            elif field.startswith("new_"):
+                name = field[7:]
+                if name in secret_names:
+                    new_secrets[name] = body[field]
+                    found = True
+        if (not found):
+            repeat_secrets = None
+
+        # validate the new secrets (with the implementor-provided function)
+        errors = authenticator.validate_secrets(new_secrets)
+        if len(errors) > 0:
+            raise CrossauthError(ErrorCode.PasswordFormat, errors)
+        
+        # check new and repeat secrets are valid and update the user
+        user1 = await self.__session_server.session_manager.reset_secret(token, 1, new_secrets, repeat_secrets)
+        if (user1["state"] != UserState.factor2_reset_needed):
+            # log the user in
+            return await self.__session_server.login_with_user(user1, True, request, response, success_fn)
+
+        return success_fn(response, None)
