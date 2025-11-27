@@ -79,9 +79,10 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
             "api/signup", 
             "api/configurefactor2", 
             "api/userforsessionkey"
-            "api/changefactor2"
+            "api/changefactor2",
+            "api/userforsessionkey",
             ],
-        "allowed_factor2": ["dummy", "totp"],
+        "allowed_factor2": ["dummy", "totp", "none"],
         **options
     })
 
@@ -232,23 +233,17 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["user"]["username"], "bob")
 
         # change factor2
-        resp =client.post("/api/changepassword", json={
+        resp =client.post("/api/changefactor2", json={
             "csrfToken": csrf_token,
-            "old_password": "bobPass123",
-            "new_password": "bobPass12",
-        })
-
-        # logout
+            "factor2": "dummy",
+        }, follow_redirects=False)
         body = resp.json()
         self.assertEqual(body["ok"], True)
 
-        resp =client.post("/api/logout", json={
-            "csrfToken": csrf_token,
-        })
+    async def test_api_change_factor2_to_totp(self):
+        app = await make_app_with_options()
 
-        body = resp.json()
-        self.assertEqual(body["ok"], True)
-        client.cookies.delete("SESSIONID")
+        client = TestClient(app.app)
 
         # Get CSRF Token
         resp =client.get("/api/getcsrftoken")
@@ -256,13 +251,23 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
         body = resp.json()
         csrf_token = body["csrfToken"]
 
-        # login with new credentials
+        # login
         resp =client.post("/api/login", json={
             "csrfToken": csrf_token,
             "username": "bob",
-            "password": "bobPass12"
+            "password": "bobPass123"
         })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
 
         body = resp.json()
         self.assertEqual(body["ok"], True)
         self.assertEqual(body["user"]["username"], "bob")
+
+        # change factor2
+        resp =client.post("/api/changefactor2", json={
+            "csrfToken": csrf_token,
+            "factor2": "totp",
+        }, follow_redirects=False)
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertIn("qr", body)

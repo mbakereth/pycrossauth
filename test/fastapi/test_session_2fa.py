@@ -87,7 +87,14 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["login", "logout", "loginfactor2", "signup", "configurefactor2"],
+        "endpoints": [
+            "login", 
+            "logout", 
+            "loginfactor2", 
+            "signup", 
+            "configurefactor2",
+            "changefactor2",
+            ],
         **options
     })
 

@@ -301,6 +301,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
         set_parameter("configure_factor2_page", ParamType.String, self, options, "SIGNUP_FACTOR2_PAGE")
         set_parameter("error_page", ParamType.String, self, options, "ERROR_PAGE", protected=True)
         set_parameter("allowed_factor2", ParamType.JsonArray, self, options, "ALLOWED_FACTOR2")
+        self.__allowed_factor2 = list(map(lambda x: x if x != "" else "none", self.__allowed_factor2))
         set_parameter("enable_email_verification", ParamType.Boolean, self, options, "ENABLE_EMAIL_VERIFICATION")
         set_parameter("enable_password_reset", ParamType.Boolean, self, options, "ENABLE_PASSWORD_RESET")
         set_parameter("factor2_protected_page_endpoints", ParamType.JsonArray, self, options, "FACTOR2_PROTECTED_PAGE_ENDPOINTS")
@@ -1000,6 +1001,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_password_reset_endpoints()
         if ("changepassword" in self.__endpoints):
             self.__user_endpoints.add_change_password_endpoints()
+        if ("changefactor2" in self.__endpoints):
+            self.__user_endpoints.add_change_factor2_endpoints()
         if ("verifyemail" in self.__endpoints):
             self.__user_endpoints.add_verify_email_endpoints()
 
@@ -1025,6 +1028,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_api_password_reset_endpoints()
         if ("api/changepassword" in self.__endpoints):
             self.__user_endpoints.add_api_change_password_endpoints()
+        if ("api/changefactor2" in self.__endpoints):
+            self.__user_endpoints.add_api_change_factor2_endpoints()
         if ("api/verifyemail" in self.__endpoints):
             self.__user_endpoints.add_api_verify_email_endpoints()
 
