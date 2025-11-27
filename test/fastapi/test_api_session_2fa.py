@@ -72,7 +72,15 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["api/login", "api/logout", "api/loginfactor2", "api/signup", "api/configurefactor2", "api/userforsessionkey"],
+        "endpoints": [
+            "api/login", 
+            "api/logout", 
+            "api/loginfactor2", 
+            "api/signup", 
+            "api/configurefactor2", 
+            "api/userforsessionkey"
+            "api/changefactor2"
+            ],
         "allowed_factor2": ["dummy", "totp"],
         **options
     })
@@ -199,3 +207,62 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(body["user"]["username"], "bob1")
                     user = await app.userStorage.get_user_by_username("bob1", {"skip_active_check": True, "skip_email_verified_check": True})
                     self.assertEqual(user["user"]["state"], "awaitingemailverification")
+
+    async def test_api_change_factor2_to_dummy(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # change factor2
+        resp =client.post("/api/changepassword", json={
+            "csrfToken": csrf_token,
+            "old_password": "bobPass123",
+            "new_password": "bobPass12",
+        })
+
+        # logout
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+
+        resp =client.post("/api/logout", json={
+            "csrfToken": csrf_token,
+        })
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        client.cookies.delete("SESSIONID")
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login with new credentials
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass12"
+        })
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")

@@ -4,7 +4,6 @@ from pathlib import Path
 import json
 from jinja2 import Template
 from email.mime.multipart import MIMEMultipart
-import asyncio
 
 from typing import Dict, Any, NamedTuple
 from fastapi import FastAPI, Request
@@ -77,13 +76,21 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["api/login", "api/logout", "api/signup", "api/getcsrfftoken", "api/requestpasswordreset", "api/resetpassword", "api/verifyemail"],
+        "endpoints": [
+            "api/login", 
+            "api/logout", 
+            "api/signup", 
+            "api/getcsrfftoken", 
+            "api/requestpasswordreset", 
+            "api/resetpassword", 
+            "api/verifyemail", 
+            "api/changepassword"],
         **options
     })
 
     return App(user_storage, key_storage, server, app)
 
-class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
+class FastApiApiSessionTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_api_login_logout(self):
         app = await make_app_with_options()
@@ -105,6 +112,7 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
         body = resp.json()
         self.assertEqual(body["ok"], True)
         self.assertEqual(body["user"]["username"], "bob")
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
 
         resp =client.post("/api/logout", json={
             "csrfToken": csrf_token,
@@ -168,7 +176,6 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(body["emailVerificationNeeded"], True)
 
                     self.assertIn("token", email_data)
-                    token = email_data["token"]
 
     async def test_signup_verification(self):
         app = await make_app_with_options({"enable_email_verification": True})
@@ -244,4 +251,164 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(body["ok"], True)
                     self.assertEqual(body["user"]["username"], "bob")
 
-                    
+    async def test_api_change_password(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # change password
+        resp =client.post("/api/changepassword", json={
+            "csrfToken": csrf_token,
+            "old_password": "bobPass123",
+            "new_password": "bobPass12",
+        })
+
+        # logout
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+
+        resp =client.post("/api/logout", json={
+            "csrfToken": csrf_token,
+        })
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        client.cookies.delete("SESSIONID")
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login with new credentials
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass12"
+        })
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+    async def test_api_change_password_repeat_correct(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # change password
+        resp =client.post("/api/changepassword", json={
+            "csrfToken": csrf_token,
+            "old_password": "bobPass123",
+            "new_password": "bobPass12",
+            "repeat_password": "bobPass12",
+        })
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+
+    async def test_api_change_password_repeat_incorrect(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # change password
+        resp =client.post("/api/changepassword", json={
+            "csrfToken": csrf_token,
+            "old_password": "bobPass123",
+            "new_password": "bobPass12",
+            "repeat_password": "bobPass1",
+        })
+
+        body = resp.json()
+        self.assertEqual(body["ok"], False)
+
+    async def test_api_change_password_old_incorrect(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # change password
+        resp =client.post("/api/changepassword", json={
+            "csrfToken": csrf_token,
+            "old_password": "bobPass1",
+            "new_password": "bobPass12",
+            "repeat_password": "bobPass12",
+        })
+
+        body = resp.json()
+        self.assertEqual(body["ok"], False)
+

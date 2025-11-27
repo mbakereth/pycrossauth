@@ -2,7 +2,7 @@ from abc import abstractmethod
 from datetime import datetime
 from fastapi import Request, FastAPI, Response
 from fastapi.responses import JSONResponse
-from typing import Optional, Any, Dict, Callable, List, Mapping, Tuple, Literal
+from typing import Optional, Any, Dict, Callable, List, Mapping, Tuple, Literal, Set
 from fastapi.templating import Jinja2Templates
 from nulltype import NullType
 from starlette.datastructures import FormData
@@ -303,10 +303,26 @@ def json_response(content: Dict[str, Any], resp: Response, status_code : int = 2
         r.set_cookie(c, cookies[c])
     return r
 
-def redirect(url: str, response: Response, status_code: int=302) -> Response:
+def redirect(url: str, response: Response, request: Request, status_code: int=302) -> Response:
     #resp =  RedirectResponse(url=redirect_url, status_code=status_code)
     response.headers["Location"] = url
     response.status_code = status_code
+
+    try:
+        if (request.state.delete_cookies):
+            dcookies: Set[str] = request.state.delete_cookies
+            for name in dcookies:
+                response.delete_cookie(name)
+    except:
+        pass
+
+    try:
+        if (request.state.set_cookies):
+            cookies: Dict[str, Tuple[str, FastApiCookieOptions]] = request.state.set_cookies
+            for name in cookies:
+                response.set_cookie(name, cookies[name][0], **(cookies[name][1]))
+    except:
+        pass
     return response 
 
 class FastApiCookieOptions(TypedDict, total=True):
@@ -329,6 +345,13 @@ def template_response(templates: Jinja2Templates, request: Request, response: Re
     return r
 
 def send_with_cookies(response : Response, request: Request) -> Response:
+    try:
+        if (request.state.delete_cookies):
+            dcookies: Set[str] = request.state.delete_cookies
+            for name in dcookies:
+                response.delete_cookie(name)
+    except:
+        pass
     try:
         if (request.state.set_cookies):
             cookies: Dict[str, Tuple[str, FastApiCookieOptions]] = request.state.set_cookies
@@ -502,9 +525,20 @@ class FastApiSessionServerBase(FastApiSessionAdapter):
     def authenticators(self) -> Mapping[str, Authenticator]:
         pass
 
+    @property
+    @abstractmethod
+    def user_storage(self) -> UserStorage|None:
+        pass
+
     @abstractmethod
     def allowed_factor2_details(self) -> List[AuthenticatorDetails]:
         pass
+
+    @property
+    @abstractmethod
+    def allowed_factor2(self) -> List[str]:
+        pass
+
     @property
     @abstractmethod
     def error_page(self) -> str:

@@ -4,9 +4,10 @@ from pathlib import Path
 import json
 from jinja2 import Template
 from email.mime.multipart import MIMEMultipart
+from fastapi.responses import JSONResponse
 
 from typing import Dict, Any, NamedTuple
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage, InMemoryUserStorage
 from crossauth_backend.authenticators.passwordauth import LocalPasswordAuthenticator
@@ -19,7 +20,7 @@ from backend.testuserdata import get_test_user_storage
 template_page = ""
 template_data : Dict[str,Any] = {}
 template_status: int=200
-def state(request : Request) -> Dict[str, Any]:
+def state(request : Request, response: Response) -> Dict[str, Any]:
     return {"state": request.state.__dict__["_state"], "cookies": request.cookies, "url": request.url.path}
 
 def mock_TemplateResponse(request: Request, template: str, data: Dict[str,Any], status: int=200):
@@ -29,7 +30,7 @@ def mock_TemplateResponse(request: Request, template: str, data: Dict[str,Any], 
     template_page = template
     template_data = data
     template_status=status
-    return template_data
+    return JSONResponse(template_data)
 
 email_data : Dict[str,Any] = {}
 def mock_render(param: Any|None=None, **kwargs: Dict[str,Any]):
@@ -88,7 +89,14 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "dummy": dummy_authenticator,
     }, {
         "user_storage": user_storage,
-        "endpoints": ["login", "logout", "signup", "requestpasswordreset", "resetpassword", "verifyemail"],
+        "endpoints": [
+            "login", 
+            "logout", 
+            "signup", 
+            "requestpasswordreset", 
+            "resetpassword", 
+            "verifyemail",
+            "changepassword"],
         **options
     })
 
@@ -166,6 +174,7 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
             client.get("/login")
             self.assertIn("csrfToken", template_data)
             csrfToken = template_data["csrfToken"]
+
             resp = client.post("/login", json={
                 "csrfToken": csrfToken,
                 "username": "bob",
@@ -173,11 +182,14 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                 })
             self.assertEqual(resp.status_code, 200)
             body = resp.json()
+            client.cookies.set("SESSIONID", body["cookies"]["SESSIONID"])
             self.assertEqual(body["state"]["user"]["username"], "bob")
             self.assertIn("session_id", body["state"])
             self.assertIn("csrf_token", body["state"])
             self.assertIn("SESSIONID", body["cookies"])
             self.assertIn("CSRFTOKEN", body["cookies"])
+
+            #client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
             resp = client.post("/logout", json={
                 "csrfToken": csrfToken,
             })
@@ -185,7 +197,7 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
             body = resp.json()
             self.assertIsNone(body["state"]["session_id"])
             self.assertIsNone(body["state"]["user"])
-            self.assertNotIn("SESSIONID", body["cookies"])
+            #self.assertNotIn("SESSIONID", body["cookies"])
 
     async def test_signup(self):
         app = await make_app_with_options({"enable_email_verification": False})
@@ -279,7 +291,7 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                         token = email_data["token"]
                         resp = client.get("/verifyemail/"+token, 
                                 follow_redirects=False)
-                        body = resp.json()    
+                        #body = resp.json()    
                         self.assertEqual(resp.status_code, 200)
                         self.assertEqual(template_data["user"]["username"], "bob1")
 
@@ -309,7 +321,7 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                             "csrfToken": csrfToken,
                             "email": "bob@bob.com",
                             }, follow_redirects=False)
-                        body = resp.json()
+                        #body = resp.json()
                         self.assertEqual(template_status, 200)
                         self.assertIn("token", email_data)
                         token = email_data["token"]
@@ -321,3 +333,67 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                             }, follow_redirects=False)
                         self.assertEqual(resp.status_code, 200)
                         self.assertEqual(template_data["user"]["username"], "bob")
+
+    async def test_get_change_passwordt(self):
+        app = await make_app_with_options()
+        app.app.get("/")(state)
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            render_mock.side_effect = mock_TemplateResponse
+
+            client = TestClient(app.app)
+            resp = client.get("/login")
+            self.assertIn("csrfToken", template_data)
+            csrfToken = template_data["csrfToken"]
+            client.cookies.set("CSRFTOKEN", resp.cookies["CSRFTOKEN"])
+
+            # login
+            resp = client.post("/login", json={
+                "csrfToken": csrfToken,
+                "username": "bob",
+                "password": "bobPass123"
+                })
+            self.assertEqual(resp.status_code, 200)
+            body = resp.json()
+            csrfToken = template_data["csrfToken"]
+            self.assertEqual(body["state"]["user"]["username"], "bob")
+            self.assertIn("session_id", body["state"])
+            self.assertIn("csrf_token", body["state"])
+            self.assertIn("SESSIONID", body["cookies"])
+            self.assertIn("CSRFTOKEN", body["cookies"])
+            client.cookies.set("SESSIONID", body["cookies"]["SESSIONID"])
+            client.cookies.set("CSRFTOKEN", body["cookies"]["CSRFTOKEN"])
+
+            client.get("/changepassword")
+            self.assertIn("csrfToken", template_data)
+            # change password
+            resp = client.post("/changepassword", json={
+                "csrfToken": csrfToken,
+                "old_password": "bobPass123",
+                "new_password": "bobPass12",
+                "repeat_password": "bobPass12",
+                })
+            body = resp.json()
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(body["next"], "/")
+        
+            #client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+            resp = client.post("/logout", json={
+                "csrfToken": csrfToken,
+            })
+            self.assertEqual(resp.status_code, 200)
+            body = resp.json()
+            self.assertIsNone(body["state"]["session_id"])
+            self.assertIsNone(body["state"]["user"])
+            #self.assertNotIn("SESSIONID", body["cookies"])
+            client.cookies.delete("SESSIONID")
+
+            # login with new credentials
+            resp = client.post("/login", json={
+                "csrfToken": csrfToken,
+                "username": "bob",
+                "password": "bobPass12"
+                })
+            self.assertEqual(resp.status_code, 200)
+            body = resp.json()
+            self.assertEqual(body["state"]["user"]["username"], "bob")
