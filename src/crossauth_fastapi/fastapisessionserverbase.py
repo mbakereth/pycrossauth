@@ -581,3 +581,8 @@ class FastApiSessionServerBase(FastApiSessionAdapter):
             resp: Response,
             success_fn: Callable[[Response, User], Response]) -> Response:
         pass
+
+    create_user_fn : Callable[[Request, Dict[str, Any], List[str], List[str]], UserInputFields]
+    update_user_fn : Callable[[User, Request, Dict[str, Any], List[str]], User]
+    validate_user_fn : Callable[[UserInputFields], List[str]]
+    

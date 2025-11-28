@@ -84,7 +84,9 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
             "api/requestpasswordreset", 
             "api/resetpassword", 
             "api/verifyemail", 
-            "api/changepassword"],
+            "api/changepassword",
+            "api/updateuser",
+            ],
         **options
     })
 
@@ -411,4 +413,76 @@ class FastApiApiSessionTest(unittest.IsolatedAsyncioTestCase):
 
         body = resp.json()
         self.assertEqual(body["ok"], False)
+
+    async def test_api_update_user(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # update user
+        resp =client.post("/api/updateuser", json={
+            "csrfToken": csrf_token,
+            "user_dummyField": "val1",
+        })
+        body = resp.json()
+
+        user = await app.userStorage.get_user_by_username("bob", {"skip_active_check": True, "skip_email_verified_check": True})
+        self.assertEqual(user["user"]["dummyField"] if "dummyField" in user["user"] else "", "val1")
+
+    async def test_api_update_user_email(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # update user
+        with unittest.mock.patch('smtplib.SMTP.send_message') as render_sendmessage:
+            with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                with unittest.mock.patch('jinja2.Template.render') as render_render:
+                    render_sendmessage.side_effect = mock_sendmessage
+                    render_render.side_effect = mock_render
+                    render_get_template.side_effect = mock_template
+
+                    resp =client.post("/api/updateuser", json={
+                        "csrfToken": csrf_token,
+                        "user_email": "bob1@bob.com",
+                    })
+                    body = resp.json()
+                    self.assertEqual(body["ok"], True)
+                    self.assertEqual(body["emailVerificationRequired"], True)
 

@@ -1182,7 +1182,7 @@ class SessionManager:
         
         # Create rest dictionary with all other fields except email, username, password
         rest : PartialUser = {}
-        for key, value in vars(new_user).items():
+        for key, value in new_user.items():
             if key not in ['email', 'username', 'password']:
                 rest[key] = value
         
@@ -1206,7 +1206,7 @@ class SessionManager:
         
         if (new_email is None):
             raise CrossauthError(ErrorCode.UnknownError) # pathological
-        
+
         if not skip_email_verification and self.__enable_email_verification and has_email:
             if self.__token_emailer:
                 await self.__token_emailer.send_email_verification_token(current_user["id"], new_email)

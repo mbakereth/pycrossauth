@@ -105,7 +105,7 @@ def default_update_user(
     request: Request,
     body: Dict[str, Any],
     userEditableFields: List[str]
-) -> UserInputFields:
+) -> User:
     """
     Default function for creating users.  Can be overridden.
     
@@ -317,7 +317,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
         self._templates = Jinja2Templates(directory=self.__template_dir)
 
         self.create_user_fn = default_create_user
-        self.update_user_dn = default_update_user
+        self.update_user_fn = default_update_user
         self.validate_user_fn = default_user_validator
         if ("validate_user_fn" in options): self.validate_user_fn = options["validate_user_fn"]
         if ("create_user_fn" in options): self.create_user_fn = options["create_user_fn"]
@@ -1008,6 +1008,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_change_factor2_endpoints()
         if ("verifyemail" in self.__endpoints):
             self.__user_endpoints.add_verify_email_endpoints()
+        if ("updateuser" in self.__endpoints):
+            self.__user_endpoints.add_update_user_endpoints()
 
         if ("api/userforsessionkey" in self.__endpoints):
             self.add_api_user_for_session_key_endpoints()
@@ -1035,6 +1037,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_api_change_factor2_endpoints()
         if ("api/verifyemail" in self.__endpoints):
             self.__user_endpoints.add_api_verify_email_endpoints()
+        if ("api/updateuser" in self.__endpoints):
+            self.__user_endpoints.add_api_update_user_endpoints()
 
     ############################3
     ## page endpoints

@@ -96,7 +96,9 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
             "requestpasswordreset", 
             "resetpassword", 
             "verifyemail",
-            "changepassword"],
+            "changepassword",
+            "updateuser"
+        ],
         **options
     })
 
@@ -397,3 +399,105 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(resp.status_code, 200)
             body = resp.json()
             self.assertEqual(body["state"]["user"]["username"], "bob")
+
+    async def test_update_user(self):
+        app = await make_app_with_options({"enable_email_verification": True})
+        global email_data
+        app.app.get("/")(state)
+
+        client = TestClient(app.app)
+
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            with unittest.mock.patch('smtplib.SMTP.send_message') as render_sendmessage:
+                with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                    with unittest.mock.patch('jinja2.Template.render') as render_render:
+                        render_mock.side_effect = mock_TemplateResponse
+                        render_sendmessage.side_effect = mock_sendmessage
+                        render_render.side_effect = mock_render
+                        render_get_template.side_effect = mock_template
+
+                        client = TestClient(app.app)
+                        resp = client.get("/login")
+                        self.assertIn("csrfToken", template_data)
+                        csrfToken = template_data["csrfToken"]
+                        client.cookies.set("CSRFTOKEN", resp.cookies["CSRFTOKEN"])
+
+                        # login
+                        resp = client.post("/login", json={
+                            "csrfToken": csrfToken,
+                            "username": "bob",
+                            "password": "bobPass123"
+                            })
+                        self.assertEqual(resp.status_code, 200)
+                        body = resp.json()
+                        csrfToken = template_data["csrfToken"]
+                        self.assertEqual(body["state"]["user"]["username"], "bob")
+                        self.assertIn("session_id", body["state"])
+                        self.assertIn("csrf_token", body["state"])
+                        self.assertIn("SESSIONID", body["cookies"])
+                        self.assertIn("CSRFTOKEN", body["cookies"])
+                        client.cookies.set("SESSIONID", body["cookies"]["SESSIONID"])
+                        client.cookies.set("CSRFTOKEN", body["cookies"]["CSRFTOKEN"])
+
+                        # update user
+                        client.get("/updateuser")
+                        self.assertIn("csrfToken", template_data)
+                        resp = client.post("/updateuser", json={
+                            "csrfToken": csrfToken,
+                            "user_dummyField": "val1",
+                            })
+                        body = resp.json()
+                        self.assertEqual(resp.status_code, 200)
+                        self.assertEqual(body["message"], "Your details have been updated")
+
+    async def test_update_user_email(self):
+        app = await make_app_with_options({"enable_email_verification": True})
+        global email_data
+        app.app.get("/")(state)
+
+        client = TestClient(app.app)
+
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            with unittest.mock.patch('smtplib.SMTP.send_message') as render_sendmessage:
+                with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                    with unittest.mock.patch('jinja2.Template.render') as render_render:
+                        render_mock.side_effect = mock_TemplateResponse
+                        render_sendmessage.side_effect = mock_sendmessage
+                        render_render.side_effect = mock_render
+                        render_get_template.side_effect = mock_template
+
+                        client = TestClient(app.app)
+                        resp = client.get("/login")
+                        self.assertIn("csrfToken", template_data)
+                        csrfToken = template_data["csrfToken"]
+                        client.cookies.set("CSRFTOKEN", resp.cookies["CSRFTOKEN"])
+
+                        # login
+                        resp = client.post("/login", json={
+                            "csrfToken": csrfToken,
+                            "username": "bob",
+                            "password": "bobPass123"
+                            })
+                        self.assertEqual(resp.status_code, 200)
+                        body = resp.json()
+                        csrfToken = template_data["csrfToken"]
+                        self.assertEqual(body["state"]["user"]["username"], "bob")
+                        self.assertIn("session_id", body["state"])
+                        self.assertIn("csrf_token", body["state"])
+                        self.assertIn("SESSIONID", body["cookies"])
+                        self.assertIn("CSRFTOKEN", body["cookies"])
+                        client.cookies.set("SESSIONID", body["cookies"]["SESSIONID"])
+                        client.cookies.set("CSRFTOKEN", body["cookies"]["CSRFTOKEN"])
+
+                        # update user
+                        client.get("/updateuser")
+                        self.assertIn("csrfToken", template_data)
+                        resp = client.post("/updateuser", json={
+                            "csrfToken": csrfToken,
+                            "user_email": "bob1@bob.com",
+                            })
+                        body = resp.json()
+                        self.assertEqual(resp.status_code, 200)
+                        self.assertEqual(body["message"], "Please click on the link in your email to verify your email address.")

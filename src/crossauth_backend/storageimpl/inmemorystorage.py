@@ -311,6 +311,7 @@ class InMemoryUserStorage(UserStorage):
     
     async def update_user(self, user: PartialUser, secrets: Optional[PartialUserSecrets] = None) -> None:
         new_user : PartialUser = {**user}
+
         username_field = "username_normalized" if self._normalize_username else "username"
         if ("username" in new_user and self._normalize_username):
             new_user["username_normalized"] = UserStorage.normalize(new_user["username"])

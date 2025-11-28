@@ -64,6 +64,108 @@ class FastApiUserEndpoints():
     ############################
     ## page endpoints
 
+    def add_update_user_endpoints(self) -> None:
+
+        @self.app.get(self.__prefix + 'updateuser')
+        async def get_update_user( # type: ignore
+            request: Request,
+            response: Response,
+        ) -> Response:
+            CrossauthLogger.logger().info(j({
+                "message": "Page visit",
+                "method": 'GET',
+                "url": self.__prefix + 'updateuser',
+                "ip": request.client.host if request.client else None
+            }))
+            return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                request,
+                self.__update_user_page, 
+                {
+                    "csrfToken": request.state.csrf_token,
+                }), request)
+                
+        @self.app.post(self.__prefix + 'updateuser')
+        async def post_update_user(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "message": "Page visit",
+                "method": 'POST',
+                "url": self.__prefix + 'updateuser',
+                "ip": request.client.host if request.client else None
+            }))
+            
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()
+            body = form.to_dict()
+
+            if (not self.__session_server.can_edit_user(request)):
+                return self.__session_server.send_page_error(request, response, 401, "User edit is not supported")
+            
+            extra_fields : Dict[str,Any] = {}
+            for field in body:
+                if (field.startswith("user_")):
+                    extra_fields[field] = body[field]
+            
+            try:
+                def handle_success(reply: Response, user: User|None, email_verification_required: bool) -> Response:
+                    # success
+                    message = \
+                        "Please click on the link in your email to verify your email address." \
+                        if email_verification_required else \
+                        "Your details have been updated"
+
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                        request,
+                        self.__update_user_page, 
+                        {
+                            "csrfToken": request.state.csrf_token,
+                            "urlPrefix": self.__prefix,
+                            "message": message,
+                            "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                        }), request)
+                
+                return await self.__update_user(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "message": "Update user failure",
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__update_user_page, 
+                            {
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                                "urlPrefix": self.__prefix, 
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__session_server.error_page, {
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
 
     def add_configure_factor2endpoints(self) -> None:
         """
@@ -748,6 +850,71 @@ class FastApiUserEndpoints():
     ############################
     ## API endpoints
 
+    def add_api_update_user_endpoints(self) -> None:
+                
+        @self.app.post(self.__prefix + 'api/updateuser')
+        async def post_update_user(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "message": "API visit",
+                "method": 'POST',
+                "url": self.__prefix + 'api/updateuser',
+                "ip": request.client.host if request.client else None
+            }))
+            
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()            
+            
+            try:
+
+                def handle_success(reply: Response, user: User|None, email_verification_required: bool) -> Response:
+                    # success
+
+                    return send_with_cookies(JSONResponse(
+                        {
+                            "ok": True,
+                            "emailVerificationRequired": email_verification_required,
+                        }), request)
+                
+                return await self.__update_user(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "message": "Update user failure",
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(JSONResponse(
+                            {
+                                "ok": False,
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(JSONResponse({
+                            "ok": False,
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
 
     def add_api_configure_factor2endpoints(self) -> None:
         """
@@ -794,7 +961,6 @@ class FastApiUserEndpoints():
                             "errorCodeName": error.code.name, 
                             "csrfToken": request.state.csrf_token,
                             "allowedFactor2": self.__session_server.allowed_factor2_details(),
-                            "urlPrefix": self.__prefix, 
                         }, status_code=error.http_status, headers=JSONHDRMAP), request)
                 
                 return self.__session_server.handle_error(e, request, None,
@@ -882,7 +1048,6 @@ class FastApiUserEndpoints():
                                 "errorCodeName": error.code.name, 
                                 "csrfToken": request.state.csrf_token,
                                 "allowedFactor2": self.__session_server.allowed_factor2_details(),
-                                "urlPrefix": self.__prefix, 
                             }, headers=JSONHDRMAP, status_code=error.http_status), request)
                     
                     return self.__session_server.handle_error(e, request, form,
@@ -927,7 +1092,6 @@ class FastApiUserEndpoints():
                                 "ok": True,
                                 "email": email,
                                 "message": message,
-                                "urlPrefix": self.__prefix,
                             }), request)
                 
                 return await self.__request_password_reset(request, response, form, handle_success)
@@ -954,7 +1118,6 @@ class FastApiUserEndpoints():
                                 "errorCodeName": error.code.name, 
                                 "csrfToken": request.state.csrf_token,
                                 "allowedFactor2": self.__session_server.allowed_factor2_details(),
-                                "urlPrefix": self.__prefix, 
                             }, error.http_status), request)
                     
                     return self.__session_server.handle_error(e, request, form,
@@ -1021,7 +1184,6 @@ class FastApiUserEndpoints():
                                 "errorCodeName": error.code.name, 
                                 "csrfToken": request.state.csrf_token,
                                 "allowedFactor2": self.__session_server.allowed_factor2_details(),
-                                "urlPrefix": self.__prefix, 
                             }, error.http_status), request)
                     
                     return self.__session_server.handle_error(e, request, form,
@@ -1091,7 +1253,6 @@ class FastApiUserEndpoints():
                                 "errorCodeName": error.code.name, 
                                 "csrfToken": request.state.csrf_token,
                                 "allowedFactor2": self.__session_server.allowed_factor2_details(),
-                                "urlPrefix": self.__prefix, 
                             }, error.http_status), request)
                     
                     return self.__session_server.handle_error(e, request, form,
@@ -1161,7 +1322,6 @@ class FastApiUserEndpoints():
                                 "errorCodeName": error.code.name, 
                                 "csrfToken": request.state.csrf_token,
                                 "allowedFactor2": self.__session_server.allowed_factor2_details(),
-                                "urlPrefix": self.__prefix, 
                             }, error.http_status), request)
                     
                     return self.__session_server.handle_error(e, request, form,
@@ -1222,7 +1382,6 @@ class FastApiUserEndpoints():
                                 "errorCode": error.code.value, 
                                 "errorCodeName": error.code.name, 
                                 "csrfToken": request.state.csrf_token,
-                                "urlPrefix": self.__prefix, 
                             }, error.http_status, headers=JSONHDRMAP), request)
                     
                     return self.__session_server.handle_error(e, request, None,
@@ -1626,3 +1785,36 @@ class FastApiUserEndpoints():
             await self.__session_server.session_manager.apply_email_verification_token(token)
         return await self.__session_server.login_with_user(user, True, request, response, success_fn)
     
+    async def __update_user(self, request: Request, 
+        response: Response, 
+        form: JsonOrFormData,
+        success_fn : Callable[[Response, User, bool], Response]) -> Response:
+
+
+        body = form.to_dict()
+
+        if (not self.__session_server.can_edit_user(request) or not request.state.user):
+            raise CrossauthError(ErrorCode.Unauthorized)
+        
+        # get new user fields from form, including from the 
+        # implementor-provided hook
+        user : User = {
+            "id": request.state.user["id"],
+            "username": request.state.user["username"],
+            "state": UserState.active,
+            "factor1": request.state.user["factor1"],
+        }
+        if (not self.__session_server.user_storage):
+            raise CrossauthError(ErrorCode.Configuration, "Cannot update user as user storage not defined")
+        user = self.__session_server.update_user_fn(user, request, body, self.__session_server.user_storage.user_editable_fields)
+
+        # validate the new user using the implementor-provided function
+        errors = self.__session_server.validate_user_fn(user)
+        if (len(errors) > 0):
+            raise CrossauthError(ErrorCode.FormEntry, errors)
+
+        # update the user
+        resp = await self.__session_server.session_manager.update_user(request.state.user, user)
+
+        return success_fn(response, request.state.user, resp.email_verification_token_sent)
+        
