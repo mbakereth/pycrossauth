@@ -75,6 +75,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
         "endpoints": [
             "api/login", 
             "api/logout", 
+            "api/factor2", 
             "api/loginfactor2", 
             "api/signup", 
             "api/configurefactor2", 
@@ -198,6 +199,8 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(body["ok"], True)
                     self.assertEqual(body["emailVerificationNeeded"], True)
                     self.assertEqual(body["factor2"], "dummy")
+                    resp2 = await app.userStorage.get_user_by_username("bob1", {"skip_active_check": True, "skip_email_verified_check": True})
+                    self.assertEqual(resp2["user"]["state"], "awaitingtwofactorsetupandemailverification")
 
                     resp1 = client.post("/api/configurefactor2", json={
                         "csrfToken": csrf_token,
@@ -240,6 +243,17 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
         body = resp.json()
         self.assertEqual(body["ok"], True)
 
+        # configure factor2
+        resp =client.post("/api/configurefactor2", json={
+            "csrfToken": csrf_token,
+            "otp": "0000",
+        }, follow_redirects=False)
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+
+        resp = await app.userStorage.get_user_by_username("bob", {"skip_active_check": True, "skip_email_verified_check": True})
+        self.assertEqual(resp["user"]["factor2"] if "factor2" in resp["user"] else None, 'dummy')
+
     async def test_api_change_factor2_to_totp(self):
         app = await make_app_with_options()
 
@@ -271,3 +285,105 @@ class FastApiSession2FATest(unittest.IsolatedAsyncioTestCase):
         body = resp.json()
         self.assertEqual(body["ok"], True)
         self.assertIn("qr", body)
+
+    async def test_api_change_factor2_to_illegal(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # change factor2
+        resp =client.post("/api/changefactor2", json={
+            "csrfToken": csrf_token,
+            "factor2": "illegal",
+        }, follow_redirects=False)
+        body = resp.json()
+        self.assertEqual(body["ok"], False)
+
+    async def test_api_remove_factor2(self):
+        app = await make_app_with_options({"allowed_factor2": ["none", "dummy"], "enable_email_verification": False})
+
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        client.cookies = resp.cookies
+
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "mary",
+            "password": "maryPass123"
+        })
+
+        body = resp.json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["twoFactorRequired"], True)
+
+        client.cookies = resp.cookies
+        resp = client.post("/api/loginfactor2", 
+            json={
+                "csrfToken": csrf_token,
+                "otp": "0000"
+                })
+        body = resp.json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "mary")
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        # get user
+        resp = client.get("/api/userforsessionkey")
+        body = resp.json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "mary")
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # change factor2
+        resp =client.post("/api/changefactor2", json={
+            "csrfToken": csrf_token,
+            "factor2": "none",
+        }, follow_redirects=False)
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["factor2Required"], True)
+        self.assertEqual(body["factor2"], "dummy")
+
+        # again with otp
+        resp =client.post("/api/changefactor2", json={
+            "csrfToken": csrf_token,
+            "otp": "0000",
+        }, follow_redirects=False)
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertNotIn("factor2Required", body)
+    
+        resp = await app.userStorage.get_user_by_username("mary")
+        self.assertEqual(resp["user"]["factor2"] if "factor2" in resp["user"] else None, '')

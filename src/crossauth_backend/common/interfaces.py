@@ -339,6 +339,7 @@ class UserState:
     active = "active"
     disabled = "disabled"
     awaiting_two_factor_setup = "awaitingtwofactorsetup"
+    awaiting_two_factor_setup_and_email_verification = "awaitingtwofactorsetupandemailverification"
     awaiting_email_verification = "awaitingemailverification"
     password_change_needed = "passwordchangeneeded"
     password_reset_needed = "passwordresetneeded"

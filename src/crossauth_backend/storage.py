@@ -107,9 +107,9 @@ class UserStorage(ABC):
         self._normalize_email: bool = True
 
         set_parameter("user_editable_fields", ParamType.String, self, options, "USER_EDITABLE_FIELDS", protected=True)
-        set_parameter("admin_editable_fields", ParamType.String, self, options, "USER_EDITABLE_FIELDS", protected=True)
-        set_parameter("normalize_username", ParamType.String, self, options, "USER_EDITABLE_FIELDS", protected=True)
-        set_parameter("normalize_email", ParamType.String, self, options, "USER_EDITABLE_FIELDS", protected=True)
+        set_parameter("admin_editable_fields", ParamType.String, self, options, "ADMIN_EDITABLE_FIELDS", protected=True)
+        set_parameter("normalize_username", ParamType.String, self, options, "NORMALIZE_USERNAME", protected=True)
+        set_parameter("normalize_email", ParamType.String, self, options, "NORMALIZE_EMAIL", protected=True)
 
     @abstractmethod
     async def get_user_by_username(self, username: str, options: UserStorageGetOptions = {}) -> UserAndSecrets:

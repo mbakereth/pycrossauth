@@ -324,15 +324,13 @@ class InMemoryUserStorage(UserStorage):
 
         if (username_field in new_user and new_user[username_field] in self.__users_by_username): # type: ignore
             stored_user = self.__users_by_username[new_user[username_field]] # type: ignore
-            for field in stored_user:
-                if (field in user):
-                    stored_user[field] = user[field]
+            for field in user:
+                stored_user[field] = user[field]
 
         if (secrets is not None and username_field in new_user and new_user[username_field] in self.__secrets_by_username): # type: ignore
             stored_secrets = self.__secrets_by_username[new_user[username_field]] # type: ignore
-            for field in stored_secrets:
-                if (field in secrets):
-                    stored_secrets[field] = secrets[field]
+            for field in secrets:
+                stored_secrets[field] = secrets[field]
 
 ###########################
 # OAuthClientStorage

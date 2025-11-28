@@ -410,6 +410,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
                             receive=lambda : create_body(request),  # <-------- Pass it here
                         )
                         form = JsonOrFormData(req)
+                        await form.load()
                         
                         for field in form.to_dict():
                             if field in secret_names:
@@ -492,6 +493,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
                             receive=lambda : create_body(request),  # <-------- Pass it here
                         )
                         form = JsonOrFormData(req)
+                        await form.load()
   
                         await self.session_manager.initiate_two_factor_page_visit(
                             request.state.user, 
@@ -510,7 +512,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
                             return send_with_cookies(JSONResponse(
                                 content={
                                     "ok": True,
-                                    "factor2Required": True
+                                    "factor2Required": True,
+                                    "factor2": request.state.user["factor2"] if "factor2" in request.state.user else None,
                                 }
                             ), request)
                 else:

@@ -143,13 +143,8 @@ class FastApiUserEndpoints():
 
                 def handle_success(reply: Response, user: User) -> Response:
                     # success
-
-                    authenticator = self.__session_server.authenticators[user["factor2"]] if user and "factor2" in user and cast(Dict[str,Any],user)["factor2"] is not None and user["factor2"] != "" else None
                     
-                    if (not self.__session_server.is_session_user(request) and
-                        self.__session_server.enable_email_verification and
-                        (authenticator is None or
-                        authenticator.skip_email_verification_on_signup() != True)):
+                    if (user["state"] == UserState.awaiting_email_verification):
                         # email verification has been sent - tell user
                         return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
@@ -821,8 +816,6 @@ class FastApiUserEndpoints():
             try:
                 def handle_success(reply: Response, user: User) -> Response:
                     # success
-
-                    authenticator = self.__session_server.authenticators[user["factor2"]] if user and "factor2" in user and cast(Dict[str,Any],user)["factor2"] is not None and user["factor2"] != "" else None
                     
                     resp : Dict[str, Any] = {
                         "csrfToken": request.state.csrf_token,
@@ -830,12 +823,10 @@ class FastApiUserEndpoints():
                         "message": "Please check your email to finish signing up."
 
                     }
-                    if (not self.__session_server.is_session_user(request) and
-                        self.__session_server.enable_email_verification and
-                        (authenticator is None or
-                        authenticator.skip_email_verification_on_signup() != True)):
-                            # email verification has been sent - tell user
-                            resp["emailVerificationNeeded"] = self.__session_server.enable_email_verification
+                    
+                    if (user["state"] == UserState.awaiting_email_verification):
+                        # email verification has been sent - tell user
+                        resp["emailVerificationNeeded"] = self.__session_server.enable_email_verification
                     return send_with_cookies(JSONResponse(
                         {
                             "ok": True,
@@ -1127,7 +1118,6 @@ class FastApiUserEndpoints():
                 "url": self.__prefix + 'api/changefactor2',
                 "ip": request.client.host if request.client else None
             }))
-            
             # Get body data
             form = JsonOrFormData(request)
             await form.load()            

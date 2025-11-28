@@ -523,7 +523,8 @@ class SessionManager:
         """Creates a user with 2FA enabled.
         
         The user storage entry will be createed, with the state set to
-        `awaitingtwofactorsetup`.   The passed session key will be updated to 
+        `awaitingtwofactorsetup` or `awaitingtwofactorsetupandemailverification`.   
+        The passed session key will be updated to 
         include the username and details needed by 2FA during the configure step.  
         
         :param user: details to save in the user table
@@ -556,7 +557,11 @@ class SessionManager:
 
         factor1_secrets = await self.authenticators[user["factor1"]].create_persistent_secrets(user["username"], params, repeat_params)
         factor1_secrets = factor1_secrets
-        user["state"] = UserState.awaiting_two_factor_setup
+        # XXX
+        if (self.__enable_email_verification and not authenticator.skip_email_verification_on_signup()):
+            user["state"] = UserState.awaiting_two_factor_setup_and_email_verification
+        else:
+            user["state"] = UserState.awaiting_two_factor_setup
         await self.key_storage.update_data(
             SessionCookie.hash_session_id(session_id), 
             "2fa",
@@ -672,9 +677,7 @@ class SessionManager:
         """
         if not self._user_storage:
             raise CrossauthError(ErrorCode.Configuration, "Cannot call completeTwoFactorSetup if no user storage provided")
-        
-        new_signup = False
-        
+                
         result = await self.session.get_user_for_session_id(session_id, {
             "skip_active_check": True
         })
@@ -711,19 +714,19 @@ class SessionManager:
         await authenticator.authenticate_user(None, data, params)
 
         if not user:
-            new_signup = True
             resp = await self._user_storage.get_user_by_username(username, {
                 "skip_active_check": True, 
                 "skip_email_verified_check": True
             })
             user = resp["user"]
-        
-        skip_email_verification = authenticator.skip_email_verification_on_signup() == True
-        
+                
         if not user:
             raise CrossauthError(ErrorCode.UserNotExist, "Couldn't fetch user")
         
-        state = UserState.awaiting_email_verification if not skip_email_verification and self.__enable_email_verification else UserState.active
+        state = UserState.active
+        if (user["state"] == UserState.awaiting_two_factor_setup_and_email_verification):
+            state = UserState.awaiting_email_verification
+        #state = UserState.awaiting_email_verification if not skip_email_verification and self.__enable_email_verification else UserState.active
         new_user : PartialUser = {
             "id": user["id"],
             "state": state,
@@ -735,8 +738,7 @@ class SessionManager:
         else:
             await self._user_storage.update_user(new_user)
 
-        if not skip_email_verification and new_signup and \
-            self.__enable_email_verification and self.__token_emailer:
+        if state == UserState.awaiting_email_verification and self.__token_emailer:
             await self.__token_emailer.send_email_verification_token(user["id"], "")
         
         await self.key_storage.update_data(SessionCookie.hash_session_id(key["value"]), "2fa", None)
