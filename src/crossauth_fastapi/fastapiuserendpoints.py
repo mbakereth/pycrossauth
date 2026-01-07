@@ -120,6 +120,7 @@ class FastApiUserEndpoints():
                         {
                             "csrfToken": request.state.csrf_token,
                             "urlPrefix": self.__prefix,
+                            "isAdmin": False,
                             "message": message,
                             "allowedFactor2": self.__session_server.allowed_factor2_details(),
                         }), request)
@@ -142,6 +143,109 @@ class FastApiUserEndpoints():
                         return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
                             self.__update_user_page, 
+                            {
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                                "urlPrefix": self.__prefix, 
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__session_server.error_page, {
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
+
+    def add_delete_user_endpoints(self) -> None:
+
+        @self.app.get(self.__prefix + 'deleteuser')
+        async def get_delete_user( # type: ignore
+            request: Request,
+            response: Response,
+        ) -> Response:
+            CrossauthLogger.logger().info(j({
+                "message": "Page visit",
+                "method": 'GET',
+                "url": self.__prefix + 'deleteuser',
+                "ip": request.client.host if request.client else None
+            }))
+            return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                request,
+                self.__delete_user_page, 
+                {
+                    "csrfToken": request.state.csrf_token,
+                }), request)
+                
+        @self.app.post(self.__prefix + 'deleteuser')
+        async def post_delete_user(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "message": "Page visit",
+                "method": 'POST',
+                "url": self.__prefix + 'deleteuser',
+                "ip": request.client.host if request.client else None
+            }))
+            
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()
+            body = form.to_dict()
+
+            if (not self.__session_server.can_edit_user(request)):
+                return self.__session_server.send_page_error(request, response, 401, "User edit is not supported")
+            
+            extra_fields : Dict[str,Any] = {}
+            for field in body:
+                if (field.startswith("user_")):
+                    extra_fields[field] = body[field]
+            
+            try:
+                next_page = form.getAsStr1('next', self.__session_server.login_redirect) 
+                userid = request.state.user["id"] if "id" in request.state.user else None
+                def handle_success(reply: Response) -> Response:
+                    # success
+
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                        request,
+                        self.__delete_user_page, 
+                        {
+                            "csrfToken": request.state.csrf_token,
+                            "urlPrefix": self.__prefix,
+                            "next": next_page,
+                            "userid": userid,
+                            "isAdmin": False,
+                            "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                        }), request)
+                
+                return await self.__delete_user(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "message": "Update user failure",
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                            request,
+                            self.__delete_user_page, 
                             {
                                 "errorMessage": error.message,
                                 "errorMessages": error.messages, 
@@ -199,7 +303,7 @@ class FastApiUserEndpoints():
                 ce = CrossauthError.as_crossauth_error(e)
                 CrossauthLogger.logger().error(j({
                     "message": "Configure factor2 failure",
-                    "user": request.state.user["username"] if hasattr(request.state.user, 'username') else None,
+                    "user": request.state.user["username"] if "username" in request.state.user else None,
                     "errorCode": ce.code.value,
                     "errorCodeName": ce.code.name
                 }))
@@ -269,6 +373,7 @@ class FastApiUserEndpoints():
                                 {
                                 "message": "Two-factor authentication updated",
                                 "urlPrefix": self.__prefix,
+                                "isAdmin": False,
                                 "next": next_page,
                                 "required": form.getAsBool1('required', False),
                                 "csrfToken": request.state.csrf_token,
@@ -396,6 +501,7 @@ class FastApiUserEndpoints():
                                 "next": next_page,
                                 "csrfToken": request.state.csrf_token,
                                 "message": message,
+                                "isAdmin": False,
                                 "urlPrefix": self.__prefix,
                                 "email": email,
                             }), request)
@@ -489,6 +595,7 @@ class FastApiUserEndpoints():
                             {
                                 "csrfToken": request.state.csrf_token,
                                 "message": "Your password has been changed.",
+                                "isAdmin": False,
                                 "urlPrefix": self.__prefix,
                                 "user": user,
                             }), request)
@@ -560,6 +667,7 @@ class FastApiUserEndpoints():
                                             self.__email_verified_page, 
                                             {
                                                 "urlPrefix": self.__prefix,
+                                                "isAdmin": False,
                                                 "user": user,
                                             }), request)                    
                 return await self.__verify_email(token, request, response, success_fn)
@@ -641,6 +749,7 @@ class FastApiUserEndpoints():
                 self.__change_password_page, 
                 {
                     "csrfToken": request.state.csrf_token,
+                    "isAdmin": False,
                     "next": next_param,
                     "required": required_param is not None and len(required_param) > 0 and required_param[:1].lower() in ("t", "y", "1"),
                 }), request)
@@ -675,6 +784,7 @@ class FastApiUserEndpoints():
                                 "next": next_page,
                                 "csrfToken": request.state.csrf_token,
                                 "message": message,
+                                "isAdmin": False,
                                 "urlPrefix": self.__prefix,
                                 "required": required,
                             }), request)
@@ -799,6 +909,7 @@ class FastApiUserEndpoints():
                                 {
                                     "next": next_page,
                                     "csrfToken": request.state.csrf_token,
+                                    "isAdmin": False,
                                     "message": "Two factor authentication has been updated",
                                     "urlPrefix": self.__prefix,
                                 }), request)
@@ -916,6 +1027,71 @@ class FastApiUserEndpoints():
                             "errorCodeName": ErrorCode.UnknownError.name,
                             }, status_code=500), request)
 
+    def add_api_delete_user_endpoints(self) -> None:
+                
+        @self.app.post(self.__prefix + 'api/deleteuser')
+        async def post_delete_user(request: Request, response: Response) -> Response: # type: ignore
+            CrossauthLogger.logger().info(j({
+                "message": "API visit",
+                "method": 'POST',
+                "url": self.__prefix + 'api/deleteuser',
+                "ip": request.client.host if request.client else None
+            }))
+            
+            # Get body data
+            form = JsonOrFormData(request)
+            await form.load()            
+            
+            try:
+
+                def handle_success(reply: Response) -> Response:
+                    # success
+
+                    return send_with_cookies(JSONResponse(
+                        {
+                            "ok": True,
+                        }), request)
+                
+                return await self.__delete_user(request, response, form, handle_success)
+            except Exception as e:
+                # error
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                try:
+
+                    ce = CrossauthError.as_crossauth_error(e)
+                    CrossauthLogger.logger().error(j({
+                        "message": "Delete user failure",
+                        "errorCodeName": ce.code.name,
+                        "errorCode": ce.code.value
+                    }))
+                    
+                    def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        return send_with_cookies(JSONResponse(
+                            {
+                                "ok": False,
+                                "errorMessage": error.message,
+                                "errorMessages": error.messages, 
+                                "errorCode": error.code.value, 
+                                "errorCodeName": error.code.name, 
+                                "csrfToken": request.state.csrf_token,
+                                "allowedFactor2": self.__session_server.allowed_factor2_details(),
+                            }, error.http_status), request)
+                    
+                    return self.__session_server.handle_error(e, request, form,
+                        lambda error, ce: handle_error_fn(response, ce))
+                except Exception as e2:
+                    # self is reached if there is an error processing the error
+                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    response = Response(status_code=500)
+                    return send_with_cookies(JSONResponse({
+                            "ok": False,
+                            "status": 500,
+                            "errorMessage": "An unknown error occurred",
+                            "errorCode": ErrorCode.UnknownError.value,
+                            "errorCodeName": ErrorCode.UnknownError.name,
+                            }, status_code=500), request)
+
     def add_api_configure_factor2endpoints(self) -> None:
         """
         Adds the `configurefactor2` GET and POST endpoints.
@@ -945,7 +1121,7 @@ class FastApiUserEndpoints():
                 ce = CrossauthError.as_crossauth_error(e)
                 CrossauthLogger.logger().error(j({
                     "message": "Configure factor2 failure",
-                    "user": request.state.user["username"] if hasattr(request.state.user, 'username') else None,
+                    "user": request.state.user["username"] if "username" in request.state.user else None,
                     "errorCode": ce.code.value,
                     "errorCodeName": ce.code.name
                 }))
@@ -1817,4 +1993,20 @@ class FastApiUserEndpoints():
         resp = await self.__session_server.session_manager.update_user(request.state.user, user)
 
         return success_fn(response, request.state.user, resp.email_verification_token_sent)
+        
+    async def __delete_user(self, request: Request, 
+        response: Response, 
+        form: JsonOrFormData,
+        success_fn : Callable[[Response], Response]) -> Response:
+
+        if (not self.__session_server.can_edit_user(request) or not request.state.user):
+            raise CrossauthError(ErrorCode.Unauthorized)
+        
+        if (not self.__session_server.user_storage):
+            raise CrossauthError(ErrorCode.Configuration, "Cannot update user as user storage not defined")
+
+        # delete the user
+        resp = await self.__session_server.session_manager.delete_user_by_username(request.state.user["username"])
+
+        return success_fn(response)
         

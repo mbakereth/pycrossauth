@@ -1010,6 +1010,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_verify_email_endpoints()
         if ("updateuser" in self.__endpoints):
             self.__user_endpoints.add_update_user_endpoints()
+        if ("deleteuser" in self.__endpoints):
+            self.__user_endpoints.add_delete_user_endpoints()
 
         if ("api/userforsessionkey" in self.__endpoints):
             self.add_api_user_for_session_key_endpoints()
@@ -1039,6 +1041,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_api_verify_email_endpoints()
         if ("api/updateuser" in self.__endpoints):
             self.__user_endpoints.add_api_update_user_endpoints()
+        if ("api/deleteuser" in self.__endpoints):
+            self.__user_endpoints.add_api_delete_user_endpoints()
 
     ############################3
     ## page endpoints

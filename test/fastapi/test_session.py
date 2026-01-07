@@ -97,7 +97,8 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
             "resetpassword", 
             "verifyemail",
             "changepassword",
-            "updateuser"
+            "updateuser",
+            "deleteuser"
         ],
         **options
     })
@@ -501,3 +502,61 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                         body = resp.json()
                         self.assertEqual(resp.status_code, 200)
                         self.assertEqual(body["message"], "Please click on the link in your email to verify your email address.")
+
+    async def test_delete_user(self):
+        app = await make_app_with_options({"enable_email_verification": False})
+        global email_data
+        app.app.get("/")(state)
+        user_storage = app.userStorage
+
+        client = TestClient(app.app)
+
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                with unittest.mock.patch('jinja2.Template.render') as render_render:
+                    render_mock.side_effect = mock_TemplateResponse
+                    render_render.side_effect = mock_render
+                    render_get_template.side_effect = mock_template
+
+                    client = TestClient(app.app)
+                    resp = client.get("/login")
+                    self.assertIn("csrfToken", template_data)
+                    csrfToken = template_data["csrfToken"]
+                    client.cookies.set("CSRFTOKEN", resp.cookies["CSRFTOKEN"])
+
+                    # login
+                    resp = client.post("/login", json={
+                        "csrfToken": csrfToken,
+                        "username": "bob",
+                        "password": "bobPass123"
+                        })
+                    self.assertEqual(resp.status_code, 200)
+                    body = resp.json()
+                    csrfToken = template_data["csrfToken"]
+                    self.assertEqual(body["state"]["user"]["username"], "bob")
+                    self.assertIn("session_id", body["state"])
+                    self.assertIn("csrf_token", body["state"])
+                    self.assertIn("SESSIONID", body["cookies"])
+                    self.assertIn("CSRFTOKEN", body["cookies"])
+                    client.cookies.set("SESSIONID", body["cookies"]["SESSIONID"])
+                    client.cookies.set("CSRFTOKEN", body["cookies"]["CSRFTOKEN"])
+
+                    # delete user
+                    client.get("/deleteuser")
+                    self.assertIn("csrfToken", template_data)
+                    resp = client.post("/deleteuser", json={
+                        "csrfToken": csrfToken,
+                        })
+                    body = resp.json()
+                    self.assertEqual(resp.status_code, 200)
+                    self.assertEqual(body["userid"], "bob")
+
+                    found = False
+                    try:
+                        user = await user_storage.get_user_by_username("bob")
+                        found = True
+                    except:
+                        pass
+                    self.assertFalse(found)
+                    
