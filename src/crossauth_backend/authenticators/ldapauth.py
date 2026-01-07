@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 
 from crossauth_backend.auth import PasswordAuthenticator, AuthenticationOptions, AuthenticationParameters
 from crossauth_backend.storageimpl.ldapstorage import LdapUserStorage

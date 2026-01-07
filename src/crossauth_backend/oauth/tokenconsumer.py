@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
+
 from crossauth_backend.oauth.wellknown import OpenIdConfiguration
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.common.error import CrossauthError, ErrorCode

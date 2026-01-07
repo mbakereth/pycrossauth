@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
+
 from typing import Optional, Any, Dict, Callable, cast
 from fastapi import Request, Response, Query
 import re

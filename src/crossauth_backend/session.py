@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
+
 from crossauth_backend.storage import UserStorage, KeyStorage, KeyDataEntry
 from crossauth_backend.cookieauth import DoubleSubmitCsrfTokenOptions, DoubleSubmitCsrfToken
 from crossauth_backend.cookieauth import SessionCookieOptions, SessionCookie, Cookie

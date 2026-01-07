@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
+
 from crossauth_backend.authenticators.smsauth import SmsAuthenticator, SmsAuthenticatorOptions
 
 from typing import Dict, Any

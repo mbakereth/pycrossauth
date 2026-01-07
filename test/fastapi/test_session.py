@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
+
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -559,4 +561,3 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
                     except:
                         pass
                     self.assertFalse(found)
-                    
