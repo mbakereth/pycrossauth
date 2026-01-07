@@ -86,6 +86,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
             "api/verifyemail", 
             "api/changepassword",
             "api/updateuser",
+            "api/deleteuser",
             ],
         **options
     })
@@ -485,4 +486,41 @@ class FastApiApiSessionTest(unittest.IsolatedAsyncioTestCase):
                     body = resp.json()
                     self.assertEqual(body["ok"], True)
                     self.assertEqual(body["emailVerificationRequired"], True)
+
+    async def test_api_update_user(self):
+        app = await make_app_with_options()
+
+        client = TestClient(app.app)
+
+        # Get CSRF Token
+        resp =client.get("/api/getcsrftoken")
+        client.cookies = resp.cookies
+        body = resp.json()
+        csrf_token = body["csrfToken"]
+
+        # login
+        resp =client.post("/api/login", json={
+            "csrfToken": csrf_token,
+            "username": "bob",
+            "password": "bobPass123"
+        })
+        client.cookies.set("SESSIONID", resp.cookies["SESSIONID"])
+
+        body = resp.json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["user"]["username"], "bob")
+
+        # update user
+        resp =client.post("/api/deleteuser", json={
+            "csrfToken": csrf_token,
+        })
+        body = resp.json()
+
+        found = False
+        try:
+            user = await app.userStorage.get_user_by_username("bob")
+            found = True
+        except:
+            pass
+        self.assertFalse(found)
 
