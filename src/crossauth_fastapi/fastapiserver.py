@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j
 from crossauth_backend.common.interfaces import User
-from crossauth_backend.storage import KeyStorage
+from crossauth_backend.storage import KeyStorage, UserStorage
 from crossauth_backend.auth import Authenticator
 from crossauth_backend.oauth.client import OAuthTokenConsumer
 from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
@@ -16,7 +16,7 @@ from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_fastapi.fastapiserverbase import *
 from crossauth_fastapi.fastapiresserver import FastApiOAuthResourceServerOptions, FastApiOAuthResourceServer
 from crossauth_backend.utils import set_parameter, ParamType
-
+from crossauth_fastapi.fastapiapikeyserver import FastApiApiKeyServer, FastApiApiKeyServerOptions
 
 class FastApiServerOptions(FastApiSessionServerOptions,
                            FastApiOAuthClientOptions, 
@@ -60,6 +60,14 @@ class FastApiOAuthResServerParams(TypedDict, total=False):
     """
     options: FastApiOAuthResourceServerOptions
 
+class FastApiApiKeyServerParams(TypedDict, total=False):
+    """
+    Parameters that are used to create an OAuth resource server
+    """
+    options: FastApiApiKeyServerOptions
+    user_storage: Required[UserStorage]
+    key_storage: Required[KeyStorage]
+
 class FastApiServerParams(TypedDict, total=False):
     """ Configuration for the FastAPI server - which services to instantiate """
 
@@ -78,6 +86,9 @@ class FastApiServerParams(TypedDict, total=False):
     """ Paramneters to create an OAuth client """
 
     oauth_resserver: FastApiOAuthResServerParams
+    """ Paramneters to create an OAuth resource server """
+
+    api_key: FastApiApiKeyServerParams
     """ Paramneters to create an OAuth resource server """
 
     options: FastApiServerOptions
@@ -117,7 +128,7 @@ class FastApiServer(FastApiServerBase):
     - `oauth_clients`    An array of OAuthClients if you want more than one.  
                          Use either this or `oAuthClient` but not both.  
                          See :class:`FastApiOAuthClient`.
-    - `o_uth_res_server`  OAuth resource server.  See 
+    - `oauth_res_server`  OAuth resource server.  See 
                          :class:`FastApiOAuthResourceServer`.
 
     There is also an API key server which is not available as a variable as
@@ -218,6 +229,7 @@ class FastApiServer(FastApiServerBase):
              where session IDs are stored.  A field called `options` whose
              value is an :class:`FastifySessionServerOptions` may also be
              provided.
+           - `api_key`: if present, settings for API key server
            - `oauth_client` if present, an OAuth client will be created.
              There must be a field called `auth_seris_adminver_base_url` and is the 
              bsae URL for the authorization server.  When validating access
@@ -255,6 +267,7 @@ class FastApiServer(FastApiServerBase):
         if (client_params is not None and clients_params is not None):
             raise CrossauthError(ErrorCode.Configuration, "Cannot provide both oauth_client and oauth_clients")
         resserver_params = params["oauth_resserver"] if "oauth_resserver" in params else None
+        apikey_params = params["api_key"] if "api_key" in params else None
         if (session_adapter is not None and session_server_params is not None):
             raise CrossauthError(ErrorCode.Configuration, "Cannot have both a session server and session adapter")
         if ("is_admin_fn" in options):
@@ -285,7 +298,13 @@ class FastApiServer(FastApiServerBase):
             set_parameter("audience", ParamType.String, self, options, "OAUTH_AUDIENCE", required=True)
             consumers = OAuthTokenConsumer(self.__audience, options)
             self._oauth_resserver = FastApiOAuthResourceServer(self._app, [consumers], resserver_options)
-        
+
+        # Create API key server
+        self._apikeyserver : FastApiApiKeyServer|None = None
+        if (apikey_params is not None):
+            apikey_options : FastApiApiKeyServerOptions = apikey_params["options"] if "options" in apikey_params else {}
+            self._apikeyserver = FastApiApiKeyServer(self._app, apikey_params["key_storage"], apikey_params["user_storage"], apikey_options)
+
         self._session_adapter : FastApiSessionAdapter|None = None
         self._session_server : FastApiSessionServer|None = None
         if (session_adapter is not None):

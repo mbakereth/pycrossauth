@@ -52,7 +52,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
             return ret
         
     async def get_key_in_transaction(self, conn: AsyncConnection, keyValue: str) -> Key:
-        query = f"select * from {self.__key_table} where value = :key"
+        query = f"select * from \"{self.__key_table}\" where value = :key"
         values = {"key": keyValue}
         res = await conn.execute(text(query), values)
         row = res.fetchone()
@@ -225,10 +225,10 @@ class SqlAlchemyKeyStorage(KeyStorage):
         query: str
         values : dict[str,Any] = {}
         if userid:
-            query = f"select * from {self.__key_table} where {self.__userid_foreign_key_column} = :userid"
+            query = f"select * from \"{self.__key_table}\" where {self.__userid_foreign_key_column} = :userid"
             values["userid"] = userid
         else:
-            query = f"select * from {self.__key_table} where {self.__userid_foreign_key_column} is null"
+            query = f"select * from \"{self.__key_table}\" where {self.__userid_foreign_key_column} is null"
 
         CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
@@ -406,7 +406,7 @@ class SqlAlchemyUserStorage(UserStorage):
                 field = "email_normalized"
         elif (field != "id"):
             raise CrossauthError(ErrorCode.BadRequest, "Can only get user by username, id or email")
-        query = f"select * from {self.__user_table} where {field} = :field"
+        query = f"select * from \"{self.__user_table}\" where {field} = :field"
         values = {"field": value}
         res = await conn.execute(text(query), values)
         row = res.fetchone()
@@ -417,7 +417,7 @@ class SqlAlchemyUserStorage(UserStorage):
             raise CrossauthError(ErrorCode.Configuration, "No ID column found in User table")
         id = user_fields[self.__id_column]
         relations_fields : Dict[str, Dict[str,Any]] = {}
-        query = f"select * from {self.__user_secrets_table} where {self.__userid_foreign_key_column} = :field"
+        query = f"select * from \"{self.__user_secrets_table}\" where {self.__userid_foreign_key_column} = :field"
         values = {"field": id}
         res = await conn.execute(text(query), values)
         row = res.fetchone()
@@ -425,7 +425,7 @@ class SqlAlchemyUserStorage(UserStorage):
         if (row is not None):
             secrets_fields = self.to_dict(row)
         for join in self.__joins:
-            query = f"select * from {join} where {self.__userid_foreign_key_column} = :field"
+            query = f"select * from \"{join}\" where {self.__userid_foreign_key_column} = :field"
             values = {"field": id}
             res = await conn.execute(text(query), values)
             row = res.fetchone()
@@ -441,8 +441,8 @@ class SqlAlchemyUserStorage(UserStorage):
         id: Union[int, str]
         username: str
         username_normalized: str = ""
-        email: str
-        email_normalized: str = ""
+        email: str|None = None
+        email_normalized: str|None = None
         state: int
         factor1: Union[str, NullType] = Null
         factor2: Union[str, NullType] = Null
@@ -470,9 +470,7 @@ class SqlAlchemyUserStorage(UserStorage):
 
         if "email" in user_fields:
             email = user_fields["email"]
-        else:
-            raise CrossauthError(ErrorCode.InvalidUsername, "No username in user")
-        if (self._normalize_email):
+        if (self._normalize_email and email):
             if "email_normalized" in user_fields:
                 email_normalized = user_fields["email_normalized"]
             else:
@@ -494,15 +492,16 @@ class SqlAlchemyUserStorage(UserStorage):
             **user_fields,
             "id": id, 
             "username": username,
-            "email": email,
             "state": state,
             "factor1": factor1,
             "factor2": factor2,
 
         })
+        if (email):
+            user["email"] = email
         if (self._normalize_username):
             user["username_normalized"] = username_normalized
-        if (self._normalize_email):
+        if (self._normalize_email and email_normalized):
             user["email_normalized"] = email_normalized
 
         for relation in relations_fields:
@@ -730,7 +729,7 @@ class SqlAlchemyUserStorage(UserStorage):
         ret : List[User] = []
         async with self.engine.begin() as conn:
             order_by = "username_normalized" if self._normalize_username else "username"
-            query = f"select * from {self.__user_table} order by " + order_by
+            query = f"select * from \"{self.__user_table}\" order by " + order_by
             if (skip is not None):
                 query += " OFFSET " + str(int(skip))
             if (take is not None):
@@ -741,7 +740,7 @@ class SqlAlchemyUserStorage(UserStorage):
 
                 relations_fields : Dict[str, Dict[str,Any]] = {}
                 for join in self.__joins:
-                    query = f"select * from {join} where {self.__userid_foreign_key_column} = :field"
+                    query = f"select * from \"{join}\" where {self.__userid_foreign_key_column} = :field"
                     values = {"field": user_fields["id"]}
                     res = await conn.execute(text(query), values)
                     row = res.fetchone()
@@ -832,7 +831,7 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
         where_str = " AND ".join(where)
         if (len(where_str) > 0):
             where_str = "WHERE " + where_str
-        query = f"select * from {self.__client_table} {where_str} {limit} {offset}"
+        query = f"select * from \"{self.__client_table}\" {where_str} {limit} {offset}"
         res = await conn.execute(text(query), values)
         clients : List[OAuthClient] = []
         for row in res.mappings():
@@ -840,14 +839,14 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
                 raise CrossauthError(ErrorCode.Configuration, "No client_id in client table")
             client_id = row["client_id"]
 
-            query = f"select * from {self.__redirect_uri_table} where client_id = :field"
+            query = f"select * from \"{self.__redirect_uri_table}\" where client_id = :field"
             values = {"field": client_id}
             redirect_uri_res = await conn.execute(text(query), values)
             redirect_uri_mappings : List[RowMapping] = []
             for redirect_uri_row in redirect_uri_res.mappings():
                 redirect_uri_mappings.append(redirect_uri_row)
 
-            query = f"select * from {self.__valid_flow_table} where client_id = :field"
+            query = f"select * from \"{self.__valid_flow_table}\" where client_id = :field"
             values = {"field": client_id}
             valid_flow_res = await conn.execute(text(query), values)
             valid_flow_mappings : List[RowMapping] = []

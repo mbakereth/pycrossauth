@@ -330,7 +330,8 @@ class Crypto:
         :return: Base64-url encoded hash
         """
         payloadStr = Crypto.signable_token(payload, salt, timestamp)
-        hmac_signature = hmac.new(secret.encode(), payloadStr.encode(), hashlib.sha256).hexdigest()
+        hmac_signature_d = hmac.new(secret.encode(), payloadStr.encode(), hashlib.sha256).digest()
+        hmac_signature = base64.urlsafe_b64encode(hmac_signature_d).decode().split("=", 1)[0]
         return f"{payloadStr}.{hmac_signature}"
 
     @staticmethod
@@ -367,12 +368,13 @@ class Crypto:
             raise CrossauthError(ErrorCode.InvalidKey)
         msg = parts[0]
         sig = parts[1]
-        payload = json.loads(base64.urlsafe_b64decode(msg).decode())
+        payload = json.loads(base64.urlsafe_b64decode(Crypto.base64_pad(msg)).decode())
         if expiry:
             expire_time = payload['t'] + expiry * 1000
             if expire_time > datetime.now().timestamp():
                 raise CrossauthError(ErrorCode.Expired)
-        new_sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
+        new_sig_bytes = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).digest()
+        new_sig = base64.urlsafe_b64encode(new_sig_bytes).decode().split("=",1)[0]
         if new_sig != sig:
             raise CrossauthError(ErrorCode.InvalidKey, "Signature does not match payload")
         return payload

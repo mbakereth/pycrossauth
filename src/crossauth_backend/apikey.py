@@ -55,13 +55,13 @@ class ApiKeyManager:
 
     def __init__(self, key_storage: KeyStorage, options : ApiKeyManagerOptions = {}):
     
-        self.__secret = ""
-        self.__key_length = 16
+        self._secret = ""
+        self._key_length = 16
         self.__api_key_storage : KeyStorage = key_storage
         self.prefix = KeyPrefix.api_key
         self.auth_scheme = "ApiKey"
-        set_parameter("secret", ParamType.String, self, options, "SECRET", required=True)
-        set_parameter("key_length", ParamType.Integer, self, options, "APIKEY_LENGTH")
+        set_parameter("secret", ParamType.String, self, options, "SECRET", required=True, protected=True)
+        set_parameter("key_length", ParamType.Integer, self, options, "APIKEY_LENGTH", protected=True)
         set_parameter("prefix", ParamType.String, self, options, "APIKEY_PREFIX", public=True)
         set_parameter("auth_scheme", ParamType.String, self, options, "APIKEY_AUTHSCHEME", public=True)
 
@@ -95,7 +95,7 @@ class ApiKeyManager:
             - key: the new key as an ApiKey object
             - token: the token for the Authorization header (with the signature appended.)
         """
-        value = Crypto.random_value(self.__key_length)
+        value = Crypto.random_value(self._key_length)
         created = datetime.datetime.now()
         expires = datetime.datetime.fromtimestamp(created.timestamp() + expiry) if expiry else Null
         hashed_key = ApiKeyManager.__hash_api_key_value(value)
@@ -148,10 +148,10 @@ class ApiKeyManager:
         return Crypto.hash(unsigned_value.split(".")[0])
     
     def __unsign_api_key_value(self, signed_value: str) -> str:
-        return Crypto.unsign(signed_value, self.__secret)["v"]
+        return Crypto.unsign(signed_value, self._secret)["v"]
     
     def __sign_api_key_value(self, unsigned_value: str) -> str:
-        return Crypto.sign({"v": unsigned_value}, self.__secret)
+        return Crypto.sign({"v": unsigned_value}, self._secret)
     
     async def get_key(self, signed_value: str) -> NamedKey:
         """
