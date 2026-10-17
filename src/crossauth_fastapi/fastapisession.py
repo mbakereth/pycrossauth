@@ -1062,7 +1062,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
         if ("admin/api/createuser" in self.__endpoints):
             self.__admin_endpoints.add_api_create_user_endpoints()
         if ("admin/api/updateuser" in self.__endpoints):
-            self.__admin_endpoints.add_update_user_endpoints()
+            self.__admin_endpoints.add_api_update_user_endpoints()
 
     ############################3
     ## page endpoints

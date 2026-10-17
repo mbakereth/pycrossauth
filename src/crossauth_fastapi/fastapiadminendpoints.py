@@ -513,7 +513,7 @@ class FastApiAdminEndpoints():
 
     def add_api_update_user_endpoints(self):
 
-        @self.app.post(self.__admin_prefix + 'api/updateuser')
+        @self.app.post(self.__admin_prefix + 'api/updateuser/{id}')
         async def post_api_createuser( # type: ignore
             request: Request,
             resp: Response,
@@ -616,7 +616,7 @@ class FastApiAdminEndpoints():
             success_fn: Callable[[Dict[str,Any], Response, User|None], Response]) -> Response:
         if (not self.__session_server.user_storage):
             raise CrossauthError(ErrorCode.Configuration, "Cannot call signup unless you provide a user stotage")
-        
+
         if not request.state.user or not FastApiServerBase.is_admin(request.state.user):
             return await self._access_denied_page(request, form)
         if (self.is_session_user(request) and request.state.csrf_token is None):
