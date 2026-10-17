@@ -417,7 +417,7 @@ class FastApiApiSessionTest(unittest.IsolatedAsyncioTestCase):
         body = resp.json()
         self.assertEqual(body["ok"], False)
 
-    async def test_api_update_user(self):
+    async def test_api_update_user1(self):
         app = await make_app_with_options()
 
         client = TestClient(app.app)
@@ -520,7 +520,7 @@ class FastApiApiSessionTest(unittest.IsolatedAsyncioTestCase):
 
         found = False
         try:
-            user = await app.userStorage.get_user_by_username("bob")
+            await app.userStorage.get_user_by_username("bob")
             found = True
         except:
             pass

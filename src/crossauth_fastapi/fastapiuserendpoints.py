@@ -1655,7 +1655,7 @@ class FastApiUserEndpoints():
 
         # step one in 2FA setup - create secrets and get data to display to user
         user_data = await self.__session_server.session_manager.initiate_two_factor_setup(
-            request.user,
+            request.state.user,
             factor2,
             request.state.session_id
         )
@@ -2008,7 +2008,7 @@ class FastApiUserEndpoints():
             raise CrossauthError(ErrorCode.Configuration, "Cannot update user as user storage not defined")
 
         # delete the user
-        resp = await self.__session_server.session_manager.delete_user_by_username(request.state.user["username"])
+        await self.__session_server.session_manager.delete_user_by_username(request.state.user["username"])
 
         return success_fn(response)
         

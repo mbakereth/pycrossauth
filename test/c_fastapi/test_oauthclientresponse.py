@@ -59,6 +59,7 @@ class ServerAndClient(TypedDict):
     key_storage: InMemoryKeyStorage
 
 async def makeServerAndClient() -> ServerAndClient:
+
     app = FastAPI()
     key_storage = InMemoryKeyStorage()
     server = FastApiServer({
@@ -72,8 +73,9 @@ async def makeServerAndClient() -> ServerAndClient:
                 "client_id": "ABC",
                 "client_secret": "DEF",
                 "redirect_uri": "http://localhost/redirect",
-                "device_authorization_url": "devicecode"
-            }
+                "device_authorization_url": "devicecode",
+                "bff_base_url": "http://localhost",
+        }
         }
     }, {
         "app": app

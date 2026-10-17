@@ -14,6 +14,14 @@ async def get_test_user_storage(pepper : str|None = None, factor2 : str="dummy")
             "password": await authenticator.create_password_hash("bobPass123")
             } )
     await user_storage.create_user({
+            "username": "admin", 
+            "email": "admin@admin.com",
+            "state": "active",
+            "admin": True,
+            "factor1": "localpassword"}, {
+            "password": await authenticator.create_password_hash("adminPass123")
+            } )
+    await user_storage.create_user({
         "username": "alice", 
         "email": "alice@alice.com",
         "state": "active",

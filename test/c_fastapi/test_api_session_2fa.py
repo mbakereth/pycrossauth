@@ -3,6 +3,7 @@
 import unittest
 import unittest.mock
 from pathlib import Path
+from typing import cast
 import json
 from jinja2 import Template
 from email.mime.multipart import MIMEMultipart
@@ -40,7 +41,7 @@ class App(NamedTuple):
     server: FastApiSessionServer
     app: FastAPI
 
-async def make_app_with_options(options: FastApiSessionServerOptions = {}, factor2: str = "dummy") -> App:
+async def make_app_with_options(options: FastApiSessionServerOptions = cast(FastApiSessionServerOptions,{}), factor2: str = "dummy") -> App:
     """
     Async function to create a Fastify server with options
     

@@ -2,6 +2,9 @@
 
 import unittest
 import unittest.mock
+
+from fastapi.testclient import TestClient
+
 from pathlib import Path
 import json
 from jinja2 import Template
@@ -10,7 +13,6 @@ from fastapi.responses import JSONResponse
 
 from typing import Dict, Any, NamedTuple
 from fastapi import FastAPI, Request, Response
-from fastapi.testclient import TestClient
 from crossauth_backend.storageimpl.inmemorystorage import InMemoryKeyStorage, InMemoryUserStorage
 from crossauth_backend.authenticators.passwordauth import LocalPasswordAuthenticator
 from crossauth_backend.authenticators.totpauth import TotpAuthenticator
@@ -20,17 +22,15 @@ from crossauth_fastapi.fastapisession import FastApiSessionServer, FastApiSessio
 from backend.testuserdata import get_test_user_storage
 
 template_page = ""
-template_data : Dict[str,Any] = {}
+template_data : Dict[str,Any] = {"a": 1}
 template_status: int=200
 def state(request : Request, response: Response) -> Dict[str, Any]:
     return {"state": request.state.__dict__["_state"], "cookies": request.cookies, "url": request.url.path}
 
 def mock_TemplateResponse(request: Request, template: str, data: Dict[str,Any], status: int=200):
-    global template_data
-    global template_page
-    global template_status
+    global template_data, template_page, template_status
     template_page = template
-    template_data = data
+    template_data = {**data}
     template_status=status
     return JSONResponse(template_data)
 
@@ -106,6 +106,7 @@ async def make_app_with_options(options: FastApiSessionServerOptions = {}, facto
     })
 
     return App(user_storage, key_storage, server, app)
+
 
 class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
 
@@ -556,7 +557,7 @@ class FastApiSessionTest(unittest.IsolatedAsyncioTestCase):
 
                     found = False
                     try:
-                        user = await user_storage.get_user_by_username("bob")
+                        await user_storage.get_user_by_username("bob")
                         found = True
                     except:
                         pass

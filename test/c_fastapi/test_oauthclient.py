@@ -94,7 +94,8 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
                     "client_secret": "DEF",
                     "redirect_uri": "http://localhost/redirect",
                     "device_authorization_url": "devicecode",
-                    "token_response_type": response_type # type: ignore
+                    "token_response_type": response_type, # type: ignore
+                    "bff_base_url": "http://localhost"
                 }
             }
         }, {
@@ -134,7 +135,7 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
         client = await self.makeServerAndClient()
 
         resp = client["fclient"].get('/authzcodeflow', follow_redirects=False)
-        self.assertEqual(resp.status_code, 307)
+        self.assertEqual(resp.status_code, 302)
         url = resp.headers["location"]
         self.assertTrue(url.startswith("http://localhost/server/authorize"))
         self.assertIsNotNone(url)
@@ -151,7 +152,7 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
         client = await self.makeServerAndClient()
 
         resp = client["fclient"].get('/authzcodeflowpkce', follow_redirects=False)
-        self.assertEqual(resp.status_code, 307)
+        self.assertEqual(resp.status_code, 302)
         self.assertTrue(resp.headers["location"].startswith("http://localhost/server/authorize"))
 
     async def test_clientcredentials(self):
@@ -211,10 +212,12 @@ class TestOAuthCLientResponse(unittest.IsolatedAsyncioTestCase):
         client = await self.makeServerAndClient("save_in_session_and_redirect")
 
         res = await client["session"].session_manager.create_anonymous_session()
-        client["fclient"].cookies.set("SESSIONID", res.session_cookie["value"])
+        session_cookie = res.session_cookie
+        self.assertIsNotNone(session_cookie)
+        client["fclient"].cookies.set("SESSIONID", session_cookie["value"] if session_cookie is not None else "")
 
         client["client"]._test_middleware = True # type: ignore
-        session_id = res.session_cookie["value"].split(".")[0]
+        session_id = session_cookie["value"].split(".")[0] if session_cookie is not None else ""
         id_token_payload = {"sub": "bob"}
         expires_at = int((datetime.now() + timedelta(hours=1)).timestamp()*1000)
         oauth : dict[str,Any] = {"id_payload": id_token_payload, "expires_at": expires_at}

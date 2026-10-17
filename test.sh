@@ -1,6 +1,9 @@
 #!/bin/bash
+export PYTHONPATH="./venv/lib/python3.13/site-packages:./src:./test"
+echo $PYTHONPATH
 if [ $# = 0 ]; then
-    PYTHONPATH="./src:${PYTHONPATH}:./test" dotenv -f .env.unittest run -- python -m unittest discover -s test -p 'test_*.py'
+    dotenv -f .env.unittest run -- python -m unittest discover -s test -p 'test_*.py' -v
 else
-    PYTHONPATH="./src:${PYTHONPATH}:./test" dotenv -f .env.unittest run -- python -m unittest $1
+    dotenv -f .env.unittest run -- python -m unittest $1
 fi
+

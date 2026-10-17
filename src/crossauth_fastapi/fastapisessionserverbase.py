@@ -4,7 +4,7 @@ from abc import abstractmethod
 from datetime import datetime
 from fastapi import Request, FastAPI, Response
 from fastapi.responses import JSONResponse
-from typing import Optional, Any, Dict, Callable, List, Mapping, Tuple, Literal, Set
+from typing import Optional, Any, Dict, Callable, List, Mapping, Tuple, Literal, Set, Awaitable
 from fastapi.templating import Jinja2Templates
 from nulltype import NullType
 from starlette.datastructures import FormData
@@ -243,7 +243,7 @@ class FastApiSessionServerOptions(SessionManagerOptions, total=False):
     Default `admin/createuser.njk`
     """
 
-    user_search_fn : Callable[[str, UserStorage], List[User]]
+    user_search_fn : Callable[[str, UserStorage], Awaitable[List[User]]]
     """
     Admin pages provide functionality for searching for users.  By
     default the search string must exactly match a username or
@@ -519,6 +519,11 @@ class FastApiSessionServerBase(FastApiSessionAdapter):
 
     @property
     @abstractmethod
+    def signup_page(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
     def enable_email_verification(self) -> bool:
         pass
 
@@ -535,6 +540,10 @@ class FastApiSessionServerBase(FastApiSessionAdapter):
     @abstractmethod
     def allowed_factor2_details(self) -> List[AuthenticatorDetails]:
         pass
+
+    @property
+    @abstractmethod
+    def admin_allowed_factor1(self) -> List[str]: pass
 
     @property
     @abstractmethod
@@ -574,6 +583,13 @@ class FastApiSessionServerBase(FastApiSessionAdapter):
     async def get_session_data(self, request: Request, name: str) -> Optional[Dict[str, Any]]:
         pass
 
+    @abstractmethod
+    async def login(self, 
+                   request: Request, 
+                   resp: Response, 
+                   form : JsonOrFormData,
+                   success_fn: Callable[[Dict[str,Any], Response, User], Response]) -> Response:
+        pass
 
     @abstractmethod
     async def login_with_user(self, 

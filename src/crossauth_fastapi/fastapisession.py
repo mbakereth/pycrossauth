@@ -19,6 +19,7 @@ from crossauth_backend.crypto import Crypto
 from crossauth_fastapi.fastapisessionserverbase import *
 from .sessionbodytypes import *
 from .sessionendpoints import *
+from .fastapiadminendpoints import *
 import copy
 from starlette.types import Message # , ASGIApp, Scope, Receive, Send
 from .sessionendpoints import *
@@ -181,7 +182,11 @@ class FastApiSessionServer(FastApiSessionServerBase):
     @property
     def login_redirect(self):
         return self.__login_redirect
-    
+
+    @property
+    def signup_page(self):
+        return self.__signup_page
+
     @property
     def user_storage(self):
         return self.__user_storage
@@ -254,6 +259,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
         self.__logout_redirect = "/"
         self.__allowed_factor2 : List[str] = ["none"]
         self.__authenticators = authenticators
+        self.__admin_endpoints = FastApiAdminEndpoints(self, options)
 
         self._session_manager = SessionManager(key_storage, authenticators, options)
 
@@ -986,6 +992,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
     
     def add_endpoints(self):
 
+        # User endpoints
         if ("login" in self.__endpoints):
             self.add_login_endpoints()
         if ("logout" in self.__endpoints):
@@ -1013,6 +1020,13 @@ class FastApiSessionServer(FastApiSessionServerBase):
         if ("deleteuser" in self.__endpoints):
             self.__user_endpoints.add_delete_user_endpoints()
 
+        # Admin endpoints
+        if ("admin/createuser" in self.__endpoints):
+            self.__admin_endpoints.add_create_user_endpoints()
+        if ("admin/updateuser" in self.__endpoints):
+            self.__admin_endpoints.add_update_user_endpoints()
+
+        # User API endpoints
         if ("api/userforsessionkey" in self.__endpoints):
             self.add_api_user_for_session_key_endpoints()
         if ("api/getcsrftoken" in self.__endpoints):
@@ -1043,6 +1057,12 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__user_endpoints.add_api_update_user_endpoints()
         if ("api/deleteuser" in self.__endpoints):
             self.__user_endpoints.add_api_delete_user_endpoints()
+
+        # Admin API endpoints
+        if ("admin/api/createuser" in self.__endpoints):
+            self.__admin_endpoints.add_api_create_user_endpoints()
+        if ("admin/api/updateuser" in self.__endpoints):
+            self.__admin_endpoints.add_update_user_endpoints()
 
     ############################3
     ## page endpoints
@@ -1109,7 +1129,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             #body = LoginBodyType(next=next_param, persist=persist, username=username,)
             
             try:
-                return await self.__login(request, response, form,
+                return await self.login(request, response, form,
                     lambda body1, resp1, user: self._handle_login_response(request, form, response, user, next_redirect))
             except Exception as e:
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
@@ -1525,7 +1545,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             }))
                                     
             try:
-                return await self.__login(request, response, form,
+                return await self.login(request, response, form,
                     lambda body1, resp1, user: self._handle_api_login_response(request, form, response, user))
             except Exception as e:
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
@@ -1770,7 +1790,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
     ##########################################
     ## Shared between page and API endpoints
 
-    async def __login(self, 
+    async def login(self, 
                    request: Request, 
                    resp: Response, 
                    form : JsonOrFormData,
@@ -2072,7 +2092,7 @@ class FastApiSessionServer(FastApiSessionServerBase):
             # not enabling 2FA
             await self.session_manager.create_user(user, cast(UserSecrets, body),cast(UserSecrets|None, repeat_secrets))
             if not self.__enable_email_verification:
-                return await self.__login(request, resp, form, lambda req, resp, user: success_fn({"csrfToken": request.state.csrf_token}, resp, user))
+                return await self.login(request, resp, form, lambda req, resp, user: success_fn({"csrfToken": request.state.csrf_token}, resp, user))
             return success_fn({"csrfToken": request.state.csrf_token}, resp, None)
         else:
             # also enabling 2FA

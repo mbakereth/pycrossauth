@@ -263,7 +263,7 @@ class FastApiOAuthClientOptions(OAuthClientOptions, total=False):
     """
     If using the BFF method, you can also create a user in the sesion
     when the token is received, just like session management 
-    (`event.locals.user` for Sveltekit, `request.user`) for Fastify.
+    (`event.locals.user` for Sveltekit, `request.state.user`) for Fastify.
     
     Set this field to `merge` to do this by merging the ID token fields
     with the User fields.  `embed` will put the ID token fields in `idToken`
