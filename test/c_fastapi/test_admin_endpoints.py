@@ -102,7 +102,8 @@ async def make_app_with_options(options: FastApiSessionServerOptions = cast(Fast
             "updateuser",
             "deleteuser",
             "admin/createuser",
-            "admin/updateuser"
+            "admin/updateuser",
+            "admin/deleteuser",
         ],
         **options
     })
@@ -207,7 +208,7 @@ class FastApiSessionAdminTest(unittest.IsolatedAsyncioTestCase):
                         client.cookies.set("SESSIONID", body["cookies"]["SESSIONID"])
                         client.cookies.set("CSRFTOKEN", body["cookies"]["CSRFTOKEN"])
 
-                        # create user
+                        # update user
                         resp = client.get("/admin/updateuser/" + str(bob["user"]["id"]))
                         self.assertIn("csrfToken", template_data)
                         self.assertEqual(resp.status_code, 200)
@@ -217,6 +218,60 @@ class FastApiSessionAdminTest(unittest.IsolatedAsyncioTestCase):
                             "user_email": "bob1@bob1.com",
                             })
                         body = resp.json()
+                        self.assertNotIn("errorMessage", body)
+                        self.assertEqual(resp.status_code, 200)
+
+    async def test_admin_delete_user(self):
+        app = await make_app_with_options({"enable_email_verification": True})
+        app.app.get("/")(state)
+        client = TestClient(app.app)
+        user_storage = app.userStorage
+        bob = await user_storage.get_user_by_username("bob")
+
+        with unittest.mock.patch('fastapi.templating.Jinja2Templates.TemplateResponse') as render_mock:
+            with unittest.mock.patch('smtplib.SMTP.send_message') as render_sendmessage:
+                with unittest.mock.patch('jinja2.Environment.get_template') as render_get_template:
+                    with unittest.mock.patch('jinja2.Template.render') as render_render:
+                        render_mock.side_effect = mock_TemplateResponse
+                        render_sendmessage.side_effect = mock_template
+                        render_render.side_effect = mock_render
+                        render_get_template.side_effect = mock_template
+
+                        client = TestClient(app.app)
+                        resp = client.get("/login")
+                        self.assertIn("csrfToken", template_data)
+                        csrfToken = template_data["csrfToken"]
+                        client.cookies.set("CSRFTOKEN", resp.cookies["CSRFTOKEN"])
+
+                        # login
+                        resp = client.post("/login", json={
+                            "csrfToken": csrfToken,
+                            "username": "admin",
+                            "password": "adminPass123"
+                            })
+                        self.assertEqual(resp.status_code, 200)
+                        body = resp.json()
+                        csrfToken = template_data["csrfToken"]
+                        self.assertEqual(body["state"]["user"]["username"], "admin")
+                        self.assertEqual(body["state"]["user"]["admin"], True)
+                        self.assertIn("session_id", body["state"])
+                        self.assertIn("csrf_token", body["state"])
+                        self.assertIn("SESSIONID", body["cookies"])
+                        self.assertIn("CSRFTOKEN", body["cookies"])
+                        client.cookies.set("SESSIONID", body["cookies"]["SESSIONID"])
+                        client.cookies.set("CSRFTOKEN", body["cookies"]["CSRFTOKEN"])
+
+                        # delete user
+                        resp = client.get("/admin/deleteuser/" + str(bob["user"]["id"]))
+                        self.assertIn("csrfToken", template_data)
+                        self.assertEqual(resp.status_code, 200)
+
+                        resp = client.post("/admin/deleteuser/" + str(bob["user"]["id"]), json={
+                            "csrfToken": template_data["csrfToken"],
+                            "user_email": "bob1@bob1.com",
+                            })
+                        body = resp.json()
+                        print(body)
                         self.assertNotIn("errorMessage", body)
                         self.assertEqual(resp.status_code, 200)
 
