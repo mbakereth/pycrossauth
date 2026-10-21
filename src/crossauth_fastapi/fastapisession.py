@@ -1027,6 +1027,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__admin_endpoints.add_update_user_endpoints()
         if ("admin/deleteuser" in self.__endpoints):
             self.__admin_endpoints.add_delete_user_endpoints()
+        if ("admin/changepassword" in self.__endpoints):
+            self.__admin_endpoints.add_change_password_endpoints()
 
         # User API endpoints
         if ("api/userforsessionkey" in self.__endpoints):
@@ -1067,6 +1069,8 @@ class FastApiSessionServer(FastApiSessionServerBase):
             self.__admin_endpoints.add_api_update_user_endpoints()
         if ("admin/api/deleteuser" in self.__endpoints):
             self.__admin_endpoints.add_api_delete_user_endpoints()
+        if ("admin/api/changepassword" in self.__endpoints):
+            self.__admin_endpoints.add_api_change_password_endpoints()
 
     ############################3
     ## page endpoints

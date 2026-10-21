@@ -434,6 +434,155 @@ class FastApiAdminEndpoints():
                 return self.__session_server.handle_error(e, request, form,
                     lambda error, ce: handle_error_fn({}, ce))
 
+    def add_change_password_endpoints(self):
+        """
+        Adds GET and POST endpoints for admin to update users
+        """
+
+        @self.app.get(self.__admin_prefix + 'changepassword/{id}')
+        async def get_change_password( # type: ignore
+            request: Request,
+            response: Response,
+            id: str|int = Path(alias="id")
+        ):
+            CrossauthLogger.logger().info(j({
+                "message": "Page visit",
+                "method": "GET",
+                "url": self.__admin_prefix + "changepassword",
+                "ip": request.client.host if request.client is not None else "",
+                "user": request.state.user["username"]
+            }))
+
+            if (self.is_session_user(request) and not request.state.csrf_token):
+                raise CrossauthError(ErrorCode.InvalidCsrf)
+
+            form = JsonOrFormData(request)
+            if (not request.state.user or not FastApiServerBase.is_admin(request.state.user)):
+                return await self._access_denied_page(request, form);                    
+
+            try:
+                if (self.__session_server.user_storage is None):
+                    raise CrossauthError(ErrorCode.Configuration, "User storage not set")
+                getUserResp = await self.__session_server.user_storage.get_user_by_id(id)
+                user = getUserResp["user"]
+                data: Dict[str, Any] = {
+                    "urlPrefix": self.__admin_prefix,
+                    "csrfToken": request.state.csrf_token,
+                    "user": user,
+                }
+                
+                return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                    request,
+                    self.__admin_change_password_page, 
+                    {
+                        **data
+                    }), request)
+            
+            except Exception as e:
+                ce = CrossauthError.as_crossauth_error(e)
+                CrossauthLogger.logger().error(j({
+                    "message": "Signup failure",
+                    "user": request.state.user["username"],
+                    "userid": id,
+                    "errorCodeName": ce.code_name,
+                    "errorCode": ce.code.value,
+                }))
+                CrossauthLogger.logger().debug(j({"err": e}))
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
+                    extra_fields : Dict[str,Any] = {}
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                        request,
+                        self.__admin_update_user_page, 
+                        {
+                            "errorMessage": error.message,
+                            "errorMessages": error.messages, 
+                            "errorCode": error.code.value,
+                            "errorCodeName": error.code.name,
+                            "csrfToken": request.state.csrf_token,
+                            "urlPrefix": self.__admin_prefix, 
+                            **extra_fields,
+                        }, error.http_status), request)
+                    
+                return self.__session_server.handle_error(e, request, form,
+                    lambda error, ce: handle_error_fn({}, ce))
+
+        @self.app.post(self.__admin_prefix + 'changepassword/{id}')
+        async def post_update_user( # type: ignore
+            request: Request,
+            resp: Response,
+            id: str|int = Path(alias="id")
+        ):
+            form = JsonOrFormData(request)
+            await form.load()
+            CrossauthLogger.logger().info(j({
+                "message": "Page visit",
+                "method": "POST",
+                "url": self.__admin_prefix + "changepassword",
+                "ip": request.client.host if request.client else ""
+            }))
+            
+            next_redirect = form.getAsStr1("next", self.__session_server.login_redirect) 
+            
+            # Create request body equivalent
+            #body = LoginBodyType(next=next_param, persist=persist, username=username,)
+            
+            body = form.to_dict()
+            user: User|None = None
+            try:
+
+                if (self.__session_server.user_storage is None):
+                    raise CrossauthError(ErrorCode.Configuration, "User storage not set")
+                getUserResp = await self.__session_server.user_storage.get_user_by_id(id)
+                user = getUserResp["user"]
+
+                def changepassword_lambda(data: Dict[str,Any], resp : Response, user: User|None) -> Response:
+                    message = "User's password has been updated."
+
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                        request,
+                        self.__admin_update_user_page, 
+                        {
+                            "csrfToken": request.state.csrf_token,
+                            "urlPrefix": self.__admin_prefix, 
+                            "message": message,
+                            **body,
+                        }, 200), request)
+
+                CrossauthLogger.logger().debug(j({"message": "Next page " + next_redirect}))
+                return await self.__change_password(user, request, resp, form, changepassword_lambda)
+            except Exception as e:
+                ce = CrossauthError.as_crossauth_error(e)
+                CrossauthLogger.logger().error(j({
+                    "message": "Update user failure",
+                    "user": request.state.user["username"],
+                    "errorCodeName": ce.code_name,
+                    "errorCode": ce.code.value
+                }))
+                CrossauthLogger.logger().debug(j({"err": e}))
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
+                    return send_with_cookies(self.__session_server.templates.TemplateResponse(
+                        request,
+                        self.__admin_change_password_page, 
+                        {
+                            "errorMessage": error.message,
+                            "errorMessages": error.messages, 
+                            "errorCode": error.code.value,
+                            "errorCodeName": error.code.name,
+                            "user": user,
+                            "next": next_redirect, 
+                            "username": body["username"] if body and "username" in body else None,
+                            "csrfToken": request.state.csrf_token,
+                            "urlPrefix": self.__admin_prefix, 
+                            **body,
+                        }, error.http_status), request)
+                    
+                return self.__session_server.handle_error(e, request, form,
+                    lambda error, ce: handle_error_fn({}, ce))
+
     def add_delete_user_endpoints(self):
         """
         Adds GET and POST endpoints for admin to update users
@@ -734,6 +883,76 @@ class FastApiAdminEndpoints():
                 return self.__session_server.handle_error(e, request, form,
                     lambda error, ce: handle_error_fn({}, ce))
 
+    def add_api_change_password_endpoints(self):
+
+        @self.app.post(self.__admin_prefix + 'api/changepassword/{id}')
+        async def post_api_createuser( # type: ignore
+            request: Request,
+            resp: Response,
+            id: str|int = Path()
+        ):
+            form = JsonOrFormData(request)
+            await form.load()
+            CrossauthLogger.logger().info(j({
+                "message": "API visit",
+                "method": "POST",
+                "url": self.__admin_prefix + "api/changepassword",
+                "ip": request.client.host if request.client else "",
+                "userid": id,
+            }))
+                        
+            # Create request body equivalent
+            #body = LoginBodyType(next=next_param, persist=persist, username=username,)
+            
+            body = form.to_dict()
+            try:
+
+                if (self.__session_server.user_storage is None):
+                    raise CrossauthError(ErrorCode.Configuration, "User storage not set")
+                getUserResp = await self.__session_server.user_storage.get_user_by_id(id)
+                user = getUserResp["user"]
+
+                def changepassword_lambda(data: Dict[str,Any], resp : Response, user: User|None) -> Response:
+                    return send_with_cookies(JSONResponse(
+                        {
+                            "ok": True,
+                            "user": user,
+                        }), request)
+
+
+                return await self.__change_password(user, request, resp, form, changepassword_lambda)
+            except Exception as e:
+                ce = CrossauthError.as_crossauth_error(e)
+                CrossauthLogger.logger().error(j({
+                    "message": "Update user failure",
+                    "user": body["username"],
+                    "errorCodeName": ce.code_name,
+                    "errorCode": ce.code.value
+                }))
+                CrossauthLogger.logger().debug(j({"err": e}))
+
+                CrossauthLogger.logger().debug(j({"err": str(e)}))
+                def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
+                    extra_fields : Dict[str,Any] = {}
+                    for field in body:
+                        if (field.startswith("user_")):
+                            extra_fields[field] = body[field]
+                    return send_with_cookies(JSONResponse(
+                        {
+                            "ok": False,
+                            "errorMessage": error.message,
+                            "errorMessages": error.messages, 
+                            "errorCode": error.code.value,
+                            "errorCodeName": error.code.name,
+                            "username": body["username"] if "username" in body else None,
+                            "csrfToken": request.state.csrf_token,
+                            "urlPrefix": self.__admin_prefix, 
+                            **extra_fields,
+                        }, error.http_status), request)
+                    
+                return self.__session_server.handle_error(e, request, form,
+                    lambda error, ce: handle_error_fn({}, ce))
+
     def add_api_delete_user_endpoints(self):
 
         @self.app.post(self.__admin_prefix + 'api/deleteuser/{id}')
@@ -994,12 +1213,12 @@ class FastApiAdminEndpoints():
 
         return success_fn({}, resp, user, ret.email_verification_token_sent, ret.password_reset_token_sent)
 
-    async def __delete_user(self,
+    async def __change_password(self,
             user: User,
             request : Request,
             resp : Response, 
             form : JsonOrFormData,
-            success_fn: Callable[[Dict[str,Any], Response, User|None, bool, bool], Response]) -> Response:
+            success_fn: Callable[[Dict[str,Any], Response, User|None], Response]) -> Response:
         if (not self.__session_server.user_storage):
             raise CrossauthError(ErrorCode.Configuration, "Cannot call signup unless you provide a user stotage")
 
@@ -1008,6 +1227,57 @@ class FastApiAdminEndpoints():
         if (self.is_session_user(request) and request.state.csrf_token is None):
             raise CrossauthError(ErrorCode.InvalidCsrf)
 
-        ret = await self.__session_server.session_manager.delete_user_by_username(user["username"])
+        # get data from the request body
+        body = form.to_dict()
+
+        #  get the authenticator for factor1 (passwords on factor2 are not supported)
+        authenticator = self.__session_server.authenticators[user["factor1"]]
+
+
+        secret_names = authenticator.secret_names()
+        new_secrets: AuthenticationParameters = {}
+        repeat_secrets : AuthenticationParameters|None = None
+        for field in body:
+            name = field
+            if (field.startswith("new_")):
+                name = field[4:]
+                if (name in secret_names):
+                    new_secrets[name] = body[field]
+            elif (field.startswith("repeast_")):
+                name = field[8:]
+                if (name in secret_names):
+                    if (repeat_secrets is None):
+                        repeat_secrets = {}
+                    repeat_secrets[name] = body[field]
+
+
+        # validate the new user using the implementor-provided function
+        errors = authenticator.validate_secrets(new_secrets)
+
+        # report any errors
+        if (len(errors) > 0):
+            raise CrossauthError(ErrorCode.FormEntry, errors)
+
+        user["state"] = UserState.active
+        await self.__session_server.user_storage.update_user({"id": user["id"], "state":user["state"]})
+        await self.__session_server.session_manager.change_secrets(user["username"], 1, new_secrets, repeat_secrets)
+
+        return success_fn({}, resp, user)
+
+    async def __delete_user(self,
+            user: User,
+            request : Request,
+            resp : Response, 
+            form : JsonOrFormData,
+            success_fn: Callable[[Dict[str,Any], Response, User|None], Response]) -> Response:
+        if (not self.__session_server.user_storage):
+            raise CrossauthError(ErrorCode.Configuration, "Cannot call signup unless you provide a user stotage")
+
+        if not request.state.user or not FastApiServerBase.is_admin(request.state.user):
+            return await self._access_denied_page(request, form)
+        if (self.is_session_user(request) and request.state.csrf_token is None):
+            raise CrossauthError(ErrorCode.InvalidCsrf)
+
+        await self.__session_server.session_manager.delete_user_by_username(user["username"])
 
         return success_fn({}, resp, user)
