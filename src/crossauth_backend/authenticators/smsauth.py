@@ -147,7 +147,7 @@ class SmsAuthenticator(Authenticator):
         message_id = await self._send_sms(number, body)
         
         CrossauthLogger.logger().info(j({
-            "msg": "Sent factor otp sms",
+            "message": "Sent factor otp sms",
             "smsMessageId": message_id,
             "phone": number
         }))
@@ -175,7 +175,7 @@ class SmsAuthenticator(Authenticator):
         message_id = await self._send_sms(data["phone"], otp)
         
         CrossauthLogger.logger().info(j({
-            "msg": "Sent factor otp sms",
+            "message": "Sent factor otp sms",
             "smsMessageId": message_id,
             "phone": data["phone"]
         }))
@@ -238,7 +238,7 @@ class SmsAuthenticator(Authenticator):
         message_id = await self._send_sms(phone, otp)
         
         CrossauthLogger.logger().info(j({
-            "msg": "Sent factor otp sms",
+            "message": "Sent factor otp sms",
             "smsMessageId": message_id,
             "phone": phone
         }))

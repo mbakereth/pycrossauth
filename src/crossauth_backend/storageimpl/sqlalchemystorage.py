@@ -148,7 +148,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
         fieldsString = ", ".join(fields)
         placeholdersString = ", ".join(placeholders)
         query = f"insert into {self.__key_table} ({fieldsString}) values ({placeholdersString})"
-        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values)
 
@@ -156,7 +156,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
 
         query = f"delete from {self.__key_table} where value = :value"
         values = {"value": value}
-        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
 
@@ -178,7 +178,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
         query += exceptClause
         values["except"] = except_key
 
-        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
 
@@ -199,7 +199,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
 
         andString = " and ".join(andClause)
         query = f"delete from {self.__key_table} where {andString}"
-        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
 
@@ -215,7 +215,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
             query = f"delete from {self.__key_table} where {self.__userid_foreign_key_column} is null and value like :value"
             values["value"] = prefix + "%"
 
-        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
 
@@ -230,7 +230,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
         else:
             query = f"select * from \"{self.__key_table}\" where {self.__userid_foreign_key_column} is null"
 
-        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             res = await conn.execute(text(query), values) 
         rows = res.fetchall()
@@ -270,7 +270,7 @@ class SqlAlchemyKeyStorage(KeyStorage):
             setString = ", ".join(setFields)
             query = f"update {self.__key_table} set {setString} where value = :value"
             values["value"] = key["value"]
-            CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+            CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
             await conn.execute(text(query), values) 
 
     async def update_data(self, key_name: str, data_name: str, value: Any) -> None:
@@ -600,7 +600,7 @@ class SqlAlchemyUserStorage(UserStorage):
             field_placeholders_str = ", ".join(field_placeholders)
 
             query = f"INSERT INTO {self.__user_table} ({field_names_str}) VALUES ({field_placeholders_str})"
-            CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+            CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
             async with self.engine.begin() as conn:
                 await conn.execute(text(query), field_values) 
                 ret = await self.get_user_by_in_transaction(conn, "username", user["username"])
@@ -624,7 +624,7 @@ class SqlAlchemyUserStorage(UserStorage):
                     field_placeholders_str = ", ".join(field_placeholders)
 
                     query = f"INSERT INTO {self.__user_secrets_table} ({field_names_str}) VALUES ({field_placeholders_str})"
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), field_values) 
 
                 return ret["user"]
@@ -681,7 +681,7 @@ class SqlAlchemyUserStorage(UserStorage):
 
                 if (len(field_placeholders) > 0):
                     query = f"UPDATE {self.__user_table} SET {field_placeholders_str} WHERE {self.__id_column} = :{self.__id_column}"
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), field_values) 
 
                 if (secrets):
@@ -697,7 +697,7 @@ class SqlAlchemyUserStorage(UserStorage):
                     field_values[self.__userid_foreign_key_column] = id
 
                     query = f"UPDATE {self.__user_secrets_table} SET {field_placeholders_str} WHERE {self.__userid_foreign_key_column} = :{self.__userid_foreign_key_column}"
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), field_values) 
                 
         except Exception as e:
@@ -714,14 +714,14 @@ class SqlAlchemyUserStorage(UserStorage):
         else:
             query = f"delete from {self.__user_table} where username = :value"
             values = {"value": username}
-        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
 
     async def delete_user_by_id(self, id: str|int) -> None:
         query = f"delete from {self.__user_table} where {self.__id_column} = :value"
         values = {"value": id}
-        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
         async with self.engine.begin() as conn:
             await conn.execute(text(query), values) 
 
@@ -942,18 +942,18 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
             field_placeholders_str = ", ".join(field_placeholders)
 
             query = f"INSERT INTO {self.__client_table} ({field_names_str}) VALUES ({field_placeholders_str})"
-            CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+            CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
             async with self.engine.begin() as conn:
                 await conn.execute(text(query), field_values) 
 
                 for uri in client["redirect_uri"]:
                     query = f"INSERT INTO {self.__redirect_uri_table} (client_id, uri) VALUES (:client_id, :uri)"
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), {"client_id": client_id, "uri": uri}) 
 
                 for flow in client["valid_flow"]:
                     query = f"INSERT INTO {self.__valid_flow_table} (client_id, flow) VALUES (:client_id, :flow)"
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), {"client_id": client_id, "flow": flow}) 
 
             return await self.get_client_by_id(client_id)
@@ -988,29 +988,29 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
 
                 if (len(field_placeholders) > 0):
                     query = f"UPDATE {self.__client_table} SET {field_placeholders_str} WHERE client_id = :client_id"
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), field_values) 
                 
                 # redirect_uris
                 if ("redirect_uri" in client):
                     query = f"DELETE FROM {self.__redirect_uri_table} WHERE client_id = :client_id"
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), {"client_id": client_id}) 
                     query = f"INSERT INTO {self.__redirect_uri_table} (client_id, uri) VALUES (:client_id, :uri)"
                     for uri in client["redirect_uri"]:
                         query = f"INSERT INTO {self.__redirect_uri_table} (client_id, uri) VALUES (:client_id, :uri)"
-                        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                         await conn.execute(text(query), {"client_id": client_id, "uri": uri}) 
 
                 # valid flows
                 if ("valid_flow" in client):
                     query = f"DELETE FROM {self.__valid_flow_table} WHERE client_id = :client_id"
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), {"client_id": client_id}) 
                     query = f"INSERT INTO {self.__valid_flow_table} (client_id, uri) VALUES (:client_id, :uri)"
                     for flow in client["valid_flow"]:
                         query = f"INSERT INTO {self.__valid_flow_table} (client_id, flow) VALUES (:client_id, :flow)"
-                        CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                        CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                         await conn.execute(text(query), {"client_id": client_id, "flow": flow}) 
 
         except Exception as e:
@@ -1023,15 +1023,15 @@ class SqlAlchemyOAuthClientStorage(OAuthClientStorage):
             async with self.engine.begin() as conn:
 
                 query = f"DELETE FROM {self.__client_table} WHERE client_id = :client_id"
-                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                 await conn.execute(text(query), {"client_id": client_id}) 
 
                 query = f"DELETE FROM {self.__redirect_uri_table} WHERE client_id = :client_id"
-                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                 await conn.execute(text(query), {"client_id": client_id}) 
 
                 query = f"DELETE FROM {self.__valid_flow_table} WHERE client_id = :client_id"
-                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                 await conn.execute(text(query), {"client_id": client_id}) 
 
 ####################################
@@ -1080,7 +1080,7 @@ class SqlAlchemyOAuthAuthorizationStorage(OAuthAuthorizationStorage):
             else:
                 query += f" AND {self.__userid_foreign_key_column} is NULL"
 
-            CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+            CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
             async with self.engine.begin() as conn:
                 res = await conn.execute(text(query), values) 
 
@@ -1106,7 +1106,7 @@ class SqlAlchemyOAuthAuthorizationStorage(OAuthAuthorizationStorage):
                 query += f" AND {self.__userid_foreign_key_column} IS NULL"
 
             async with self.engine.begin() as conn:
-                CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                 await conn.execute(text(query), values) 
 
                 for scope in authorizations:
@@ -1117,7 +1117,7 @@ class SqlAlchemyOAuthAuthorizationStorage(OAuthAuthorizationStorage):
                         query: str = f"INSERT INTO {self.__authorization_table} (client_id, scope) VALUES (:client_id, :scope)"
                         values : dict[str,Any] = {"client_id": client_id, "scope": scope}
 
-                    CrossauthLogger.logger().debug(j({"msg": "Executing query", "query": query}))
+                    CrossauthLogger.logger().debug(j({"message": "Executing query", "query": query}))
                     await conn.execute(text(query), values) 
 
         except Exception as e:

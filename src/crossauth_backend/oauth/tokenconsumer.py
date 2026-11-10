@@ -246,7 +246,7 @@ class OAuthTokenConsumer:
         except Exception as e:
             ce = CrossauthError.as_crossauth_error(e)
             CrossauthLogger.logger().debug(j({"err": e}))
-            CrossauthLogger.logger().error(j({"msg": "Couldn't load keys", "cerr": ce}))
+            CrossauthLogger.logger().error(j({"message": "Couldn't load keys", "cerr": ce}))
             raise ValueError("Couldn't load keys")
 
     async def load_config(self, oidc_config: Optional[Dict[str, Any]] = None):
@@ -323,15 +323,15 @@ class OAuthTokenConsumer:
         if not decoded:
             return None
         if decoded.get('type') != token_type:
-            CrossauthLogger.logger().error(j({"msg": token_type + " expected but got " + decoded.get('type', "")}))
+            CrossauthLogger.logger().error(j({"message": token_type + " expected but got " + decoded.get('type', "")}))
             return None
         if decoded.get('iss') != self._auth_server_base_url:
-            CrossauthLogger.logger().error(j({"msg": f"Invalid issuer: {decoded.get('iss')} in access token", "hashedAccessToken": self.hash(decoded["jti"])}))
+            CrossauthLogger.logger().error(j({"message": f"Invalid issuer: {decoded.get('iss')} in access token", "hashedAccessToken": self.hash(decoded["jti"])}))
             return None
         if 'aud' in decoded:
             if (isinstance(decoded['aud'], list) and self._audience not in decoded['aud']) or \
                (not isinstance(decoded['aud'], list) and decoded['aud'] != self._audience):
-                CrossauthLogger.logger().warn(j({"msg": f"Invalid audience: {decoded['aud']} in access token"}))
+                CrossauthLogger.logger().warn(j({"message": f"Invalid audience: {decoded['aud']} in access token"}))
                 return None
         return decoded
     
@@ -358,11 +358,11 @@ class OAuthTokenConsumer:
                     token_in_storage = await self.__key_storage.get_key(key)
                     now = datetime.now()
                     if "expires" in token_in_storage and MapGetter[datetime].get(token_in_storage, "expires", now).timestamp() < now.timestamp():
-                        CrossauthLogger.logger().error(j({"msg":"Access token expired in storage but not in JWT"}))
+                        CrossauthLogger.logger().error(j({"message":"Access token expired in storage but not in JWT"}))
                         return None
                 except Exception as e:
                     CrossauthLogger.logger().warn(j({
-                        "msg": "Couldn't get token from database - is it valid?",
+                        "message": "Couldn't get token from database - is it valid?",
                         "hashedAccessToken": Crypto.hash(payload['jti'])
                     }))
                     CrossauthLogger.logger().debug(j({"err": str(e)}))
@@ -371,7 +371,7 @@ class OAuthTokenConsumer:
 
     async def _validate_token(self, access_token: str) -> Optional[Dict[str, Any]]:
         if not self.keys or len(self.keys) == 0:
-            CrossauthLogger.logger().warn(j({"msg": "No keys loaded so cannot validate tokens"}))
+            CrossauthLogger.logger().warn(j({"message": "No keys loaded so cannot validate tokens"}))
         kid : str|None = None
         instance = JWT()
         try:
@@ -380,7 +380,7 @@ class OAuthTokenConsumer:
         except Exception as e:
             ce = CrossauthError.as_crossauth_error(e)
             CrossauthLogger.logger().debug(j({"err": e}))
-            CrossauthLogger.logger().warn(j({"msg": "Invalid access token format", "cerr": ce}))
+            CrossauthLogger.logger().warn(j({"message": "Invalid access token format", "cerr": ce}))
             return None
         key = self.keys.get("_default")
         for loaded_kid in self.keys:
@@ -388,12 +388,12 @@ class OAuthTokenConsumer:
                 key = self.keys[loaded_kid]
                 break
         if not key:
-            CrossauthLogger.logger().warn(j({"msg": "No matching keys found for access token"}));
+            CrossauthLogger.logger().warn(j({"message": "No matching keys found for access token"}));
             return None
         try:
             decoded_payload = instance.decode(access_token, key)
             # if decoded_payload['exp'] * 1000 < (datetime.now().timestamp() + self._clock_tolerance):
-            #     CrossauthLogger.logger.warn(j({("msg": "Access token has expired"}))
+            #     CrossauthLogger.logger.warn(j({("message": "Access token has expired"}))
             #     return None
             return decoded_payload
         except Exception as e:

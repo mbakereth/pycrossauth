@@ -357,13 +357,13 @@ class OAuthClient:
         """
 
         if oidc_config:
-            CrossauthLogger.logger().debug(j({"msg": "Reading OIDC config locally"}))
+            CrossauthLogger.logger().debug(j({"message": "Reading OIDC config locally"}))
             self._oidc_config = oidc_config
             return
 
         url = f"{self.auth_server_base_url}/.well-known/openid-configuration"
         urlparse(url)
-        CrossauthLogger.logger().debug(j({"msg": f"Fetching OIDC config from {url}"}))
+        CrossauthLogger.logger().debug(j({"message": f"Fetching OIDC config from {url}"}))
         headers = self._auth_server_headers
         options : Dict[str, Any] = {"headers": headers}
         if self._auth_server_mode is not None:
@@ -425,7 +425,7 @@ class OAuthClient:
 
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Starting authorization code flow"}))
+        CrossauthLogger.logger().debug(j({"message": "Starting authorization code flow"}))
         if self._oidc_config is None:
             await self.load_config()
         if (self._oidc_config is None):
@@ -545,7 +545,7 @@ class OAuthClient:
         :return: an OAuth token endpoint response
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Starting client credentials flow"}))
+        CrossauthLogger.logger().debug(j({"message": "Starting client credentials flow"}))
         if not self._oidc_config: 
             await self.load_config()
         if self._oidc_config is None or self._oidc_config["token_endpoint"] == "":
@@ -607,7 +607,7 @@ class OAuthClient:
         :return: an OAuth token endpoint response
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Starting password flow"}))
+        CrossauthLogger.logger().debug(j({"message": "Starting password flow"}))
         if not self._oidc_config:
             await self.load_config()
         if (self._oidc_config is None):
@@ -670,7 +670,7 @@ class OAuthClient:
         :return: See :class:`OAuthMfaAuthenticatorsResponse`
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Getting valid MFA authenticators"}))
+        CrossauthLogger.logger().debug(j({"message": "Getting valid MFA authenticators"}))
         if self._oidc_config is None:
             await self.load_config()
         if (self._oidc_config is None):
@@ -722,7 +722,7 @@ class OAuthClient:
         from the :func:`mfaAuthenticators` request.
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Making MFA OTB request"}))
+        CrossauthLogger.logger().debug(j({"message": "Making MFA OTB request"}))
         if not self._oidc_config:
             await self.load_config()
         if (self._oidc_config is None):
@@ -772,7 +772,7 @@ class OAuthClient:
           - `error_description` friendly error message
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Completing MFA OTP request"}))
+        CrossauthLogger.logger().debug(j({"message": "Completing MFA OTP request"}))
         if self._oidc_config is None:
             await self.load_config()
         if (self._oidc_config is None):
@@ -845,7 +845,7 @@ class OAuthClient:
           - `error_description` friendly error message
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Making MFA OOB request"}))
+        CrossauthLogger.logger().debug(j({"message": "Making MFA OOB request"}))
         if self._oidc_config is None:
             await self.load_config()
         if (self._oidc_config is None):
@@ -894,7 +894,7 @@ class OAuthClient:
                  an error instead of the response fields.
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Completing MFA OOB request"}))
+        CrossauthLogger.logger().debug(j({"message": "Completing MFA OOB request"}))
         if self._oidc_config is None:
             await self.load_config()
         if (self._oidc_config is None):
@@ -959,7 +959,7 @@ class OAuthClient:
         :return: a :class:`OAuthTokenResponse?  response
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Starting refresh token flow"}))
+        CrossauthLogger.logger().debug(j({"message": "Starting refresh token flow"}))
         if self._oidc_config is None:
             await self.load_config()
         if (self._oidc_config is None):
@@ -1020,7 +1020,7 @@ class OAuthClient:
         :return: See :class:`OAuthDeviceAuthorizationResponse`
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Starting device code flow"}))
+        CrossauthLogger.logger().debug(j({"message": "Starting device code flow"}))
         if self._oidc_config is None:
             await self.load_config()
         if (self._oidc_config is None):
@@ -1074,7 +1074,7 @@ class OAuthClient:
         :return: See :class:`OAuthDeviceResponse`
         """
 
-        CrossauthLogger.logger().debug(j({"msg": "Starting device code flow"}))
+        CrossauthLogger.logger().debug(j({"message": "Starting device code flow"}))
         if self._oidc_config is None:
             await self.load_config()
         if (self._oidc_config is None):
@@ -1128,7 +1128,7 @@ class OAuthClient:
 
     async def user_info_endpoint(self, access_token : str) -> Mapping[str, Any]:
         if (not self._oidc_config or "token_endpoint" not in self._oidc_config):
-            CrossauthLogger.logger().warn(j({"msg": "Not fetching user info as the endpoint is not defined in the OIDC Config"}))
+            CrossauthLogger.logger().warn(j({"message": "Not fetching user info as the endpoint is not defined in the OIDC Config"}))
             return {
                 "error": "server_error",
                 "error_description": "Cannot get token endpoint"
@@ -1164,14 +1164,14 @@ class OAuthClient:
         except Exception as e:
             ce = CrossauthError.as_crossauth_error(e)
             CrossauthLogger.logger().debug(j({"err": ce}))
-            CrossauthLogger.logger().error(j({"msg": "Couldn't get user info", "cerr": ce}));
+            CrossauthLogger.logger().error(j({"message": "Couldn't get user info", "cerr": ce}));
             ret["error"] = ce.oauthErrorCode
             ret["error_description"] = "Couldn't get user info: " + ce.message
             return ret
         
     async def _post(self, url: str, params: Mapping[str, Any], headers: Dict[str, Any] = {}) -> Mapping[str, Any]:
         CrossauthLogger.logger().debug(j({
-            "msg": "Fetch POST",
+            "message": "Fetch POST",
             "url": url,
             "params": list(params.keys())
         }))
@@ -1198,7 +1198,7 @@ class OAuthClient:
                     
 
     async def _get(self, url: str, headers: Mapping[str, Any] = {}) -> Mapping[str, Any] | List[Any]:
-        CrossauthLogger.logger().debug(j({"msg": "Fetch GET", "url": url}))
+        CrossauthLogger.logger().debug(j({"message": "Fetch GET", "url": url}))
         options = {}
         if self._auth_server_credentials:
             options["credentials"] = self._auth_server_credentials

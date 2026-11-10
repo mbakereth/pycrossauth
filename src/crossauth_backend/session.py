@@ -292,7 +292,7 @@ class SessionManager:
             )
         except Exception as e:
             CrossauthLogger.logger().warn(j({
-                "msg": "Couldn't delete password reset tokens while logging in", 
+                "message": "Couldn't delete password reset tokens while logging in", 
                 "user": username
             }))
             CrossauthLogger.logger().debug(j({"err": e}))
@@ -454,7 +454,7 @@ class SessionManager:
 
         """
         hashed_session_key = self._session.hash_session_id(session_id)
-        CrossauthLogger.logger().debug(j({"msg": f"Updating session data value{name}", "hashedSessionCookie": Crypto.hash(session_id)}))
+        CrossauthLogger.logger().debug(j({"message": f"Updating session data value{name}", "hashedSessionCookie": Crypto.hash(session_id)}))
         await self._key_storage.update_data(hashed_session_key, name, value)
 
     async def update_many_session_data(self, session_id: str, data_array: List[KeyDataEntry]) -> None:
@@ -468,7 +468,7 @@ class SessionManager:
 
         """
         hashed_session_key = self._session.hash_session_id(session_id)
-        CrossauthLogger.logger().debug(j({"msg": f"Updating session data", "hashedSessionCookie": Crypto.hash(session_id)}))
+        CrossauthLogger.logger().debug(j({"message": f"Updating session data", "hashedSessionCookie": Crypto.hash(session_id)}))
         await self._key_storage.update_many_data(hashed_session_key, data_array)
 
     async def delete_session_data(self, session_id: str, name: str) -> None:
@@ -481,7 +481,7 @@ class SessionManager:
 
         """
         hashed_session_key = self._session.hash_session_id(session_id)
-        CrossauthLogger.logger().debug(j({"msg": f"Updating session data value{name}", "hashedSessionCookie": Crypto.hash(session_id)}))
+        CrossauthLogger.logger().debug(j({"message": f"Updating session data value{name}", "hashedSessionCookie": Crypto.hash(session_id)}))
         await self._key_storage.delete_data(hashed_session_key, name)
 
     async def delete_session(self, session_id: str) -> None:
@@ -993,7 +993,7 @@ class SessionManager:
             await self.email_token_storage.delete_all_for_user(user["id"], 
                             KeyPrefix.password_reset_token)
         except Exception as e:
-            CrossauthLogger.logger().warn(j({"msg": "Couldn't delete password reset tokens while logging in", 
+            CrossauthLogger.logger().warn(j({"message": "Couldn't delete password reset tokens while logging in", 
                                           "user": username}))
             CrossauthLogger.logger().debug(j({"err": str(e)}))
         
@@ -1041,7 +1041,7 @@ class SessionManager:
         if not self._user_storage:
             raise CrossauthError(ErrorCode.Configuration, "Cannot call applyEmailVerificationToken if no user storage provided")
         
-        CrossauthLogger.logger().debug(j({"msg": "applyEmailVerificationToken"}))
+        CrossauthLogger.logger().debug(j({"message": "applyEmailVerificationToken"}))
         
         if not self.__token_emailer:
             raise CrossauthError(ErrorCode.Configuration, "Email verification not enabled")
@@ -1147,7 +1147,7 @@ class SessionManager:
             )
         except Exception as e:
             CrossauthLogger.logger().warn(j({
-                "msg": "Couldn't delete password reset tokens while logging in",
+                "message": "Couldn't delete password reset tokens while logging in",
                 "user": username
             }))
             CrossauthLogger.logger().debug(j({"err": str(e)}))
@@ -1285,7 +1285,7 @@ class SessionManager:
             await self.__email_token_storage.delete_all_for_user(user["id"], 
                                                 KeyPrefix.password_reset_token)
         except Exception as e:
-            CrossauthLogger.logger().warn(j({"msg": "Couldn't delete password reset tokens while logging in", 
+            CrossauthLogger.logger().warn(j({"message": "Couldn't delete password reset tokens while logging in", 
                                            "user": user["username"]}))
             CrossauthLogger.logger().debug(j({"err": str(e)}))
         

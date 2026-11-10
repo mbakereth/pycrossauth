@@ -135,7 +135,7 @@ class LdapUserStorage(UserStorage):
             if password == "":
                 raise CrossauthError(ErrorCode.PasswordInvalid)
             
-            CrossauthLogger.logger().debug(j({"msg": f"LDAP search {user_dn}"}))
+            CrossauthLogger.logger().debug(j({"message": f"LDAP search {user_dn}"}))
             ldap_client = await self.ldap_bind(user_dn, password)
             return await self.search_user(ldap_client, user_dn)
               

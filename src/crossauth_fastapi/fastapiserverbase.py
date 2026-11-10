@@ -153,7 +153,7 @@ class FastApiServerBase(ABC):
         """
         if not error or not e:
             CrossauthLogger.logger().warn(j({
-                "msg": error,
+                "message": error,
                 "errorCode": ErrorCode.UnknownError.value,
                 "errorCodeName": ErrorCode.UnknownError.name,
                 "httpStatus": status
@@ -196,7 +196,7 @@ class FastApiServerBase(ABC):
                     error = "An unknwon error has occurred"
             
             CrossauthLogger.logger().warn(j({
-                "msg": error,
+                "message": error,
                 "errorCode": code,
                 "errorCodeName": code_name,
                 "httpStatus": status

@@ -81,7 +81,7 @@ def get_json_data(key: Key) -> Dict[str, Any]:
     try:
         return json.loads(key["data"])
     except json.JSONDecodeError:
-        CrossauthLogger.logger().warn(j({"msg": "data in key is not JSON"}))
+        CrossauthLogger.logger().warn(j({"message": "data in key is not JSON"}))
         return {}
 
 class UserInputFields(TypedDict):

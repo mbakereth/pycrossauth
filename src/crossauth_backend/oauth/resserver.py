@@ -34,7 +34,7 @@ class OAuthResourceServer:
             aud = payload.get('aud')
             if aud is None:
                 aud = ""
-            CrossauthLogger.logger().warn(j({"msg": "Access token's iss " + iss  + " or aud" + aud + " are not accepted"}))
+            CrossauthLogger.logger().warn(j({"message": "Access token's iss " + iss  + " or aud" + aud + " are not accepted"}))
             raise CrossauthError(ErrorCode.Unauthorized, "Invalid issuer in access token")
         except Exception as e:
             CrossauthLogger.logger().warn(j({"err": str(e)}))

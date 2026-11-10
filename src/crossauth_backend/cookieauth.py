@@ -205,7 +205,7 @@ class DoubleSubmitCsrfToken:
             raise CrossauthError(ErrorCode.InvalidCsrf, "Invalid CSRF cookie")
 
         if cookie_token != form_or_header_token:
-            CrossauthLogger.logger().warn(j({"msg": "Invalid CSRF token received - form/header value does not match", 
+            CrossauthLogger.logger().warn(j({"message": "Invalid CSRF token received - form/header value does not match", 
                                           "csrfCookieHash": Crypto.hash(cookie_value)}))
             raise CrossauthError(ErrorCode.InvalidCsrf)
 
@@ -411,7 +411,7 @@ class SessionCookie:
                     num_tries += 1
                     session_id = Crypto.random_value(SESSIONID_LENGTH)
                     if num_tries > max_tries:
-                        CrossauthLogger.logger().error({"msg": "Max attempts exceeded trying to create session ID"})
+                        CrossauthLogger.logger().error({"message": "Max attempts exceeded trying to create session ID"})
                         raise CrossauthError(ErrorCode.KeyExists)
                 else:
                     CrossauthLogger.logger().debug(j({"err": ce}))
@@ -558,13 +558,13 @@ class SessionCookie:
         if 'expires' in key:
             expires = key['expires']
             if type(expires) is not NullType and now > expires: # type: ignore
-                    CrossauthLogger.logger().warn(j({"msg": "Session id in cookie expired in key storage", "hashedSessionCookie": Crypto.hash(session_id)}))
+                    CrossauthLogger.logger().warn(j({"message": "Session id in cookie expired in key storage", "hashedSessionCookie": Crypto.hash(session_id)}))
                     raise CrossauthError(ErrorCode.Expired)
         if key.get('userid') and self.idle_timeout > 0 and 'lastactive' in key and now > key['lastactive'] + timedelta(0, self.idle_timeout):
-            CrossauthLogger.logger().warn(j({"msg": "Session cookie with expired idle time received", "hashedSessionCookie": Crypto.hash(session_id)}))
+            CrossauthLogger.logger().warn(j({"message": "Session cookie with expired idle time received", "hashedSessionCookie": Crypto.hash(session_id)}))
             raise CrossauthError(ErrorCode.Expired)
         if self.filter_function and not self.filter_function(key):
-            CrossauthLogger.logger().warn(j({"msg": "Filter function on session id in cookie failed", "hashedSessionCookie": Crypto.hash(session_id)}))
+            CrossauthLogger.logger().warn(j({"message": "Filter function on session id in cookie failed", "hashedSessionCookie": Crypto.hash(session_id)}))
             raise CrossauthError(ErrorCode.InvalidKey)
         return key
 

@@ -9,11 +9,12 @@ from crossauth_fastapi.fastapiserverbase import FastApiServerBase
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.common.interfaces import User, UserState
 from crossauth_backend.common.error import CrossauthError, ErrorCode
-from crossauth_backend.common.logger import CrossauthLogger, j
+from crossauth_backend.common.logger import CrossauthLogger, j, LoggedActionCode, logged_action_code, log_as_warn_or_error
 from crossauth_backend.auth import AuthenticationParameters
 from crossauth_backend.common.interfaces import User, UserState, UserSecrets
 from crossauth_backend.storage import UserStorage
 from crossauth_backend.emailtoken import TokenEmailer
+from .fastapisession import log_client
 
 async def default_user_search_fn(search_term: str, user_storage: UserStorage) -> List[User]:
 
@@ -144,7 +145,7 @@ class FastApiAdminEndpoints():
                 "message": "Page visit",
                 "method": "POST",
                 "url": self.__admin_prefix + "createuser",
-                "ip": request.client.host if request.client else ""
+                **log_client(request),
             }))
             
             next_redirect = form.getAsStr1("next", self.__session_server.login_redirect) 
@@ -172,15 +173,15 @@ class FastApiAdminEndpoints():
                 return await self.__create_user(request, resp, form, createuser_lambda)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Signup failure",
-                    "user": body["username"],
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value
+                log_as_warn_or_error(ce, j({
+                    "message": "Create user as admin unsuccessful",
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminCreateUser),
+                    "target_user": body["username"],
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
-                CrossauthLogger.logger().debug(j({"err": str(e)}))
                 def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
                     extra_fields : Dict[str,Any] = {}
                     for field in body:
@@ -225,7 +226,7 @@ class FastApiAdminEndpoints():
                 "message": "Page visit",
                 "method": "GET",
                 "url": self.__admin_prefix + "selectuser",
-                "ip": request.client.host if request.client is not None else ""
+                **log_client(request),
             }))
 
             if (self.is_session_user(request) and not request.state.csrf_token):
@@ -288,8 +289,8 @@ class FastApiAdminEndpoints():
                 "message": "Page visit",
                 "method": "GET",
                 "url": self.__admin_prefix + "updateuser",
-                "ip": request.client.host if request.client is not None else "",
-                "user": request.state.user["username"]
+                **log_client(request),
+                "target_userid": id,
             }))
 
             if (self.is_session_user(request) and not request.state.csrf_token):
@@ -321,12 +322,13 @@ class FastApiAdminEndpoints():
             
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Signup failure",
-                    "user": request.state.user["username"],
-                    "userid": id,
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value,
+                log_as_warn_or_error(ce, j({
+                    "message": "Create user as admin unsuccessful",
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminUpdateUser),
+                    "target_user": request.state.user["username"],
+                    "target_userid": id,
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
@@ -362,7 +364,8 @@ class FastApiAdminEndpoints():
                 "message": "Page visit",
                 "method": "POST",
                 "url": self.__admin_prefix + "updateuser",
-                "ip": request.client.host if request.client else ""
+                **log_client(request),
+                "target_userid": id,
             }))
             
             next_redirect = form.getAsStr1("next", self.__session_server.login_redirect) 
@@ -402,11 +405,12 @@ class FastApiAdminEndpoints():
                 return await self.__update_user(user, request, resp, form, updateuser_lambda)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Update user failure",
-                    "user": request.state.user["username"],
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value
+                log_as_warn_or_error(ce, j({
+                    "message": "Update user unsuccessful",
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminUpdateUser),
+                    "target_user": request.state.user["username"],
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
@@ -449,8 +453,7 @@ class FastApiAdminEndpoints():
                 "message": "Page visit",
                 "method": "GET",
                 "url": self.__admin_prefix + "changepassword",
-                "ip": request.client.host if request.client is not None else "",
-                "user": request.state.user["username"]
+                **log_client(request),
             }))
 
             if (self.is_session_user(request) and not request.state.csrf_token):
@@ -480,12 +483,12 @@ class FastApiAdminEndpoints():
             
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Signup failure",
-                    "user": request.state.user["username"],
-                    "userid": id,
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value,
+                log_as_warn_or_error(ce, j({
+                    "message": "Create user ad asmin unsuccessful",
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminCreateUser),
+                    "target_userid": id,
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
@@ -509,7 +512,7 @@ class FastApiAdminEndpoints():
                     lambda error, ce: handle_error_fn({}, ce))
 
         @self.app.post(self.__admin_prefix + 'changepassword/{id}')
-        async def post_update_user( # type: ignore
+        async def post_change_password( # type: ignore
             request: Request,
             resp: Response,
             id: str|int = Path(alias="id")
@@ -520,7 +523,8 @@ class FastApiAdminEndpoints():
                 "message": "Page visit",
                 "method": "POST",
                 "url": self.__admin_prefix + "changepassword",
-                "ip": request.client.host if request.client else ""
+                **log_client(request),
+                "target_userid": id,
             }))
             
             next_redirect = form.getAsStr1("next", self.__session_server.login_redirect) 
@@ -554,15 +558,15 @@ class FastApiAdminEndpoints():
                 return await self.__change_password(user, request, resp, form, changepassword_lambda)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Update user failure",
-                    "user": request.state.user["username"],
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value
+                log_as_warn_or_error(ce, j({
+                    "message": "Change password as admin unsuccessful",
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminUpdateUser),
+                    "target_user": request.state.user["username"],
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
-                CrossauthLogger.logger().debug(j({"err": str(e)}))
                 def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
                     return send_with_cookies(self.__session_server.templates.TemplateResponse(
                         request,
@@ -598,8 +602,8 @@ class FastApiAdminEndpoints():
                 "message": "Page visit",
                 "method": "GET",
                 "url": self.__admin_prefix + "deleteuser",
-                "ip": request.client.host if request.client is not None else "",
-                "user": request.state.user["username"]
+                **log_client(request),
+                "target_userid": id,
             }))
 
             if (self.is_session_user(request) and not request.state.csrf_token):
@@ -629,12 +633,13 @@ class FastApiAdminEndpoints():
             
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Signup failure",
-                    "user": request.state.user["username"],
-                    "userid": id,
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value,
+                log_as_warn_or_error(ce, j({
+                    "message": "Delete user as admin unsuccessful",
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminDeleteUser),
+                    "target_user": request.state.user["username"],
+                    "target_userid": id,
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
@@ -669,7 +674,8 @@ class FastApiAdminEndpoints():
                 "message": "Page visit",
                 "method": "POST",
                 "url": self.__admin_prefix + "deleteuser",
-                "ip": request.client.host if request.client else ""
+                **log_client(request),
+                "target_userid": id,
             }))
             
             next_redirect = form.getAsStr1("next", self.__session_server.login_redirect) 
@@ -703,11 +709,12 @@ class FastApiAdminEndpoints():
                 return await self.__delete_user(user, request, resp, form, deleteuser_lambda)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Update user failure",
-                    "user": request.state.user["username"],
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value
+                log_as_warn_or_error(ce, j({
+                    "message": "Delete user as admin unsuccessful",
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminDeleteUser),
+                    "target_user": request.state.user["username"],
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
@@ -748,7 +755,7 @@ class FastApiAdminEndpoints():
                 "message": "API visit",
                 "method": "POST",
                 "url": self.__admin_prefix + "api/createuser",
-                "ip": request.client.host if request.client else ""
+                **log_client(request),
             }))
                         
             # Create request body equivalent
@@ -776,11 +783,12 @@ class FastApiAdminEndpoints():
                 return await self.__create_user(request, resp, form, createuser_lambda)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Create user failure",
-                    "user": body["username"],
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value
+                log_as_warn_or_error(ce, j({
+                    "message": "Create user as admin unsuccessful",
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminCreateUser),
+                    "target_user": body["username"],
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
@@ -823,8 +831,8 @@ class FastApiAdminEndpoints():
                 "message": "API visit",
                 "method": "POST",
                 "url": self.__admin_prefix + "api/updateuser",
-                "ip": request.client.host if request.client else "",
-                "userid": id,
+                **log_client(request),
+                "target_userid": id,
             }))
                         
             # Create request body equivalent
@@ -851,15 +859,15 @@ class FastApiAdminEndpoints():
                 return await self.__update_user(user, request, resp, form, updateuser_lambda)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
-                    "message": "Update user failure",
+                log_as_warn_or_error(ce, j({
+                    "message": "Update user as admin unsuccessful",
                     "user": body["username"],
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value
+                    "cerr": ce,
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminUpdateUser),
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
-                CrossauthLogger.logger().debug(j({"err": str(e)}))
                 def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
                     extra_fields : Dict[str,Any] = {}
                     for field in body:
@@ -886,7 +894,7 @@ class FastApiAdminEndpoints():
     def add_api_change_password_endpoints(self):
 
         @self.app.post(self.__admin_prefix + 'api/changepassword/{id}')
-        async def post_api_createuser( # type: ignore
+        async def post_api_changepassword( # type: ignore
             request: Request,
             resp: Response,
             id: str|int = Path()
@@ -897,8 +905,8 @@ class FastApiAdminEndpoints():
                 "message": "API visit",
                 "method": "POST",
                 "url": self.__admin_prefix + "api/changepassword",
-                "ip": request.client.host if request.client else "",
-                "userid": id,
+                **log_client(request),
+                "target_userid": id,
             }))
                         
             # Create request body equivalent
@@ -923,15 +931,15 @@ class FastApiAdminEndpoints():
                 return await self.__change_password(user, request, resp, form, changepassword_lambda)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
+                log_as_warn_or_error(ce, j({
                     "message": "Update user failure",
                     "user": body["username"],
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value
+                    "cerr": ce,
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminPasswordChange)
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
-                CrossauthLogger.logger().debug(j({"err": str(e)}))
                 def handle_error_fn(data: Dict[str,Any], error: CrossauthError):
                     extra_fields : Dict[str,Any] = {}
                     for field in body:
@@ -967,8 +975,8 @@ class FastApiAdminEndpoints():
                 "message": "API visit",
                 "method": "POST",
                 "url": self.__admin_prefix + "api/deleteuser",
-                "ip": request.client.host if request.client else "",
-                "userid": id,
+                **log_client(request),
+                "target_userid": id,
             }))
                         
             # Create request body equivalent
@@ -993,11 +1001,12 @@ class FastApiAdminEndpoints():
                 return await self.__delete_user(user, request, resp, form, deleteuser_lambda)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
+                log_as_warn_or_error(ce, j({
                     "message": "Delete user failure",
-                    "user": body["username"],
-                    "errorCodeName": ce.code_name,
-                    "errorCode": ce.code.value
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.AdminDeleteUser),
+                    "target_user": body["username"],
+                    "cerr": ce,
                 }))
                 CrossauthLogger.logger().debug(j({"err": e}))
 
@@ -1118,15 +1127,15 @@ class FastApiAdminEndpoints():
         if (not has_secrets):
             if ("factor2" in body and body["factor2"] != "none" and body["factor2"] != "" and body["factor2"] is not None):
                 user["state"] = UserState.password_and_factor2_reset_needed
-                CrossauthLogger.logger().warn(j({"msg": "Setting state for user to " + UserState.password_and_factor2_reset_needed, 
+                CrossauthLogger.logger().warn(j({"message": "Setting state for user to " + UserState.password_and_factor2_reset_needed, 
                     username: user["username"]}))
             else:
                 user["state"] = UserState.factor2_reset_needed
-                CrossauthLogger.logger().warn(j({"msg": "Setting state for user to " + UserState.factor2_reset_needed, 
+                CrossauthLogger.logger().warn(j({"message": "Setting state for user to " + UserState.factor2_reset_needed, 
                     username: user["username"]}))
         elif ("factor2" in body and body["factor2"] != "none" and body["factor2"] != "" and body["factor2"] is not None):
             user["state"] = UserState.factor2_reset_needed
-            CrossauthLogger.logger().warn(j({"msg": "Setting state for user to " + UserState.factor2_reset_needed, 
+            CrossauthLogger.logger().warn(j({"message": "Setting state for user to " + UserState.factor2_reset_needed, 
                 username: user["username"]}))
 
         # call the implementor-provided hook to validate the user fields
@@ -1153,6 +1162,11 @@ class FastApiAdminEndpoints():
                 raise CrossauthError(ErrorCode.FormEntry, "No password given but no email address found either")
             await self.__session_server.session_manager.request_password_reset(email)
 
+        CrossauthLogger.logger().info(j({
+            "message": "Create user as admin successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.AdminCreateUser),
+        }))
         return success_fn({}, resp, None)
 
     async def __update_user(self,
@@ -1198,7 +1212,7 @@ class FastApiAdminEndpoints():
             raise CrossauthError(ErrorCode.BadRequest, "Cannot change both factor2 and state at the same time")
         if (factor2_reset_needed):
             user["state"] = UserState.factor2_reset_needed
-            CrossauthLogger.logger().warn(j({"msg": f"Setting state for user {user['id']} to {UserState.factor2_reset_needed}"}))
+            CrossauthLogger.logger().warn(j({"message": f"Setting state for user {user['id']} to {UserState.factor2_reset_needed}"}))
 
         # validate the new user using the implementor-provided function
         errors = self.__session_server.validate_user_fn(user)
@@ -1211,6 +1225,11 @@ class FastApiAdminEndpoints():
         ret = await self.__session_server.session_manager.update_user(user, user, True)
 
 
+        CrossauthLogger.logger().info(j({
+            "message": "Update user as admin successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.AdminUpdateUser),
+        }))
         return success_fn({}, resp, user, ret.email_verification_token_sent, ret.password_reset_token_sent)
 
     async def __change_password(self,
@@ -1262,6 +1281,11 @@ class FastApiAdminEndpoints():
         await self.__session_server.user_storage.update_user({"id": user["id"], "state":user["state"]})
         await self.__session_server.session_manager.change_secrets(user["username"], 1, new_secrets, repeat_secrets)
 
+        CrossauthLogger.logger().info(j({
+            "message": "Change password as admin successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.AdminPasswordChange),
+        }))
         return success_fn({}, resp, user)
 
     async def __delete_user(self,
@@ -1280,4 +1304,9 @@ class FastApiAdminEndpoints():
 
         await self.__session_server.session_manager.delete_user_by_username(user["username"])
 
+        CrossauthLogger.logger().info(j({
+            "message": "Delete user as admin successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.AdminDeleteUser),
+        }))
         return success_fn({}, resp, user)

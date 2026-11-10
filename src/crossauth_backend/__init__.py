@@ -3,7 +3,7 @@
 ##### 
 # Base
 from .common.error import ErrorCode, CrossauthError
-from .common.logger import CrossauthLogger, j
+from .common.logger import CrossauthLogger, j, LoggedActionCode, logged_action_code, log_as_warn_or_error
 from .common.jwt import JWT
 
 #####
@@ -71,6 +71,7 @@ __all__ = (
     "ErrorCode", "CrossauthError",
     "CrossauthLogger", "j",
     "set_parameter", "ParamType", "MapGetter",
+    "LoggedActionCode", "logged_action_code", "log_as_warn_or_error",
 
     #####
     # Interfaces

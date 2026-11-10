@@ -115,7 +115,7 @@ class LocalPasswordAuthenticator(PasswordAuthenticator):
             raise CrossauthError(ErrorCode.PasswordInvalid)
         if "password" in params and not await Crypto.passwords_equal(params['password'], secrets['password'], self.__secret):
             username = user["username"] if user is not None else "Unknown"
-            CrossauthLogger.logger().debug(j({"msg": "Invalid password hash", "user": username}))
+            CrossauthLogger.logger().debug(j({"message": "Invalid password hash", "user": username}))
             raise CrossauthError(ErrorCode.PasswordInvalid)
         if user is not None and user['state'] == UserState.awaiting_two_factor_setup:
             raise CrossauthError(ErrorCode.TwoFactorIncomplete)

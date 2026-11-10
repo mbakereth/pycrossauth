@@ -208,7 +208,7 @@ class EmailAuthenticator(Authenticator):
         
         message_id = await self._send_token(email, otp)
         CrossauthLogger.logger().info(j({
-            "msg": "Sent factor otp email",
+            "message": "Sent factor otp email",
             "emailMessageId": message_id,
             "email": email
         }))
@@ -231,7 +231,7 @@ class EmailAuthenticator(Authenticator):
         
         message_id = await self._send_token(data["email"], otp)
         CrossauthLogger.logger().info(j({
-            "msg": "Sent factor otp email",
+            "message": "Sent factor otp email",
             "emailMessageId": message_id,
             "email": data["email"]
         }))
@@ -287,7 +287,7 @@ class EmailAuthenticator(Authenticator):
         email = user["email"] if "email" in user else user["username"]
         message_id = await self._send_token(email, otp)
         CrossauthLogger.logger().info(j({
-            "msg": "Sent factor otp email",
+            "message": "Sent factor otp email",
             "emailMessageId": message_id,
             "email": email
         }))

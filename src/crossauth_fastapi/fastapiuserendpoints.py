@@ -9,8 +9,9 @@ from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.crypto import Crypto
 from crossauth_backend.common.interfaces import User, UserState
 from crossauth_backend.common.error import CrossauthError, ErrorCode
-from crossauth_backend.common.logger import CrossauthLogger, j
+from crossauth_backend.common.logger import CrossauthLogger, j, LoggedActionCode, logged_action_code, log_as_warn_or_error
 from crossauth_backend.auth import AuthenticationParameters
+from .fastapisession import log_client
 
 class FastApiUserEndpoints():
     """
@@ -77,7 +78,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'GET',
                 "url": self.__prefix + 'updateuser',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             return send_with_cookies(self.__session_server.templates.TemplateResponse(
                 request,
@@ -92,7 +93,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'POST',
                 "url": self.__prefix + 'updateuser',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             
             # Get body data
@@ -135,10 +136,11 @@ class FastApiUserEndpoints():
                 try:
 
                     ce = CrossauthError.as_crossauth_error(e)
-                    CrossauthLogger.logger().error(j({
-                        "message": "Update user failure",
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                    log_as_warn_or_error(ce, j({
+                        "message": "Update user unsuccessful",
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.UpdateUser),
+                        "cerr": ce,
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -159,7 +161,7 @@ class FastApiUserEndpoints():
                         lambda error, ce: handle_error_fn(response, ce))
                 except Exception as e2:
                     # self is reached if there is an error processing the error
-                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    CrossauthLogger.logger().debug(j({"err": str(e2)}))
                     response = Response(status_code=500)
                     return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
@@ -181,7 +183,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'GET',
                 "url": self.__prefix + 'deleteuser',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             return send_with_cookies(self.__session_server.templates.TemplateResponse(
                 request,
@@ -196,7 +198,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'POST',
                 "url": self.__prefix + 'deleteuser',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             
             # Get body data
@@ -244,6 +246,12 @@ class FastApiUserEndpoints():
                         "errorCode": ce.code.value
                     }))
                     
+                    log_as_warn_or_error(ce, j({
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.DeleteUser)
+                    }))
+
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
                         return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
@@ -392,10 +400,12 @@ class FastApiUserEndpoints():
                         # self shouldn't happen - user's cannot call self URL without having a session,
                         # user or anonymous.  However, just in case...
                         ce = CrossauthError.as_crossauth_error(e)
-                        CrossauthLogger.logger().error(j({
-                            "message": "Signup second factor failure",
-                            "errorCodeName": ce.code.name,
-                            "errorCode": ce.code.value
+                        log_as_warn_or_error(ce, j({
+                            "message": "Signup second factor unsuccessful",
+                            "cerr": ce,
+                            **log_client(request),
+                            **logged_action_code(LoggedActionCode.CreateUser),
+
                         }))
                         return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
@@ -437,7 +447,7 @@ class FastApiUserEndpoints():
                         lambda error, ce: handle_error_fn(response, ce))
                 except Exception as e2:
                     # self is reached if there is an error processing the error
-                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    CrossauthLogger.logger().debug(j({"err": str(e2)}))
                     response = Response(status_code=500)
                     return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
@@ -478,7 +488,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'POST',
                 "url": self.__prefix + 'requestpasswordreset',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             message = "If a user with exists with the email you entered, a message with " \
                 + " a link to reset your password has been sent."; 
@@ -523,6 +533,12 @@ class FastApiUserEndpoints():
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        log_as_warn_or_error(error, j({
+                            "message": "Request password reset unsuccessful",
+                            "cerr": error,
+                            **log_client(request),
+                            **logged_action_code(LoggedActionCode.StartPasswordReset)
+                        }))
                         return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
                             self.__request_password_reset_page, 
@@ -541,7 +557,7 @@ class FastApiUserEndpoints():
                         lambda error, ce: handle_error_fn(response, ce))
                 except Exception as e2:
                     # self is reached if there is an error processing the error
-                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    CrossauthLogger.logger().debug(j({"err": str(e2)}))
                     response = Response(status_code=500)
                     return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
@@ -564,7 +580,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'GET',
                 "url": self.__prefix + 'resetpassword',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             return send_with_cookies(self.__session_server.templates.TemplateResponse(
                 request,
@@ -658,7 +674,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'GET',
                 "url": self.__prefix + 'verifyemail',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
 
             try:
@@ -682,10 +698,11 @@ class FastApiUserEndpoints():
 
                     ce = CrossauthError.as_crossauth_error(e)
                     CrossauthLogger.logger().error(j({
-                        "message": "Verify email failed",
+                        "message": "Verify email unsuccessful",
                         "hashedToken": Crypto.hash(token),
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.EmailVerificationTokenComplete),
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -705,7 +722,7 @@ class FastApiUserEndpoints():
                         lambda error, ce: handle_error_fn(response, ce))
                 except Exception as e2:
                     # self is reached if there is an error processing the error
-                    CrossauthLogger.logger().error(j({"err": str(e2)}))
+                    CrossauthLogger.logger().debug(j({"err": str(e2)}))
                     response = Response(status_code=500)
                     return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
@@ -729,7 +746,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'GET',
                 "url": self.__prefix + 'changepassword',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
 
             if (not self.__session_server.is_session_user(request) or not request.state.user):
@@ -762,7 +779,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'POST',
                 "url": self.__prefix + 'changepassword',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             message = "Your password has been changed."; 
             
@@ -799,10 +816,11 @@ class FastApiUserEndpoints():
                 try:
 
                     ce = CrossauthError.as_crossauth_error(e)
-                    CrossauthLogger.logger().error(j({
+                    log_as_warn_or_error(ce, j({
                         "message": "Request password reset failure",
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.PasswordChange),
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -847,7 +865,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'GET',
                 "url": self.__prefix + 'changefactor2',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             if (not self.__session_server.is_session_user(request) or not request.state.user):
                 # user is not logged on - check if there is an anonymous 
@@ -879,7 +897,7 @@ class FastApiUserEndpoints():
                 "message": "Page visit",
                 "method": 'POST',
                 "url": self.__prefix + 'changefactor2',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             
             # Get body data
@@ -931,6 +949,12 @@ class FastApiUserEndpoints():
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
+                        log_as_warn_or_error(error, j({
+                            "message": "Change factor2 unsuccessful",
+                            "cerr": error,
+                            **log_client(request),
+                            **logged_action_code(LoggedActionCode.ChangeFactor2),
+                        }))
                         return send_with_cookies(self.__session_server.templates.TemplateResponse(
                             request,
                             self.__change_factor2_page, 
@@ -971,7 +995,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'POST',
                 "url": self.__prefix + 'api/updateuser',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             
             # Get body data
@@ -998,7 +1022,7 @@ class FastApiUserEndpoints():
 
                     ce = CrossauthError.as_crossauth_error(e)
                     CrossauthLogger.logger().error(j({
-                        "message": "Update user failure",
+                        "message": "Update user unsuccessful",
                         "errorCodeName": ce.code.name,
                         "errorCode": ce.code.value
                     }))
@@ -1037,7 +1061,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'POST',
                 "url": self.__prefix + 'api/deleteuser',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             
             # Get body data
@@ -1062,10 +1086,11 @@ class FastApiUserEndpoints():
                 try:
 
                     ce = CrossauthError.as_crossauth_error(e)
-                    CrossauthLogger.logger().error(j({
-                        "message": "Delete user failure",
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                    log_as_warn_or_error(ce, j({
+                        "message": "Delete user unsuccessful",
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.DeleteUser),
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -1108,7 +1133,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'GET',
                 "url": self.__prefix + 'api/onfigurefactor2',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             try:
                 def handle_success(data: Dict[str, Any], response: Response, _user: User|None) -> Response:
@@ -1121,7 +1146,7 @@ class FastApiUserEndpoints():
                 return await self.__reconfigure_factor2(request, response, handle_success)
             except Exception as e:
                 ce = CrossauthError.as_crossauth_error(e)
-                CrossauthLogger.logger().error(j({
+                log_as_warn_or_error(ce, j({
                     "message": "Configure factor2 failure",
                     "user": request.state.user["username"] if "username" in request.state.user else None,
                     "errorCode": ce.code.value,
@@ -1150,7 +1175,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'POST',
                 "url": self.__prefix + 'api/configurefactor2',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             
             # Get body data
@@ -1182,6 +1207,13 @@ class FastApiUserEndpoints():
                 # error
 
                 CrossauthLogger.logger().debug(j({"err": str(e)}))
+                ce = CrossauthError.as_crossauth_error(e)
+                log_as_warn_or_error(ce, j({
+                    "message": "Configure factor2 unsuccessful",
+                    "cerr": ce,
+                    **log_client(request),
+                    **logged_action_code(LoggedActionCode.ConfigureFactor2),
+                }))
                 try:
                     session_id = request.state.session_id
                     if not session_id:
@@ -1250,7 +1282,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'POST',
                 "url": self.__prefix + 'api/requestpasswordreset',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             message = "If a user with exists with the email you entered, a message with " \
                 + " a link to reset your password has been sent."; 
@@ -1280,10 +1312,11 @@ class FastApiUserEndpoints():
                 try:
 
                     ce = CrossauthError.as_crossauth_error(e)
-                    CrossauthLogger.logger().error(j({
+                    log_as_warn_or_error(ce, j({
                         "message": "Request password reset failure",
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.StartPasswordReset),
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -1320,7 +1353,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'POST',
                 "url": self.__prefix + 'api/resetpassword',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
 
             # Get body data
@@ -1346,10 +1379,11 @@ class FastApiUserEndpoints():
                 try:
 
                     ce = CrossauthError.as_crossauth_error(e)
-                    CrossauthLogger.logger().error(j({
-                        "message": "Request password reset failure",
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                    log_as_warn_or_error(ce, j({
+                        "message": "Request password reset unsuccessful",
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.StartPasswordReset)
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -1386,7 +1420,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'POST',
                 "url": self.__prefix + 'api/changepassword',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             
             # Get body data
@@ -1415,10 +1449,11 @@ class FastApiUserEndpoints():
                 try:
 
                     ce = CrossauthError.as_crossauth_error(e)
-                    CrossauthLogger.logger().error(j({
-                        "message": "Change password failure",
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                    log_as_warn_or_error(ce, j({
+                        "message": "Change password unsuccessful",
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.PasswordChange),
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -1455,7 +1490,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'POST',
                 "url": self.__prefix + 'api/changefactor2',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
             # Get body data
             form = JsonOrFormData(request)
@@ -1484,10 +1519,11 @@ class FastApiUserEndpoints():
                 try:
 
                     ce = CrossauthError.as_crossauth_error(e)
-                    CrossauthLogger.logger().error(j({
-                        "message": "Change factor2 failure",
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                    log_as_warn_or_error(ce, j({
+                        "message": "Change factor2 unsuccessful",
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.ChangeFactor2),
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -1528,7 +1564,7 @@ class FastApiUserEndpoints():
                 "message": "API visit",
                 "method": 'GET',
                 "url": self.__prefix + 'verifyemail',
-                "ip": request.client.host if request.client else None
+                **log_client(request),
             }))
 
             try:
@@ -1545,11 +1581,12 @@ class FastApiUserEndpoints():
                 try:
 
                     ce = CrossauthError.as_crossauth_error(e)
-                    CrossauthLogger.logger().error(j({
-                        "message": "Verify email failed",
+                    log_as_warn_or_error(ce, j({
+                        "message": "Verify email unsuccessful",
                         "hashedToken": Crypto.hash(token),
-                        "errorCodeName": ce.code.name,
-                        "errorCode": ce.code.value
+                        "cerr": ce,
+                        **log_client(request),
+                        **logged_action_code(LoggedActionCode.EmailVerificationTokenComplete),
                     }))
                     
                     def handle_error_fn(resp: Response, error: CrossauthError) -> Response:
@@ -1623,7 +1660,12 @@ class FastApiUserEndpoints():
                 response,
                 lambda req, usr: success_fn(req, usr)
             )
-        
+
+        CrossauthLogger.logger().info(j({
+            "message": "Configure factor2 successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.ConfigureFactor2),
+        }))
         return success_fn(response, user)
 
     async def __reconfigure_factor2(
@@ -1665,6 +1707,11 @@ class FastApiUserEndpoints():
             **user_data,
             "csrf_token": request.state.csrf_token,
         }
+        CrossauthLogger.logger().info(j({
+            "message": "Reconfigure factor2 successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.ConfigureFactor2),
+        }))
         return success_fn(data, response, None)
 
     async def __request_password_reset(
@@ -1699,6 +1746,11 @@ class FastApiUserEndpoints():
                 CrossauthLogger.logger().error(j({"message": "Couldn't send password reset email", "email": email}))
                 raise ce
 
+        CrossauthLogger.logger().info(j({
+            "message": "Request factor2 reset successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.ResetFactor2),
+        }))
         return success_fn(response)
 
     async def __reset_password(
@@ -1757,6 +1809,12 @@ class FastApiUserEndpoints():
         if (user1["state"] != UserState.factor2_reset_needed):
             # log the user in
             return await self.__session_server.login_with_user(user1, True, request, response, success_fn)
+
+        CrossauthLogger.logger().info(j({
+            "message": "Reset password successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.FinishPasswordReset),
+        }))
 
         return success_fn(response, None)
 
@@ -1874,6 +1932,11 @@ class FastApiUserEndpoints():
             # this was a forced change - user is not actually logged on
             return await self.__session_server.login_with_user(user, False, request, response, success_fn)
                 
+        CrossauthLogger.logger().info(j({
+            "message": "Change password successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.PasswordChange),
+        }))
         return success_fn(response, None)
 
     async def __change_factor2(
@@ -1945,6 +2008,12 @@ class FastApiUserEndpoints():
             "next": body["next"] if next in body else self.__session_server.login_redirect,
             "csrfToken": request.state.csrf_token,
         }
+
+        CrossauthLogger.logger().info(j({
+            "message": "Change factor2 successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.ChangeFactor2),
+        }))
         return success_fn(response, ret_data, None)
 
     async def __verify_email(self, token: str, request: Request, 
@@ -1994,6 +2063,11 @@ class FastApiUserEndpoints():
         # update the user
         resp = await self.__session_server.session_manager.update_user(request.state.user, user)
 
+        CrossauthLogger.logger().info(j({
+            "message": "Verify email successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.EmailVerificationTokenComplete),
+        }))
         return success_fn(response, request.state.user, resp.email_verification_token_sent)
         
     async def __delete_user(self, request: Request, 
@@ -2010,5 +2084,10 @@ class FastApiUserEndpoints():
         # delete the user
         await self.__session_server.session_manager.delete_user_by_username(request.state.user["username"])
 
+        CrossauthLogger.logger().info(j({
+            "message": "Delete user successful",
+            **log_client(request),
+            **logged_action_code(LoggedActionCode.DeleteUser),
+        }))
         return success_fn(response)
         

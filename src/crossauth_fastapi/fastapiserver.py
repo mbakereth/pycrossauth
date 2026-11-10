@@ -366,7 +366,7 @@ class FastApiServer(FastApiServerBase):
         except Exception as e:
             CrossauthLogger.logger().debug(j({"err": e}))
             CrossauthLogger.logger().warn(j({
-                "msg": "Attempt to access url without csrf token",
+                "message": "Attempt to access url without csrf token",
                 "url": str(request.url)
             }))
             try:

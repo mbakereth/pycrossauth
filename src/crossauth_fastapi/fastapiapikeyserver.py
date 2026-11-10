@@ -1,14 +1,17 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
-from typing import List, Dict, Any, Optional, cast, Mapping, TypedDict
+from typing import List, Dict, Any, Optional, cast, Mapping, TypedDict, Callable
 from fastapi import FastAPI, Request, Response
-from crossauth_backend.common.logger import CrossauthLogger, j
+from crossauth_backend.common.logger import CrossauthLogger, j, log_as_warn_or_error
+from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.interfaces import User
 from crossauth_backend.storage import UserStorage, KeyStorage
 from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.apikey import ApiKeyManager, ApiKeyManagerOptions
 from fastapi.responses import JSONResponse
 from crossauth_backend.common.interfaces import ApiKey
+from .fastapisession import log_client
 from nulltype import NullType
+
 
 class ProtectedEndpoint(TypedDict, total=False):
     scope: List[str]
@@ -26,6 +29,12 @@ class FastApiApiKeyServerOptions(ApiKeyManagerOptions, total=False):
     :class:`FastApiOAuthResourceServer`
     and the access token is invalid, a 401 reply will be sent before
     your endpoint is hit.  This will be the body,  Default {}.
+    """
+
+    error_body_fn : Callable[[CrossauthError],str]
+    """
+    Use this instead of eror_body to also receive the error a
+    CrossauthError object
     """
 
     protected_endpoints : Mapping[str, ProtectedEndpoint]
@@ -68,7 +77,10 @@ class FastApiApiKeyServer(ApiKeyManager):
         self._protected_endpoints: Mapping[str, ProtectedEndpoint] = {}
         self._protected_endpoint_prefixes: List[str] = []
         self.__error_body : Dict[str, Any] = {}
+        self.__error_body_fn : Callable[[CrossauthError], str]|None = None
         set_parameter("error_body", ParamType.Json, self, options, "OAUTH_RESSERVER_ACCESS_DENIED_BODY")
+        if ("error_body_fn" in options):
+            self.__error_body_fn = options["error_body_fn"]
 
         self._access_token_is_jwt = options["access_token_is_jwt"] if "access_token_is_jwt" in options else True
         if 'protected_endpoints' in options:
@@ -87,6 +99,7 @@ class FastApiApiKeyServer(ApiKeyManager):
         if 'protected_endpoints' in options:
             @app.middleware("http")
             async def pre_handler(request: Request, call_next): # type: ignore
+                print("XXX HERE XXX")
                 url_without_query = request.url.path
                 matches = False
                 matching_endpoint = ""
@@ -109,11 +122,28 @@ class FastApiApiKeyServer(ApiKeyManager):
                         request.state.auth_error = "access_denied"
                         request.state.auth_error_description = "No access token"
                         authenticate_header = self.authenticate_header(request)
+                        if (self.__error_body_fn):
+                            ce = CrossauthError(ErrorCode.Unauthorized, "No access token")
+                            return JSONResponse(content=self.__error_body_fn(ce), status_code=401, headers={"WWW-Authenticate": authenticate_header})
                         return JSONResponse(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
 
+
                     if not auth_response['authorized']:
+                        print(auth_response)
                         authenticate_header = self.authenticate_header(request)
-                        return JSONResponse(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
+                        status_code = 401
+                        message = "Invalid token"
+                        if ("error_description" in auth_response):
+                            message = message + ": " + auth_response["error_description"]
+                        if (self.__error_body_fn):
+                            ce = CrossauthError(ErrorCode.Unauthorized, message)
+                            log_as_warn_or_error(ce, j({
+                                "message": message,
+                                "cerr": ce,
+                                **log_client(request),
+                            }))
+                            return JSONResponse(content=self.__error_body_fn(ce), status_code=status_code, headers={"WWW-Authenticate": authenticate_header})
+                        return JSONResponse(content=self.__error_body, status_code=status_code, headers={"WWW-Authenticate": authenticate_header})
 
                 if auth_response:
                     request.state.access_token_payload = auth_response.get('token_payload')
@@ -129,14 +159,31 @@ class FastApiApiKeyServer(ApiKeyManager):
                                 request.state.user = None
                                 request.state.auth_error = "access_denied"
                                 request.state.auth_error_description = "Access token does not have sufficient scope"
+                                if (self.__error_body_fn):
+                                    ce = CrossauthError(ErrorCode.Unauthorized, "Access token does not have sufficient scope")
+                                    return JSONResponse(content=self.__error_body_fn(ce), status_code=401)
                                 return JSONResponse(content=self.__error_body, status_code=401)
 
                     request.state.auth_type = "apikey"
                     request.state.auth_error = auth_response.get('error')
                     if request.state.auth_error == "access_denied":
                         authenticate_header = self.authenticate_header(request)
+                        if (self.__error_body_fn):
+                            ce = CrossauthError(ErrorCode.Unauthorized, request.state.auth_error_description if request.state.auth_error_description else "Access denied")
+                            log_as_warn_or_error(ce, j({
+                                "cerr": ce,
+                                **log_client(request),
+                            }))
+                            return JSONResponse(content=self.__error_body_fn(ce), status_code=401, headers={"WWW-Authenticate": authenticate_header})
                         return JSONResponse(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
                     elif request.state.auth_error:
+                        ce = CrossauthError(ErrorCode.UnknownError, request.state.auth_error_description if request.state.auth_error_description else "Server error")
+                        log_as_warn_or_error(ce, j({
+                            "cerr": ce,
+                            **log_client(request),
+                        }))
+                        if (self.__error_body_fn):
+                            return JSONResponse(content=self.__error_body_fn(ce), status_code=500)
                         return JSONResponse(content=self.__error_body, status_code=500)
 
                     request.state.auth_error_description = auth_response.get('error_description')
@@ -189,11 +236,25 @@ class FastApiApiKeyServer(ApiKeyManager):
                 CrossauthLogger.logger().debug(j({"msg": "Got user from sub claim"}))
                 request.state.user = user
                 return {'authorized': True, 'api_key_name': key["name"], 'user': user}
-            CrossauthLogger.logger().warn(j({"msg": "Did not receive a valid token"}))
+            
+            CrossauthLogger.logger().warn(j({
+                "message": "Did not receive a valid token",
+                **log_client(request),
+                }))
             return {'authorized': False}
 
         except Exception as e:
-            return {'authorized': False, 'error': "server_error", 'error_description': str(e)}
+            ce = CrossauthError.as_crossauth_error(e)
+            if (ce.code == ErrorCode.InvalidKey or ce.code == ErrorCode.Unauthorized):
+                error = "access_denied"
+            else:
+                error = "server_error"
+            log_as_warn_or_error(ce, j({
+                "message": str(e),
+                **log_client(request),
+                "cerr": ce,
+                }))
+            return {'authorized': False, 'error': error, 'error_description': str(e)}
         return None
 
     async def token_from_header(self, request: Request) -> Optional[ApiKey]:

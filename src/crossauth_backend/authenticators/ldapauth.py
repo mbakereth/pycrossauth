@@ -70,7 +70,7 @@ class LdapAuthenticator(PasswordAuthenticator):
                     local_user = resp["user"]
                     local_user["factor1"] = self.__ldap_auto_create_factor1
                 except:
-                    CrossauthLogger.logger().debug(j({"msg": "Creating user", "user": user["username"]}))
+                    CrossauthLogger.logger().debug(j({"message": "Creating user", "user": user["username"]}))
                     local_user = await self.__ldap_storage.create_user(
                         {"factor1": self.__ldap_auto_create_factor1, **user}, 
                         params

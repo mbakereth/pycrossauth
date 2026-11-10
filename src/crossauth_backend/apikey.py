@@ -171,6 +171,10 @@ class ApiKeyManager:
         key = await self.__api_key_storage.get_key(self.prefix + hashed_value)
         if "name" not in key:
             raise CrossauthError(ErrorCode.InvalidKey, "Not a valid API key")
+        if key["expires"]:
+            now = datetime.datetime.now()
+            if (key["expires"] < now):
+                raise CrossauthError(ErrorCode.InvalidKey, "API key has expired")
         
         return cast(NamedKey, {**key, "name": key["name"]})
 

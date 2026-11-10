@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
-from typing import List, Dict, Any, Optional, cast, Mapping, TypedDict, Literal
+from typing import List, Dict, Any, Optional, cast, Mapping, TypedDict, Literal, Callable
 from fastapi import FastAPI, Request, Response
-from crossauth_backend.common.logger import CrossauthLogger, j
+from crossauth_backend.common.logger import CrossauthLogger, j, log_as_warn_or_error
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.interfaces import User
 from crossauth_backend.storage import UserStorage
@@ -9,6 +9,7 @@ from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.oauth.resserver import OAuthResourceServer, OAuthResourceServerOptions
 from crossauth_backend.oauth.client import OAuthTokenConsumer
 from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
+from .fastapisession import log_client
 from fastapi.responses import JSONResponse
 import re
 from datetime import datetime
@@ -125,9 +126,12 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
         self._protected_endpoints: Mapping[str, ProtectedEndpoint] = {}
         self._protected_endpoint_prefixes: List[str] = []
         self.__error_body : Dict[str, Any] = {}
+        self.__error_body_fn : Callable[[CrossauthError], str]|None = None
         self.__token_locations : List[Literal["header","session"]] = ["header",]
         self.__session_data_name : str = "oauth"
         set_parameter("error_body", ParamType.Json, self, options, "OAUTH_RESSERVER_ACCESS_DENIED_BODY")
+        if ("error_body_fn" in options):
+            self.__error_body_fn = options["error_body_dn"]
         set_parameter("token_locations", ParamType.JsonArray, self, options, "OAUTH_TOKEN_LOCATIONS")
         set_parameter("session_data_name", ParamType.String, self, options, "OAUTH_SESSION_DATA_NAME")
 
@@ -174,11 +178,17 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                     if not auth_response:
                         request.state.auth_error = "access_denied"
                         request.state.auth_error_description = "No access token"
-                        authenticate_header = self.authenticate_header(request);
+                        authenticate_header = self.authenticate_header(request)
+                        if (self.__error_body_fn):
+                            ce = CrossauthError(ErrorCode.Unauthorized, "No access token")
+                            return JSONResponse(content=self.__error_body_fn(ce), status_code=401, headers={"WWW-Authenticate": authenticate_header})
                         return JSONResponse(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
 
                     if not auth_response['authorized']:
                         authenticate_header = self.authenticate_header(request)
+                        if (self.__error_body_fn):
+                            ce = CrossauthError(ErrorCode.Unauthorized, "Authorization not received")
+                            return JSONResponse(content=self.__error_body_fn(ce), status_code=401, headers={"WWW-Authenticate": authenticate_header})
                         return JSONResponse(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
 
                 if auth_response:
@@ -200,14 +210,38 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
                                 request.state.user = None
                                 request.state.auth_error = "access_denied"
                                 request.state.auth_error_description = "Access token does not have sufficient scope"
+                                ce = CrossauthError(ErrorCode.Unauthorized, "Access token does not have sufficient scope")
+                                log_as_warn_or_error(ce, j({
+                                    "message": "Access token does not have sufficient scope",
+                                    "cerr": ce,
+                                    **log_client(request),
+                                }))
+                                if (self.__error_body_fn):
+                                    return JSONResponse(content=self.__error_body_fn(ce), status_code=401)
                                 return JSONResponse(content=self.__error_body, status_code=401)
 
                     request.state.auth_type = "oauth"
                     request.state.auth_error = auth_response.get('error')
                     if request.state.auth_error == "access_denied":
                         authenticate_header = self.authenticate_header(request)
+                        ce = CrossauthError(ErrorCode.Unauthorized, request.state.auth_error_description if request.state.auth_error_description else "Access denied")
+                        log_as_warn_or_error(ce, j({
+                            "message": ce.message,
+                            "cerr": ce,
+                            **log_client(request),
+                        }))
+                        if (self.__error_body_fn):
+                            return JSONResponse(content=self.__error_body_fn(ce), status_code=401, headers={"WWW-Authenticate": authenticate_header})
                         return JSONResponse(content=self.__error_body, status_code=401, headers={"WWW-Authenticate": authenticate_header})
                     elif request.state.auth_error:
+                        ce = CrossauthError(ErrorCode.UnknownError, request.state.auth_error_description if request.state.auth_error_description else "Server error")
+                        log_as_warn_or_error(ce, j({
+                            "message": ce.message,
+                            "cerr": ce,
+                            **log_client(request),
+                        }))
+                        if (self.__error_body_fn):
+                            return JSONResponse(content=self.__error_body_fn(ce), status_code=500)
                         return JSONResponse(content=self.__error_body, status_code=500)
 
                     request.state.auth_error_description = auth_response.get('error_description')
@@ -281,6 +315,12 @@ class FastApiOAuthResourceServer(OAuthResourceServer):
             return {'authorized': False}
 
         except Exception as e:
+            ce = CrossauthError.as_crossauth_error(e)
+            log_as_warn_or_error(ce, j({
+                "message": ce.message,
+                "cerr": ce,
+                **log_client(request),
+            }))
             return {'authorized': False, 'error': "server_error", 'error_description': str(e)}
         return None
 
