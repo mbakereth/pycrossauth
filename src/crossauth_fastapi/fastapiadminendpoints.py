@@ -14,7 +14,7 @@ from crossauth_backend.auth import AuthenticationParameters
 from crossauth_backend.common.interfaces import User, UserState, UserSecrets
 from crossauth_backend.storage import UserStorage
 from crossauth_backend.emailtoken import TokenEmailer
-from .fastapisession import log_client
+from .fastapiserverbase import log_client
 
 async def default_user_search_fn(search_term: str, user_storage: UserStorage) -> List[User]:
 

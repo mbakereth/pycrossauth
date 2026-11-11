@@ -11,7 +11,7 @@ from crossauth_backend.common.interfaces import User, UserState
 from crossauth_backend.common.error import CrossauthError, ErrorCode
 from crossauth_backend.common.logger import CrossauthLogger, j, LoggedActionCode, logged_action_code, log_as_warn_or_error
 from crossauth_backend.auth import AuthenticationParameters
-from .fastapisession import log_client
+from .fastapiserverbase import log_client
 
 class FastApiUserEndpoints():
     """

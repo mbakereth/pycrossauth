@@ -9,7 +9,7 @@ from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.apikey import ApiKeyManager, ApiKeyManagerOptions
 from fastapi.responses import JSONResponse
 from crossauth_backend.common.interfaces import ApiKey
-from .fastapisession import log_client
+from .fastapiserverbase import log_client
 from nulltype import NullType
 
 

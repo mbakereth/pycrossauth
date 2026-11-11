@@ -25,27 +25,8 @@ from starlette.types import Message # , ASGIApp, Scope, Receive, Send
 from .sessionendpoints import *
 from .fastapiserverbase import FastApiServerBase
 from .fastapiuserendpoints import FastApiUserEndpoints
+from .fastapiserverbase import log_client
 
-class LogClientResponse(TypedDict):
-    user: str|None
-    userid: int|str|None
-    ip: str
-
-def log_client(request: Request) -> LogClientResponse:
-    username : str|None = None
-    userid : str|int|None = None
-    ip = ""
-    if (request.state.user):
-        username = request.state.user["username"]
-        userid = request.state.user["id"]
-    if (request.client):
-        ip = request.client.host
-
-    return {
-        "user": username,
-        "userid": userid,
-        "ip": ip,
-    }
 def toFastApiCookieOptions(options: CookieOptions):
     ret : FastApiCookieOptions = {
         "max_age": None,

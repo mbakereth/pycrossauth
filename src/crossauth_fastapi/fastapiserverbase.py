@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Matthew Baker.  All rights reserved.  Licenced under the Apache Licence 2.0.  See LICENSE file
 
-from typing import Callable, Awaitable, NamedTuple, Optional, Dict, Any
+from typing import Callable, Awaitable, NamedTuple, Optional, Dict, Any, TypedDict
 from abc import ABC, abstractmethod
 from fastapi import Request, Response, FastAPI
 from crossauth_backend.common.error import CrossauthError
@@ -221,3 +221,23 @@ class FastApiServerBase(ABC):
             CrossauthLogger.logger().error(j({"err": str(e)}))
             return Response(ERROR_401 if status == 401 else ERROR_500, status)
 
+class LogClientResponse(TypedDict):
+    user: str|None
+    userid: int|str|None
+    ip: str
+
+def log_client(request: Request) -> LogClientResponse:
+    username : str|None = None
+    userid : str|int|None = None
+    ip = ""
+    if (request.state.user):
+        username = request.state.user["username"]
+        userid = request.state.user["id"]
+    if (request.client):
+        ip = request.client.host
+
+    return {
+        "user": username,
+        "userid": userid,
+        "ip": ip,
+    }

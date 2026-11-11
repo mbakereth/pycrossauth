@@ -9,7 +9,7 @@ from crossauth_backend.utils import set_parameter, ParamType
 from crossauth_backend.oauth.resserver import OAuthResourceServer, OAuthResourceServerOptions
 from crossauth_backend.oauth.client import OAuthTokenConsumer
 from crossauth_fastapi.fastapisessionadapter import FastApiSessionAdapter
-from .fastapisession import log_client
+from .fastapiserverbase import log_client
 from fastapi.responses import JSONResponse
 import re
 from datetime import datetime
