@@ -99,7 +99,6 @@ class FastApiApiKeyServer(ApiKeyManager):
         if 'protected_endpoints' in options:
             @app.middleware("http")
             async def pre_handler(request: Request, call_next): # type: ignore
-                print("XXX HERE XXX")
                 url_without_query = request.url.path
                 matches = False
                 matching_endpoint = ""
